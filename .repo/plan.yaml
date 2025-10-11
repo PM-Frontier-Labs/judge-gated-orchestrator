@@ -26,3 +26,4 @@ plan:
         docs:  { must_update: ["docs/mvp.md#feature"] }
         lint:  { max_cyclomatic_complexity: 12 }
         drift: { allowed_out_of_scope_changes: 0 }
+        llm_review: { enabled: true }

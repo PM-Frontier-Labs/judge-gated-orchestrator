@@ -8,6 +8,7 @@ Checks:
 - Documentation updated
 - No plan drift (changes outside scope)
 - Lint rules (if specified)
+- LLM code review (if enabled and ANTHROPIC_API_KEY set)
 """
 
 import sys
@@ -15,6 +16,13 @@ import yaml
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Any
+
+# Import LLM judge (optional enhancement)
+try:
+    from llm_judge import llm_code_review, get_changed_files_in_scope
+    LLM_JUDGE_AVAILABLE = True
+except ImportError:
+    LLM_JUDGE_AVAILABLE = False
 
 REPO_ROOT = Path(__file__).parent.parent
 REPO_DIR = REPO_ROOT / ".repo"
@@ -188,6 +196,14 @@ def judge_phase(phase_id: str):
 
     print("  🔍 Checking lint rules...")
     all_issues.extend(check_lint(phase))
+
+    # LLM code review (optional)
+    if LLM_JUDGE_AVAILABLE:
+        llm_gate = phase.get("gates", {}).get("llm_review", {})
+        if llm_gate.get("enabled", False):
+            print("  🤖 Running LLM code review...")
+            changed_files = get_changed_files_in_scope(phase, REPO_ROOT)
+            all_issues.extend(llm_code_review(phase, changed_files))
 
     # Clean up old critiques/approvals
     for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):
