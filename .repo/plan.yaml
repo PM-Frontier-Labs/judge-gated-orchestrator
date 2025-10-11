@@ -1,0 +1,28 @@
+plan:
+  id: MVP-DEMO
+  summary: "Prove judge-gated phases with tests+docs."
+  base_branch: "main"
+  phases:
+    - id: P01-scaffold
+      description: "Create skeleton module + golden test + docs."
+      scope:
+        include: ["src/mvp/**", "tests/mvp/**", "docs/mvp.md", "tools/**", ".repo/**"]
+        exclude: ["src/**/legacy/**"]
+      artifacts:
+        must_exist: ["src/mvp/__init__.py", "tests/mvp/test_golden.py", "docs/mvp.md"]
+      gates:
+        tests: { must_pass: true }
+        docs:  { must_update: ["docs/mvp.md"] }
+        drift: { allowed_out_of_scope_changes: 0 }
+
+    - id: P02-impl-feature
+      description: "Implement simple feature with refactor + doc section."
+      scope:
+        include: ["src/mvp/feature.py", "tests/mvp/test_feature.py", "docs/mvp.md"]
+      artifacts:
+        must_exist: ["src/mvp/feature.py", "tests/mvp/test_feature.py"]
+      gates:
+        tests: { must_pass: true }
+        docs:  { must_update: ["docs/mvp.md#feature"] }
+        lint:  { max_cyclomatic_complexity: 12 }
+        drift: { allowed_out_of_scope_changes: 0 }
