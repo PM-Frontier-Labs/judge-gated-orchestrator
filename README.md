@@ -1,6 +1,8 @@
 # Gated Phase Protocol
 
-A file-based protocol for autonomous execution with quality gates. No framework to install—just conventions to follow.
+**Get autonomous AI execution in 5 minutes. Works in your terminal with Claude Code, Cursor, or any AI coding assistant.**
+
+A file-based protocol for autonomous execution with quality gates. No servers, no APIs, no framework—just clone and run.
 
 ## What Is This?
 
@@ -11,6 +13,21 @@ A **protocol**, not a framework. Like Git tracks code changes through file conve
 - **`.repo/critiques/<phase>.{md,OK}`** - Judge feedback
 
 Any tool that follows these conventions can participate in the protocol.
+
+## Built for AI Coding Assistants
+
+This protocol is designed for **Claude Code, Cursor, Windsurf, Codex**, and similar AI agents that:
+- Work in your native terminal/IDE
+- Read and write files
+- Execute shell commands
+- Need to work autonomously (overnight, multi-hour tasks)
+
+**No integration required.** Just give Claude Code this repo and say:
+```
+Read .repo/briefs/CURRENT.json and start working.
+```
+
+Claude reads briefs, writes code, submits for review, handles feedback, and advances—all automatically. Works across context windows because everything is in files.
 
 ## How It Works
 
@@ -43,31 +60,45 @@ Any tool that follows these conventions can participate in the protocol.
 6. If approved: `./tools/phasectl.py next` advances to next phase
 7. Repeat until complete
 
-## Quick Start
+## Quick Start (5 Minutes)
 
-### New Instance? Orient First
+### 1. Clone and Setup (1 min)
 
 ```bash
-./orient.sh
+git clone https://github.com/PM-Frontier-Labs/judge-gated-orchestrator.git
+cd judge-gated-orchestrator
+pip install -r requirements.txt
 ```
 
-Shows current phase, progress, next steps in <10 seconds.
+### 2. Use with Claude Code (1 min)
 
-### Try the Demo
+Open in Claude Code and say:
+```
+Read .repo/briefs/CURRENT.json and start working on the current phase.
+```
+
+Or from terminal:
+```bash
+./orient.sh  # See status in 10 seconds
+```
+
+### 3. Try the Demo (3 min)
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# See where we are
+# See current phase
 cat .repo/briefs/CURRENT.json
 
-# Read the current brief
+# Read the brief
 cat .repo/briefs/P02-impl-feature.md
 
-# Submit for review (demo phases already complete)
+# Submit for review
 ./tools/phasectl.py review P02-impl-feature
+
+# Advance to next phase
+./tools/phasectl.py next
 ```
+
+**That's it.** Claude Code (or any AI agent) can now work autonomously through all phases.
 
 ## File Format Reference
 
@@ -184,7 +215,23 @@ Cost: ~$0.01 per review. LLM catches architecture issues that rules miss.
 
 ## Use Cases
 
-- **Overnight autonomous work** - Claude builds while you sleep
+### 1. Overnight Autonomous Work with Claude Code
+
+Before bed:
+```bash
+cd my-project
+./orient.sh  # Show Claude where we are
+```
+
+Tell Claude Code:
+```
+Work through phases overnight. Read .repo/briefs/CURRENT.json to start.
+```
+
+Wake up to 2-3 completed phases with tests, docs, and quality gates passed.
+
+### 2. Other Uses
+
 - **Multi-agent systems** - Each agent implements phases
 - **CI/CD integration** - Gates enforce quality in pipelines
 - **Human-in-loop** - Human reads brief, judge validates work
