@@ -93,6 +93,10 @@ pip install -r requirements.txt
 | **drift** | Scope boundaries | Only `src/mvp/**` can change |
 | **llm_review** | Semantic quality | Claude reviews architecture |
 
+**Test scoping (Phase 2.5):**
+- `test_scope: "scope"` - Only run tests matching phase scope (fast, focused)
+- `quarantine: [...]` - Skip specific tests with documented reasons (flaky APIs, legacy tests)
+
 Gates are configurable per phase. Enforce what matters for your project.
 
 ## Core Workflow

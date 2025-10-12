@@ -4,9 +4,9 @@
 
 **Purpose:** Validate the protocol implementation works correctly
 
-**Time:** 20-25 minutes for full validation (includes Phase 1 enhancements)
+**Time:** 25-30 minutes for full validation (includes Phase 1 + Phase 2.5 enhancements)
 
-**Note:** Tests 10-11 validate Phase 1 critical fixes (baseline SHA stability and proper globstar pattern matching)
+**Note:** Tests 10-12 validate Phase 1 (baseline SHA, globstar patterns) and Phase 2.5 (test scoping, quarantine)
 
 ---
 
@@ -614,6 +614,75 @@ pytest tests/test_scope_matching.py -v
 
 ---
 
+## Test 12: Test Scoping and Quarantine
+
+**Goal:** Verify test scoping filters tests correctly and quarantine skips specific tests
+
+**Background:** Phase 2.5 feature - handles large codebases with irrelevant/flaky tests.
+
+**Steps:**
+
+```bash
+# Test 12a: Test Scoping
+# 1. Create test branch
+git checkout -b test-scoping
+
+# 2. Check if P02 has test_scope configured
+grep -A10 "P02-impl-feature" .repo/plan.yaml | grep test_scope
+# Expected: test_scope: "scope"
+
+# 3. Run review and check test command
+./tools/phasectl.py review P02-impl-feature 2>&1 | grep "Test scope"
+# Expected: Shows "📍 Test scope: Running tests matching phase scope"
+
+# 4. Verify only scoped tests run
+# (In P02, scope includes tests/mvp/**, so only MVP tests should run)
+
+# Test 12b: Quarantine List
+# 1. Add a quarantine entry to plan.yaml
+cat >> .repo/plan.yaml << 'EOF'
+        quarantine:
+          - path: "tests/mvp/test_golden.py::test_hello_world"
+            reason: "Test quarantine validation"
+EOF
+
+# 2. Run review
+./tools/phasectl.py review P02-impl-feature 2>&1 | grep -A5 "Quarantined tests"
+# Expected output:
+#   ⚠️  Quarantined tests (1 test will be skipped):
+#      - tests/mvp/test_golden.py::test_hello_world
+#        Reason: Test quarantine validation
+
+# 3. Verify quarantined test was skipped
+# (Check last_test.txt to confirm test didn't run)
+grep -q "test_hello_world" .repo/traces/last_test.txt && echo "Test ran (unexpected)" || echo "✓ Test skipped"
+
+# 4. Restore plan.yaml
+git checkout .repo/plan.yaml
+
+# Test 12c: Run documentation tests
+pytest tests/test_test_scoping.py -v
+# Expected: All 7 tests pass
+
+# 5. Clean up
+git checkout main
+git branch -D test-scoping
+```
+
+**What these features solve:**
+1. **Test scoping**: Work incrementally on large codebases without running 1000 unrelated tests
+2. **Quarantine**: Handle flaky external APIs, legacy tests, deliberately broken tests
+
+**Success criteria:**
+- ✅ test_scope: "scope" filters tests to matching scope patterns
+- ✅ Quarantine list skips specific tests with documented reasons
+- ✅ Clear output showing which tests are scoped/quarantined
+- ✅ All test_test_scoping.py tests pass
+
+**Why this matters:** Real-world codebases have legacy/flaky tests that would block autonomous work. Test scoping (primary) + quarantine (escape hatch) enables incremental progress.
+
+---
+
 ## Full System Test
 
 **Goal:** Complete workflow from scratch
@@ -755,6 +824,8 @@ Use this to verify the system is production-ready:
 - [ ] Phase binding catches mid-phase plan changes
 - [ ] Baseline SHA provides stable diffs throughout phase
 - [ ] Tests gate catches test failures
+- [ ] Test scoping filters tests to phase scope (Phase 2.5)
+- [ ] Test quarantine skips specific tests with reasons (Phase 2.5)
 - [ ] Docs gate catches missing documentation AND verifies actual changes
 - [ ] Drift gate catches out-of-scope changes
 - [ ] Drift gate respects include/exclude patterns with proper globstar support
@@ -785,7 +856,7 @@ Use this to verify the system is production-ready:
 
 **The protocol implementation is valid if:**
 
-1. ✅ All 11 tests pass without modification (including Phase 1 enhancements)
+1. ✅ All 12 tests pass without modification (including Phase 1+2.5 enhancements)
 2. ✅ Full system test completes successfully
 3. ✅ Validation checklist 100% checked
 4. ✅ Error handling graceful for all error conditions
@@ -793,6 +864,7 @@ Use this to verify the system is production-ready:
 6. ✅ Protocol integrity prevents agent self-modification
 7. ✅ Baseline SHA provides stable diffs (Test 10)
 8. ✅ Globstar pattern matching works correctly (Test 11)
+9. ✅ Test scoping and quarantine work correctly (Test 12)
 
 **When complete, you can confidently:**
 - Use the protocol for real projects
@@ -827,8 +899,8 @@ Open an issue or PR: https://github.com/PM-Frontier-Labs/judge-gated-orchestrato
 
 ---
 
-**Time to complete:** 20-25 minutes for full validation (includes Phase 1 tests)
+**Time to complete:** 25-30 minutes for full validation (includes Phase 1 + Phase 2.5 tests)
 
 **Difficulty:** Beginner (just follow steps)
 
-**Result:** Confidence the protocol works as documented, including Phase 1 critical fixes
+**Result:** Confidence the protocol works as documented, including Phase 1 + Phase 2.5 enhancements
