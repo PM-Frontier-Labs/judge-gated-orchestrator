@@ -169,10 +169,8 @@ judge-gated-orchestrator/
 ├── README.md                    # Human-readable overview
 ├── PROTOCOL.md                  # LLM operational manual
 ├── TESTME.md                    # Validation guide (12 tests)
-├── PHASE1_IMPLEMENTATION.md     # Phase 1 implementation docs
-├── PHASE2_IMPLEMENTATION.md     # Phase 2 implementation docs
-├── PHASE2_5_IMPLEMENTATION.md   # Phase 2.5 implementation docs
-├── CRITIQUE_ANALYSIS.md         # Prioritized improvements
+├── COMPLETE_PACKAGE.txt         # Complete bundled codebase
+├── COMPLETE_PACKAGE.md          # Markdown version
 └── requirements.txt             # Python dependencies
 ```
 
