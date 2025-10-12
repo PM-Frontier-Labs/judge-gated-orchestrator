@@ -436,6 +436,88 @@ git checkout .repo/briefs/CURRENT.json
 
 ---
 
+## Test 9: Protocol Integrity Protection
+
+**Goal:** Verify protocol tamper detection prevents agent self-modification
+
+**Steps:**
+
+```bash
+# Test 9a: Judge Tamper Detection
+git checkout -b test-protocol-integrity
+
+# 1. Check current judge hash
+grep "tools/judge.py" .repo/protocol_manifest.json
+# Expected: Shows SHA256 hash like "26c244..."
+
+# 2. Tamper with judge (add innocent comment)
+echo "# Test comment" >> tools/judge.py
+
+# 3. Submit for review
+./tools/phasectl.py review P02-impl-feature
+
+# Expected output:
+#   🔐 Checking protocol integrity...
+#   ❌ Phase P02-impl-feature needs revision:
+#
+#   # Critique: P02-impl-feature
+#   ## Issues Found
+#   - 🚨 JUDGE TAMPER DETECTED: tools/judge.py
+#      Expected: 26c2444577b19139d794adbf2d0a92ee102a746a056ce6af0105bfcb4cf0d82b
+#      Actual:   [different hash]
+#      The judge has been modified. This is a critical protocol violation.
+
+# 4. Verify critique
+cat .repo/critiques/P02-impl-feature.md | grep "JUDGE TAMPER"
+# Expected: Shows tamper detection message
+
+# 5. Revert tampering
+git checkout tools/judge.py
+
+# 6. Re-review
+./tools/phasectl.py review P02-impl-feature
+# Expected: No protocol integrity errors
+
+# Test 9b: Plan Change Mid-Phase Detection
+# 1. Check current CURRENT.json
+cat .repo/briefs/CURRENT.json | grep plan_sha
+# Expected: Shows plan_sha if phase binding enabled
+
+# 2. Modify plan.yaml (change description)
+sed -i.bak 's/P02-impl-feature/P02-impl-feature-modified/' .repo/plan.yaml
+
+# 3. Submit for review
+./tools/phasectl.py review P02-impl-feature
+
+# Expected output (if phase binding active):
+#   🔐 Checking protocol integrity...
+#   ❌ Phase needs revision:
+#   - Plan changed mid-phase: .repo/plan.yaml
+#      Expected: [original hash]
+#      Actual:   [new hash]
+
+# 4. Restore plan
+mv .repo/plan.yaml.bak .repo/plan.yaml
+
+# Test 9c: Protocol Maintenance Phase
+# 1. Verify protocol maintenance phases are allowed
+grep -A5 "protocol_lock:" .repo/plan.yaml
+# Expected: Shows allow_in_phases: ["P00-protocol-maintenance"]
+
+# 2. Clean up
+git checkout main
+git branch -D test-protocol-integrity
+```
+
+**Success criteria:**
+- ✅ Judge self-check detects tampering immediately
+- ✅ Clear error messages with expected vs actual hashes
+- ✅ Phase binding detects mid-phase plan changes
+- ✅ Protocol files cannot be modified in normal phases
+- ✅ After revert, system returns to normal operation
+
+---
+
 ## Full System Test
 
 **Goal:** Complete workflow from scratch
@@ -573,6 +655,8 @@ Use this to verify the system is production-ready:
 - [ ] Next command advances phases correctly
 
 **Quality Gates:**
+- [ ] Protocol integrity detects judge tampering
+- [ ] Phase binding catches mid-phase plan changes
 - [ ] Tests gate catches test failures
 - [ ] Docs gate catches missing documentation
 - [ ] Drift gate catches out-of-scope changes
@@ -604,11 +688,12 @@ Use this to verify the system is production-ready:
 
 **The protocol implementation is valid if:**
 
-1. ✅ All 8 tests pass without modification
+1. ✅ All 9 tests pass without modification
 2. ✅ Full system test completes successfully
 3. ✅ Validation checklist 100% checked
 4. ✅ Error handling graceful for all error conditions
 5. ✅ Context recovery works from any state
+6. ✅ Protocol integrity prevents agent self-modification
 
 **When complete, you can confidently:**
 - Use the protocol for real projects

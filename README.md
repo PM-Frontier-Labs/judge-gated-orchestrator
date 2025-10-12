@@ -25,6 +25,7 @@ Any tool that follows these conventions can participate. This repo includes a re
 
 ✅ **Autonomous execution** - Agent works through phases without supervision
 ✅ **Quality enforcement** - Tests, docs, drift prevention, optional LLM review
+✅ **Protocol integrity** - SHA256-based tamper detection prevents agents from modifying judge
 ✅ **Context-window proof** - All state in files, `./orient.sh` recovers context in <10 seconds
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
@@ -85,6 +86,7 @@ pip install -r requirements.txt
 
 | Gate | What It Checks | Example |
 |------|----------------|---------|
+| **protocol_lock** | Protocol integrity | SHA256 verify `tools/judge.py` unchanged |
 | **tests** | Test suite passes | `pytest` exit code must be 0 |
 | **lint** | Static analysis | `ruff check .` exit code must be 0 |
 | **docs** | Files updated | `README.md` must be modified |
@@ -143,11 +145,14 @@ judge-gated-orchestrator/
 │   │   ├── P01-scaffold.OK (approved)
 │   │   └── P02-impl-feature.md (needs fixes)
 │   ├── traces/           # Test output
-│   └── plan.yaml         # Roadmap + gates
+│   ├── plan.yaml         # Roadmap + gates
+│   └── protocol_manifest.json  # SHA256 hashes for integrity
 ├── tools/
 │   ├── phasectl.py       # Controller (review/next)
 │   ├── judge.py          # Gate validator
-│   └── llm_judge.py      # Optional LLM review
+│   ├── llm_judge.py      # Optional LLM review
+│   ├── generate_manifest.py  # Update protocol hashes
+│   └── lib/              # Shared utilities + protocol guard
 ├── orient.sh             # Status in 10 seconds
 └── README.md             # This file
 ```
