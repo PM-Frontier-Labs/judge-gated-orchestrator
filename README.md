@@ -1,197 +1,220 @@
-# Judge-Gated Orchestration System
+# Gated Phase Protocol
 
-A minimal, terminal-native orchestration layer for autonomous Claude Code execution with enforced quality gates.
+A file-based protocol for autonomous execution with quality gates. No framework to install—just conventions to follow.
 
-## 🎯 Goals
+## What Is This?
 
-- **Autonomous execution**: Execute clearly-defined roadmap chunks without constant supervision
-- **Quality control**: Automatic validation of tests, docs, and plan adherence at each phase
-- **Plan drift prevention**: Enforce scope boundaries and detect out-of-scope changes
-- **Transparent traces**: Emit evaluation data for each phase (pass/fail, timing, drift metrics)
-- **Drop-in ready**: Works entirely via files and git—no external APIs or plugin dependencies
+A **protocol**, not a framework. Like Git tracks code changes through file conventions (`.git/`, `HEAD`, etc.), this protocol tracks autonomous work through files:
 
-## 📁 Structure
+- **`.repo/briefs/CURRENT.json`** - Points to current phase
+- **`.repo/plan.yaml`** - Defines phases and quality gates
+- **`.repo/critiques/<phase>.{md,OK}`** - Judge feedback
+
+Any tool that follows these conventions can participate in the protocol.
+
+## How It Works
 
 ```
-.
-├── .repo/
-│   ├── briefs/           # Phase instructions (what to build)
-│   │   ├── P01-scaffold.md
-│   │   ├── P02-impl-feature.md
-│   │   └── CURRENT.json  # Points to active phase
-│   ├── critiques/        # Judge feedback (pass/fail)
-│   ├── status/           # Phase status tracking
-│   ├── traces/           # Test output and metrics
-│   └── plan.yaml         # Full roadmap definition
-├── tools/
-│   ├── phasectl.py       # Controller (review/next commands)
-│   ├── run_tests.sh      # Test runner
-│   ├── run_judge.sh      # Judge trigger
-│   └── judge.py          # Judge logic (gates enforcement)
-├── src/mvp/              # Implementation code
-├── tests/mvp/            # Test suite
-└── docs/                 # Documentation
+┌─────────────┐
+│   Brief     │  What to build (.repo/briefs/<phase>.md)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│  Implement  │  Build the thing (Claude, human, any agent)
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   Judge     │  Check quality gates (.repo/critiques/)
+└──────┬──────┘
+       │
+       ├─❌─→ Critique (.md) → Fix → Review again
+       │
+       └─✅─→ Approved (.OK) → Next phase
 ```
 
-## 🚀 Quick Start
+**The Protocol:**
+1. Agent reads `.repo/briefs/CURRENT.json` to find active phase
+2. Agent reads brief at specified path
+3. Agent implements requirements
+4. Agent submits for review: `./tools/phasectl.py review <phase>`
+5. Judge validates gates, writes critique or approval
+6. If approved: `./tools/phasectl.py next` advances to next phase
+7. Repeat until complete
 
-### New Claude Instance?
+## Quick Start
 
-**Run this first:**
+### New Instance? Orient First
+
 ```bash
 ./orient.sh
 ```
 
-See **START_HERE.md** for complete orientation guide.
+Shows current phase, progress, next steps in <10 seconds.
 
-### 1. Install Dependencies
+### Try the Demo
 
 ```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-### 2. Review Current Phase
-
-```bash
+# See where we are
 cat .repo/briefs/CURRENT.json
+
+# Read the current brief
+cat .repo/briefs/P02-impl-feature.md
+
+# Submit for review (demo phases already complete)
+./tools/phasectl.py review P02-impl-feature
 ```
 
-This shows which phase is active (initially `P01-scaffold`).
+## File Format Reference
 
-### 3. Read the Brief
+### `.repo/briefs/CURRENT.json`
 
-```bash
-cat .repo/briefs/P01-scaffold.md
+```json
+{
+  "phase_id": "P01-scaffold",
+  "brief_path": ".repo/briefs/P01-scaffold.md",
+  "status": "active",
+  "started_at": 1234567890.0
+}
 ```
 
-### 4. Execute Phase Work
+### `.repo/plan.yaml`
 
-Follow the brief instructions to implement required artifacts.
+```yaml
+plan:
+  id: YOUR-PROJECT
+  phases:
+    - id: P01-scaffold
+      description: "Create initial structure"
+      scope:
+        include: ["src/**", "tests/**"]
+      artifacts:
+        must_exist: ["src/__init__.py"]
+      gates:
+        tests: { must_pass: true }
+        docs: { must_update: ["README.md"] }
+        drift: { allowed_out_of_scope_changes: 0 }
+```
 
-### 5. Submit for Review
+### `.repo/critiques/<phase>.md` (Needs Work)
 
-```bash
+```markdown
+# Critique: P01-scaffold
+
+## Issues Found
+- Missing file: src/__init__.py
+- Tests failed: 2/5 passing
+- Documentation not updated: README.md
+
+## Resolution
+Fix the issues above and re-run:
 ./tools/phasectl.py review P01-scaffold
 ```
 
-This will:
-- Run tests (`pytest tests/`)
-- Invoke the judge to check gates
-- Output either a critique or approval
+### `.repo/critiques/<phase>.OK` (Approved)
 
-### 6. Handle Feedback
+```
+Phase approved at 2025-01-10T14:30:00Z
+All gates passed.
+```
 
-**If critique appears:**
+## Protocol Implementations
+
+This repo includes a **reference implementation** in Python:
+
+- **`tools/phasectl.py`** - Controller (review/next commands)
+- **`tools/judge.py`** - Quality gate validator
+- **`tools/llm_judge.py`** - Optional LLM semantic review
+
+But you could implement the protocol in:
+- Bash scripts
+- GitHub Actions
+- Make targets
+- Any language
+
+As long as you follow the file conventions.
+
+## Quality Gates
+
+Define gates in `plan.yaml`:
+
+| Gate | Checks | Example |
+|------|--------|---------|
+| **tests** | Test suite passes | `pytest` exit code 0 |
+| **docs** | Files updated | `README.md` modified |
+| **drift** | Scope boundaries | Only `src/` files changed |
+| **lint** | Code quality | Max complexity < 12 |
+| **llm_review** | Semantic check | Claude reviews architecture |
+
+## Adding LLM Review (Optional)
+
+Enable semantic code review with Claude:
+
+```yaml
+gates:
+  llm_review: { enabled: true }
+```
+
+Set your API key:
 ```bash
-cat .repo/critiques/P01-scaffold.md
+export ANTHROPIC_API_KEY='sk-ant-...'
 ```
 
-Fix issues and re-run review.
+Cost: ~$0.01 per review. LLM catches architecture issues that rules miss.
 
-**If approved:**
+## Why a Protocol?
+
+**Not a protocol (framework):**
+- Install package
+- Import classes
+- Learn API
+- Locked to one language
+
+**Protocol (this):**
+- Follow file conventions
+- Implement any way you want
+- Language agnostic
+- Composable with existing tools
+
+**It's like Git for autonomous execution.**
+
+## Use Cases
+
+- **Overnight autonomous work** - Claude builds while you sleep
+- **Multi-agent systems** - Each agent implements phases
+- **CI/CD integration** - Gates enforce quality in pipelines
+- **Human-in-loop** - Human reads brief, judge validates work
+- **Eval loops** - Quality gates force improvement iterations
+
+## Context Window Resilience
+
+New Claude instance? No problem:
+
 ```bash
-./tools/phasectl.py next
+./orient.sh        # See status
+cat START_HERE.md  # 60-second onboarding
 ```
 
-Advances to the next phase.
+All state lives in files. No memory required.
 
-## ⚙️ How It Works
+## Permission Automation
 
-### Phase Workflow
+See `.claude-code.json` for auto-approval patterns. Enables autonomous execution without permission prompts.
 
-```
-1. Claude reads brief (.repo/briefs/<PHASE>.md)
-2. Claude implements artifacts within scope
-3. Claude runs: ./tools/phasectl.py review <PHASE>
-   ├─> Runs tests (pytest)
-   ├─> Triggers judge
-   └─> Judge checks:
-       ├─ Artifacts exist
-       ├─ Tests pass
-       ├─ Docs updated
-       ├─ No plan drift
-       └─ Lint rules (if any)
-4. Judge writes:
-   ├─ .repo/critiques/<PHASE>.md (if issues found)
-   └─ .repo/critiques/<PHASE>.OK (if approved)
-5. If approved: ./tools/phasectl.py next → advance to next phase
-   If critique: fix issues → re-run review
-```
+## Learn More
 
-### Quality Gates
+- **START_HERE.md** - Quick orientation for new instances
+- **`orient.sh`** - Status dashboard script
+- **`.repo/plan.yaml`** - See the demo phases
 
-Each phase defines gates in `.repo/plan.yaml`:
-
-- **tests**: Must pass (`must_pass: true`)
-- **docs**: Must update specified files (`must_update: [...]`)
-- **drift**: Allowed out-of-scope changes (`allowed_out_of_scope_changes: 0`)
-- **lint**: Code quality rules (e.g., `max_cyclomatic_complexity: 12`)
-
-### Judge Logic
-
-The judge (`tools/judge.py`):
-1. Loads phase config from `plan.yaml`
-2. Validates all gates
-3. Produces critique if any gate fails
-4. Writes `.OK` marker if all gates pass
-
-### Controller
-
-The controller (`tools/phasectl.py`) orchestrates:
-- `review <PHASE>`: Submit phase for evaluation (blocking)
-- `next`: Advance to next phase after approval
-
-## 📋 Demo Phases
-
-### Phase P01: Scaffold
-- Create `src/mvp/__init__.py` with `hello_world()` function
-- Add golden test in `tests/mvp/test_golden.py`
-- Document in `docs/mvp.md`
-- Gates: tests pass, docs updated, zero drift
-
-### Phase P02: Implement Feature
-- Add `src/mvp/feature.py` with `calculate_score()` function
-- Add tests in `tests/mvp/test_feature.py`
-- Update docs with feature section
-- Gates: tests pass, docs updated, complexity < 12, zero drift
-
-## 🧪 Testing
-
-Run all tests:
-```bash
-pytest tests/ -v
-```
-
-Run specific test:
-```bash
-pytest tests/mvp/test_golden.py -v
-```
-
-## 📊 Traces
-
-Test output is saved to `.repo/traces/last_pytest.txt` for judge evaluation.
-
-## 🔮 Future Extensions
-
-- **File-event triggers**: Use `inotifywait` for instant feedback
-- **Metrics tracking**: Record TCR, coverage, drift in `.repo/traces/*.jsonl`
-- **MCP integration**: Connect to Model Context Protocol for observability
-- **Multi-judge types**: Add performance, style, security reviewers
-- **One-K integration**: Send traces to governance platform
-
-## 🎓 Usage for Claude Code
-
-When working with this system:
-
-1. **Read** `.repo/briefs/CURRENT.json` to identify active phase
-2. **Study** the brief at the path specified
-3. **Implement** only files within the phase scope
-4. **Review** via `./tools/phasectl.py review <PHASE_ID>`
-5. **Iterate** on critique feedback until approved
-6. **Advance** via `./tools/phasectl.py next`
-
-The system ensures you stay on track, maintain quality, and never drift from the plan.
-
-## 📄 License
+## License
 
 MIT
+
+---
+
+**The protocol is the spec. This repo is just one way to implement it.**
