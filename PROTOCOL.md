@@ -1,22 +1,10 @@
-# Gated Phase Protocol - LLM Operational Manual
+# Gated Phase Protocol - Execution Manual
 
-**Audience:** AI coding assistants (Claude Code, Cursor, Windsurf, etc.)
+**Audience:** AI coding assistants (Claude Code, Cursor, Windsurf, etc.) executing phases autonomously
 
-**Purpose:** Precise execution instructions for autonomous work under quality gates.
+**Purpose:** Precise instructions for working within quality-gated phases
 
----
-
-## Protocol Overview
-
-This is a **file-based protocol** for autonomous execution with quality gates. You will:
-
-1. Read a phase brief defining scope and objectives
-2. Implement changes within that scope
-3. Submit for review to a judge
-4. Handle feedback and iterate until approved
-5. Advance to next phase and repeat
-
-**All state lives in files.** No memory required. You can recover full context anytime via `./orient.sh`.
+**If you're helping plan a roadmap:** Read `LLM_PLANNING.md` instead. This document is for execution only.
 
 ---
 
@@ -33,13 +21,48 @@ This is a **file-based protocol** for autonomous execution with quality gates. Y
 7. Repeat from step 1
 ```
 
+**All state lives in files.** No memory required. Recover full context anytime via `./orient.sh`.
+
+---
+
+## Quick Command Reference
+
+```bash
+# Recover context (run this when lost)
+./orient.sh
+
+# Check current phase
+cat .repo/briefs/CURRENT.json
+
+# Read current brief
+cat .repo/briefs/$(jq -r .phase_id < .repo/briefs/CURRENT.json).md
+
+# Submit for review
+./tools/phasectl.py review <phase-id>
+
+# Check if approved
+ls .repo/critiques/<phase-id>.OK
+
+# Read critique if failed
+cat .repo/critiques/<phase-id>.md
+
+# Advance to next phase (only after approval)
+./tools/phasectl.py next
+
+# See test results
+cat .repo/traces/last_test.txt
+
+# Check diff before review
+git diff --name-only HEAD
+```
+
 ---
 
 ## File Specifications
 
 ### `.repo/briefs/CURRENT.json`
 
-Points to the active phase.
+Points to the active phase. **Read this first** when recovering context.
 
 **Format:**
 ```json
@@ -55,17 +78,13 @@ Points to the active phase.
 ```
 
 **Fields:**
-- `phase_id` (string): Phase identifier matching plan.yaml
-- `brief_path` (string): Relative path to phase brief
-- `status` (string): Always "active" for current phase
-- `started_at` (float): Unix timestamp when phase started
-- `baseline_sha` (string, optional): Fixed git commit SHA for consistent diffs throughout phase
-- `plan_sha` (string, optional): Hash of plan.yaml at phase start (phase binding)
-- `manifest_sha` (string, optional): Hash of protocol_manifest.json at phase start (phase binding)
+- `phase_id` - Phase identifier matching plan.yaml
+- `brief_path` - Relative path to phase brief
+- `baseline_sha` - Fixed git commit SHA for consistent diffs throughout phase
+- `plan_sha` - Hash of plan.yaml at phase start (tamper detection)
+- `manifest_sha` - Hash of protocol_manifest.json at phase start (tamper detection)
 
-**Read this first** when recovering context.
-
-**Baseline SHA:** Captured at phase start via `git rev-parse HEAD`. All gates (drift, docs, LLM) use this as the diff anchor instead of dynamic merge-base. This prevents false drift positives as the base branch advances.
+**Baseline SHA:** Captured at phase start via `git rev-parse HEAD`. All gates use this as the diff anchor instead of dynamic merge-base, preventing false drift positives as the base branch advances.
 
 ---
 
@@ -73,25 +92,25 @@ Points to the active phase.
 
 Defines roadmap, phases, scope, and quality gates.
 
-**Format:**
+**Example:**
 ```yaml
 plan:
   id: PROJECT-ID
-  summary: "Short description of overall goal"
+  summary: "Project description"
   base_branch: "main"
   test_command: "pytest tests/ -v"  # Optional, defaults to pytest
   lint_command: "ruff check ."      # Optional, defaults to ruff
 
-  # LLM review configuration (Phase 2 - optional)
+  # LLM review configuration (optional)
   llm_review_config:
-    model: "claude-sonnet-4-20250514"       # Model to use
-    max_tokens: 2000                         # Max response tokens
-    temperature: 0                           # Response randomness
-    timeout_seconds: 60                      # API timeout
-    budget_usd: null                         # Cost limit (null = no limit)
-    fail_on_transport_error: false           # Block on API errors (false = resilient)
-    include_extensions: [".py"]              # File extensions to review
-    exclude_patterns: []                     # Patterns to skip (e.g., "**/test_*.py")
+    model: "claude-sonnet-4-20250514"
+    max_tokens: 2000
+    temperature: 0
+    timeout_seconds: 60
+    budget_usd: null
+    fail_on_transport_error: false
+    include_extensions: [".py"]
+    exclude_patterns: []
 
   phases:
     - id: P01-phase-name
@@ -105,7 +124,10 @@ plan:
         must_exist: ["src/module/file.py", "tests/test_file.py"]
 
       gates:
-        tests: { must_pass: true }
+        tests:
+          must_pass: true
+          test_scope: "scope"  # "scope" | "all" (default: "all")
+          quarantine: []       # Tests expected to fail (optional)
         lint:  { must_pass: true }
         docs: { must_update: ["docs/module.md"] }
         drift: { allowed_out_of_scope_changes: 0 }
@@ -116,13 +138,11 @@ plan:
 ```
 
 **Key sections:**
-- **scope.include**: Glob patterns defining files you MAY modify
-- **scope.exclude**: Patterns within include to exclude
-- **artifacts.must_exist**: Files that must exist after implementation
-- **gates**: Quality checks enforced by judge
-- **drift_rules.forbid_changes**: Files that absolutely cannot change
-
-**The judge validates all gates before approval.**
+- `scope.include` - Glob patterns defining files you MAY modify
+- `scope.exclude` - Patterns within include to exclude
+- `artifacts.must_exist` - Files that must exist after implementation
+- `gates` - Quality checks enforced by judge
+- `drift_rules.forbid_changes` - Files that absolutely cannot change
 
 ---
 
@@ -157,7 +177,7 @@ What to accomplish
 ...
 ```
 
-**Read the entire brief** before making any changes.
+**Read the entire brief before making any changes.**
 
 ---
 
@@ -165,7 +185,7 @@ What to accomplish
 
 Judge feedback when phase needs revision.
 
-**Format:**
+**Example:**
 ```markdown
 # Critique: P01-scaffold
 
@@ -186,64 +206,14 @@ Options to fix:
 ## Resolution
 
 Please address the issues above and re-run:
-```
 ./tools/phasectl.py review P01-scaffold
-```
 ```
 
 **When this file exists:**
 1. Read it completely
-2. Fix all issues listed
+2. Fix ALL issues listed (don't iterate issue-by-issue)
 3. Re-run `./tools/phasectl.py review <phase-id>`
 4. Repeat until `.repo/critiques/<phase-id>.OK` appears
-
----
-
-### `.repo/critiques/<phase-id>.json`
-
-Machine-readable critique format (Phase 2 addition). Written alongside `.md` for CI/tooling integration.
-
-**Format:**
-```json
-{
-  "phase": "P01-scaffold",
-  "timestamp": 1760234567.0,
-  "passed": false,
-  "issues": [
-    {
-      "gate": "tests",
-      "messages": [
-        "Tests failed with exit code 1. See .repo/traces/last_test.txt"
-      ]
-    },
-    {
-      "gate": "drift",
-      "messages": [
-        "Out-of-scope changes detected (3 files, 0 allowed):",
-        "  - README.md",
-        "  - tools/judge.py",
-        "  - requirements.txt"
-      ]
-    }
-  ],
-  "total_issue_count": 2
-}
-```
-
-**Fields:**
-- `phase` (string): Phase identifier
-- `timestamp` (float): Unix timestamp when critique was generated
-- `passed` (boolean): Always `false` for critiques
-- `issues` (array): List of issues grouped by gate
-  - `gate` (string): Gate that failed (tests, drift, docs, artifacts, lint, llm_review)
-  - `messages` (array of strings): Issue descriptions for this gate
-- `total_issue_count` (int): Total number of gate failures
-
-**Use this for:**
-- CI/CD integration (parse verdict without regex)
-- Automated reporting and dashboards
-- Programmatic critique analysis
-- Machine learning on failure patterns
 
 ---
 
@@ -262,11 +232,31 @@ Phase P01-scaffold approved at 1760223767.123
 
 ---
 
-### `.repo/critiques/<phase-id>.OK.json`
+### `.repo/critiques/<phase-id>.json` and `.repo/critiques/<phase-id>.OK.json`
 
-Machine-readable approval format (Phase 2 addition). Written alongside `.OK` for CI/tooling integration.
+Machine-readable critique/approval formats for CI/tooling integration.
 
-**Format:**
+**Critique format:**
+```json
+{
+  "phase": "P01-scaffold",
+  "timestamp": 1760234567.0,
+  "passed": false,
+  "issues": [
+    {
+      "gate": "tests",
+      "messages": ["Tests failed with exit code 1. See .repo/traces/last_test.txt"]
+    },
+    {
+      "gate": "drift",
+      "messages": ["Out-of-scope changes detected (3 files, 0 allowed):", "  - README.md"]
+    }
+  ],
+  "total_issue_count": 2
+}
+```
+
+**Approval format:**
 ```json
 {
   "phase": "P01-scaffold",
@@ -276,23 +266,11 @@ Machine-readable approval format (Phase 2 addition). Written alongside `.OK` for
 }
 ```
 
-**Fields:**
-- `phase` (string): Phase identifier
-- `timestamp` (float): Unix timestamp when approval was generated
-- `passed` (boolean): Always `true` for approvals
-- `approved_at` (float): Unix timestamp of approval (same as timestamp)
-
-**Use this for:**
-- CI/CD integration (programmatic approval checks)
-- Automated advancement to next phase
-- Build pipeline triggers
-- Audit trail and reporting
-
 ---
 
 ### `.repo/traces/last_test.txt`
 
-Test execution results.
+Test execution results. **Read this when tests fail.**
 
 **Format:**
 ```
@@ -305,85 +283,6 @@ Timestamp: 1760232719.972681
 === STDERR ===
 [error output if any]
 ```
-
-**Read this when tests fail** to understand what broke.
-
----
-
-## Scope Rules and Drift Prevention
-
-**The judge enforces scope boundaries using git diff.**
-
-### Include/Exclude Patterns
-
-From plan.yaml:
-```yaml
-scope:
-  include: ["src/mvp/**", "tests/mvp/**"]
-  exclude: ["src/**/legacy/**"]
-```
-
-**Matching rules:**
-- Uses `pathspec` library (.gitignore-style glob patterns) with graceful fallback to `fnmatch`
-- `**` matches multiple directory levels recursively (e.g., `src/**/*.py` matches `src/foo/bar/baz.py`)
-- `*` matches anything in one level (e.g., `src/*.py` matches `src/foo.py` but not `src/sub/bar.py`)
-- File must match `include` AND NOT match `exclude`
-
-**Example:**
-- `src/mvp/feature.py` → ✅ In scope (matches `src/**/*.py`)
-- `src/mvp/sub/deep.py` → ✅ In scope (matches `src/**/*.py`)
-- `src/mvp/legacy/old.py` → ❌ Excluded (matches `**/legacy/**`)
-- `tools/judge.py` → ❌ Not in include patterns
-
-**Note:** Proper globstar (`**`) support requires `pathspec>=0.11.0` in requirements.txt. Without it, the system falls back to `fnmatch` with limited `**` support.
-
-### Drift Detection
-
-Judge runs:
-```bash
-# Uncommitted changes
-git diff --name-only HEAD
-
-# Committed changes from baseline (preferred)
-git diff --name-only <baseline_sha>...HEAD
-
-# OR fallback to merge-base (if no baseline_sha)
-git merge-base HEAD main
-git diff --name-only <merge-base>...HEAD
-```
-
-**Baseline SHA approach (Phase 1):**
-- Captured at phase start: `baseline_sha = git rev-parse HEAD`
-- Stored in `.repo/briefs/CURRENT.json`
-- Used consistently by all gates (drift, docs, LLM)
-- **Advantage:** Diffs remain stable even as base branch advances
-- **Fallback:** If no `baseline_sha`, uses merge-base (may drift)
-
-**Then classifies each file:**
-- If matches scope.include AND NOT scope.exclude → in-scope
-- Otherwise → out-of-scope
-
-**Drift gate:**
-```yaml
-drift:
-  allowed_out_of_scope_changes: 0
-```
-
-If `out_of_scope_count > allowed`, review fails.
-
-**Why baseline SHA matters:** Without it, diffs use merge-base with main. As main advances during overnight work, earlier commits from the same branch appear as "out-of-scope" in later phases, causing false positives.
-
-### Forbidden Changes
-
-From plan.yaml:
-```yaml
-drift_rules:
-  forbid_changes: ["requirements.txt", "pyproject.toml"]
-```
-
-**If ANY forbidden file changes, review fails immediately.**
-
-Use this for files that require separate dedicated phases (dependencies, CI config, etc.).
 
 ---
 
@@ -401,6 +300,8 @@ artifacts:
 **Check:** Files exist and are not empty
 
 **Fails if:** Any file missing or zero bytes
+
+---
 
 ### 2. Tests Gate
 
@@ -438,16 +339,8 @@ gates:
 - Fast: Doesn't run 1000 unrelated legacy tests
 - Focused: Only tests what you're changing
 - Prevents irrelevant failures from blocking progress
-- Aligns with scope philosophy
 
-**`test_scope: "all"`** - Run entire test suite (default behavior)
-
-**Example output:**
-```
-🧪 Running tests...
-  📍 Test scope: Running tests matching phase scope
-  Running: pytest tests/mvp/ -v
-```
+**`test_scope: "all"`** - Run entire test suite (default)
 
 #### Test Quarantine (Phase 2.5)
 
@@ -470,29 +363,13 @@ gates:
 - Tests dependent on infrastructure not yet built
 - Legacy tests unrelated to current work
 
-**Benefits:**
-- Documents WHY test is skipped (version controlled)
-- Temporary escape hatch (visible in plan.yaml)
-- Agent-friendly (clear signal "this failure is expected")
-- Uses pytest `--deselect` (standard mechanism)
-
-**Example output:**
-```
-🧪 Running tests...
-  ⚠️  Quarantined tests (2 tests will be skipped):
-     - tests/mvp/test_legacy.py::test_deprecated_endpoint
-       Reason: Removing this endpoint in P02, tests updated in P03
-     - tests/integration/test_external_api.py::test_timeout
-       Reason: External API occasionally times out, non-blocking
-
-  Running: pytest tests/ --deselect tests/mvp/test_legacy.py::test_deprecated_endpoint --deselect tests/integration/test_external_api.py::test_timeout -v
-```
-
 **Best practices:**
-- Use `test_scope: "scope"` as primary mechanism (most common)
+- Use `test_scope: "scope"` as primary mechanism
 - Use `quarantine` sparingly for specific exceptions
-- Document reason clearly (future maintainers need context)
+- Document reason clearly
 - Remove from quarantine list once fixed
+
+---
 
 ### 3. Lint Gate (Optional)
 
@@ -509,6 +386,8 @@ gates:
 
 **See:** `.repo/traces/last_lint.txt` for details
 
+---
+
 ### 4. Docs Gate
 
 ```yaml
@@ -522,6 +401,8 @@ gates:
 
 **Note:** Supports section anchors like `docs/module.md#feature` (checks base file)
 
+---
+
 ### 5. Drift Gate
 
 ```yaml
@@ -533,7 +414,9 @@ gates:
 
 **Fails if:** More out-of-scope changes than allowed
 
-**See:** "Scope Rules" section above
+**See:** "Scope Rules" section below
+
+---
 
 ### 6. LLM Review Gate (Optional)
 
@@ -550,9 +433,83 @@ gates:
 
 **Reviews only:** Files changed in `git diff --name-only HEAD`
 
+**When to use:**
+- High-stakes code (security, payments, data migrations)
+- Autonomous overnight execution (extra validation)
+
+**When to skip:**
+- Low-risk changes
+- Cost-sensitive projects
+
 ---
 
-## Commands Reference
+## Scope Rules and Drift Prevention
+
+**The judge enforces scope boundaries using git diff.**
+
+### Include/Exclude Patterns
+
+From plan.yaml:
+```yaml
+scope:
+  include: ["src/mvp/**", "tests/mvp/**"]
+  exclude: ["src/**/legacy/**"]
+```
+
+**Matching rules:**
+- Uses `pathspec` library (.gitignore-style glob patterns)
+- `**` matches multiple directory levels recursively
+- `*` matches anything in one level
+- File must match `include` AND NOT match `exclude`
+
+**Example:**
+- `src/mvp/feature.py` → ✅ In scope
+- `src/mvp/sub/deep.py` → ✅ In scope
+- `src/mvp/legacy/old.py` → ❌ Excluded
+- `tools/judge.py` → ❌ Not in include patterns
+
+### Drift Detection
+
+Judge runs:
+```bash
+# Uncommitted changes
+git diff --name-only HEAD
+
+# Committed changes from baseline (preferred)
+git diff --name-only <baseline_sha>...HEAD
+
+# OR fallback to merge-base (if no baseline_sha)
+git merge-base HEAD main
+git diff --name-only <merge-base>...HEAD
+```
+
+**Then classifies each file:**
+- If matches scope.include AND NOT scope.exclude → in-scope
+- Otherwise → out-of-scope
+
+**Drift gate:**
+```yaml
+drift:
+  allowed_out_of_scope_changes: 0
+```
+
+If `out_of_scope_count > allowed`, review fails.
+
+### Forbidden Changes
+
+From plan.yaml:
+```yaml
+drift_rules:
+  forbid_changes: ["requirements.txt", "pyproject.toml"]
+```
+
+**If ANY forbidden file changes, review fails immediately.**
+
+Use this for files that require separate dedicated phases.
+
+---
+
+## Commands
 
 ### `./orient.sh`
 
@@ -569,25 +526,7 @@ gates:
 - When starting new session
 - When you're confused about state
 
-**Example output:**
-```
-🎯 Current Phase: P02-impl-feature (2/2)
-
-📊 Progress:
-✅ P01-scaffold (approved)
-⚠️  P02-impl-feature (needs fixes)
-
-📄 Current Brief:
-.repo/briefs/P02-impl-feature.md
-
-🔍 Status:
-Critique exists: .repo/critiques/P02-impl-feature.md
-
-⏭️  Next Steps:
-1. Read critique: cat .repo/critiques/P02-impl-feature.md
-2. Fix issues
-3. Re-submit: ./tools/phasectl.py review P02-impl-feature
-```
+---
 
 ### `./tools/phasectl.py review <phase-id>`
 
@@ -610,6 +549,8 @@ Critique exists: .repo/critiques/P02-impl-feature.md
 ./tools/phasectl.py review P02-impl-feature
 ```
 
+---
+
 ### `./tools/phasectl.py next`
 
 **Purpose:** Advance to next phase
@@ -624,19 +565,11 @@ Critique exists: .repo/critiques/P02-impl-feature.md
 - `0` - Advanced successfully or all phases complete
 - `1` - Error (current phase not approved, next brief missing, etc.)
 
-**Example:**
-```bash
-./tools/phasectl.py next
-# Output:
-# ➡️  Advanced to phase P03-refactor
-# 📄 Brief: .repo/briefs/P03-refactor.md
-```
-
 **Only run this after** `.repo/critiques/<phase-id>.OK` exists.
 
 ---
 
-## Error Handling and Recovery
+## Error Handling
 
 ### Tests Failing
 
@@ -647,6 +580,8 @@ Critique exists: .repo/critiques/P02-impl-feature.md
 2. Find failing test in STDOUT/STDERR
 3. Fix the code or test
 4. Re-run `./tools/phasectl.py review <phase-id>`
+
+---
 
 ### Out-of-Scope Changes
 
@@ -666,6 +601,8 @@ Edit `.repo/briefs/<phase-id>.md` and plan.yaml to include the files, then re-re
 **Option 3 - Split phase:**
 Create a new phase for the out-of-scope work after current phase completes.
 
+---
+
 ### Forbidden Files Changed
 
 **Symptom:** "Forbidden files changed"
@@ -677,6 +614,8 @@ git checkout HEAD requirements.txt pyproject.toml
 ```
 
 **Never change forbidden files** without creating a dedicated phase.
+
+---
 
 ### LLM Review Failures
 
@@ -690,6 +629,8 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 Or disable LLM review in plan.yaml if not needed.
 
+---
+
 ### Missing Artifacts
 
 **Symptom:** "Missing required artifact: src/module/file.py"
@@ -698,6 +639,8 @@ Or disable LLM review in plan.yaml if not needed.
 1. Create the missing file
 2. Ensure it's not empty
 3. Re-run review
+
+---
 
 ### Context Window Exhausted
 
@@ -731,11 +674,11 @@ From the brief, identify:
 - ❌ Files you must NOT touch
 - 🤔 Files that need separate phase
 
-**If you need something out of scope:** Stop. Create a follow-up phase.
+**If you need something out of scope:** Stop. Note it for a follow-up phase.
 
 ### 3. Run Review Early
 
-Don't wait until "done" to run review. Run it when you think you're close:
+Don't wait until "done" to run review:
 
 ```bash
 ./tools/phasectl.py review <phase-id>
@@ -782,425 +725,34 @@ Shows exactly what to do next.
 
 ---
 
-## Multi-Phase Workflow Example
-
-**Scenario:** 3-phase refactor
-
-**Setup:**
-- P01: Scaffold new module
-- P02: Implement core feature
-- P03: Refactor + optimize
-
-**Execution:**
-
-```bash
-# Start
-./orient.sh
-# → Shows P01-scaffold is current phase
-
-# Read brief
-cat .repo/briefs/P01-scaffold.md
-# → Scope: src/mvp/**, tests/mvp/**, docs/mvp.md
-
-# Implement
-# ... create src/mvp/__init__.py
-# ... create tests/mvp/test_golden.py
-# ... create docs/mvp.md
-
-# Review
-./tools/phasectl.py review P01-scaffold
-# → Shows diff summary
-# → Runs tests
-# → Judge checks gates
-# → Creates .repo/critiques/P01-scaffold.OK ✅
-
-# Advance
-./tools/phasectl.py next
-# → Updates CURRENT.json to P02-impl-feature
-
-# Read next brief
-cat .repo/briefs/P02-impl-feature.md
-# → Scope: src/mvp/feature.py, tests/mvp/test_feature.py
-
-# Implement
-# ... create src/mvp/feature.py
-# ... create tests/mvp/test_feature.py
-# ... accidentally edit tools/judge.py (drift!)
-
-# Review
-./tools/phasectl.py review P02-impl-feature
-# → Diff summary: ❌ Out of scope (1 file)
-# → Judge creates critique
-
-# Read critique
-cat .repo/critiques/P02-impl-feature.md
-# → "Out-of-scope changes: tools/judge.py"
-# → "Fix: git checkout HEAD tools/judge.py"
-
-# Fix
-git checkout HEAD tools/judge.py
-
-# Re-review
-./tools/phasectl.py review P02-impl-feature
-# → All gates pass ✅
-
-# Advance
-./tools/phasectl.py next
-# → Updates to P03-refactor
-
-# ... continue for P03
-```
-
-**Result:** 3 phases completed, each validated, no drift.
-
----
-
-## What Happens During Review
-
-Detailed breakdown of `./tools/phasectl.py review <phase-id>`:
-
-**Step 1: Diff Summary**
-- Runs `git diff --name-only HEAD` (uncommitted)
-- Runs `git diff --name-only <merge-base>...HEAD` (committed)
-- Combines both lists
-- Classifies each file as in-scope or out-of-scope
-- Shows:
-  ```
-  📊 Change Summary:
-  ✅ In scope (3 files):
-    - src/mvp/feature.py
-    - tests/mvp/test_feature.py
-    - docs/mvp.md
-
-  ❌ Out of scope (1 file):
-    - tools/judge.py
-
-  ⚠️  Drift limit: 0 files allowed, 1 found
-  ```
-
-**Step 2: Run Tests**
-- Gets test command from plan.yaml (defaults to `pytest tests/ -v`)
-- Checks if test runner installed
-- Runs tests
-- Saves stdout/stderr to `.repo/traces/last_test.txt`
-- Continues even if tests fail (judge will catch it)
-
-**Step 3: Invoke Judge**
-- Runs `./tools/judge.py <phase-id>`
-- Judge performs 5 checks (artifacts, tests, docs, drift, LLM)
-- Each check returns list of issues
-- If any issues found → writes `.repo/critiques/<phase-id>.md`
-- If zero issues → writes `.repo/critiques/<phase-id>.OK`
-
-**Step 4: Show Verdict**
-- If `.OK` exists: "✅ Phase approved!"
-- If `.md` exists: "❌ Phase needs revision:" + shows critique
-- Exit with appropriate code (0=approved, 1=critique, 2=error)
-
----
-
-## File-Based State Management
-
-**Why files?**
-- **Context-window proof:** All state recoverable from disk
-- **No memory needed:** New instance can resume work instantly
-- **Debuggable:** `ls .repo/critiques/` shows status
-- **Version controlled:** Git tracks all state changes
-- **Tool-agnostic:** Any tool can read/write these files
-
-**What's NOT in files:**
-- Nothing. Everything is on disk.
-
-**Recovery from any state:**
-1. `./orient.sh` → See current phase and status
-2. `cat .repo/briefs/CURRENT.json` → Get phase ID
-3. `cat .repo/briefs/<phase-id>.md` → Read instructions
-4. `ls .repo/critiques/` → Check if approved or needs fixes
-5. Resume work
-
-**No exceptions. No hidden state. No surprises.**
-
----
-
-## When to Create New Phases
-
-**Create a new phase when:**
-
-1. **Out-of-scope changes needed**
-   - Current scope doesn't allow the files you need to change
-   - Judge will block you with drift errors
-   - Solution: Create a phase after current one with correct scope
-
-2. **Forbidden files need changes**
-   - `requirements.txt`, `pyproject.toml`, CI configs
-   - These typically require dedicated phases
-   - Keeps dependency changes isolated and reviewable
-
-3. **Work crosses multiple modules**
-   - Each phase should have cohesive scope
-   - If refactoring 3 modules, consider 3 phases
-   - Easier to review, easier to rollback
-
-4. **Testing strategy changes**
-   - Phase 1: Implement feature
-   - Phase 2: Add integration tests
-   - Separate concerns, separate gates
-
-5. **High-risk changes**
-   - Database migrations
-   - API contract changes
-   - Give these dedicated phases with strict gates
-
-**Don't create phases for:**
-- Minor tweaks within current scope
-- Documentation updates in-scope
-- Test fixes for current feature
-
-**When in doubt:** Can this be reviewed as one cohesive change? If yes → same phase. If no → new phase.
-
----
-
-## LLM Review Details
-
-**When enabled:**
-```yaml
-gates:
-  llm_review: { enabled: true }
-```
-
-**What it does:**
-1. Runs `git diff --name-only HEAD` to find changed files
-2. Reads each changed file's content
-3. Sends to Claude with this prompt:
-   ```
-   Review this code for architecture issues, bugs, or anti-patterns.
-   Focus on: correctness, maintainability, performance, security.
-   If you find issues, list them clearly.
-   If code looks good, respond "LGTM".
-   ```
-4. Parses response
-5. If issues found → adds to critique
-6. If "LGTM" → gate passes
-
-**Requirements:**
-- `ANTHROPIC_API_KEY` environment variable
-- `anthropic` Python package installed
-
-**Costs:**
-- ~$0.01-0.10 per review depending on file count/size
-- Only reviews changed files (not all in-scope files)
-
-**When to use:**
-- High-stakes code (security, payments, data migrations)
-- Autonomous overnight execution (extra validation)
-- Learning projects (get feedback on approach)
-
-**When to skip:**
-- Low-risk changes
-- Cost-sensitive projects
-- You prefer manual review
-
----
-
-## Protocol Integrity Protection
-
-### What's Protected
-
-The protocol prevents autonomous agents from modifying critical files:
-- **Judge logic** (`tools/judge.py`)
-- **Controller logic** (`tools/phasectl.py`)
-- **Shared utilities** (`tools/lib/**`)
-- **Plan configuration** (`.repo/plan.yaml`)
-- **Protocol manifest** (`.repo/protocol_manifest.json`)
-
-### How It Works
-
-**1. Protocol Manifest**
-
-`.repo/protocol_manifest.json` contains SHA256 hashes of all protocol files.
-
-**2. Integrity Check**
-
-At judge startup, before any other gates:
-- Judge verifies its own hash (self-check)
-- Judge verifies all protected files match manifest hashes
-- Judge verifies `plan.yaml` and manifest haven't changed mid-phase
-- If ANY mismatch → immediate failure with clear error message
-
-**3. Phase Binding**
-
-When advancing to a new phase, `phasectl.py` stores hashes of:
-- `.repo/plan.yaml` (current plan state)
-- `.repo/protocol_manifest.json` (current manifest state)
-
-These hashes are checked on every judge run to detect mid-phase tampering.
-
-**4. Protocol Maintenance Phases**
-
-To modify protocol files:
-1. Complete current phase
-2. Create a dedicated `P00-protocol-maintenance` phase in `plan.yaml`
-3. Make protocol changes within that phase
-4. Run `./tools/generate_manifest.py` to update hashes
-5. Complete maintenance phase and advance
-
-### Error Messages
-
-**Judge tampered:**
-```
-🚨 JUDGE TAMPER DETECTED: tools/judge.py
-   Expected: abc123...
-   Actual:   def456...
-   The judge has been modified. This is a critical protocol violation.
-```
-
-**Plan changed mid-phase:**
-```
-Plan changed mid-phase: .repo/plan.yaml
-   Expected: abc123...
-   Actual:   def456...
-   The plan cannot be modified during phase execution.
-```
-
-**Protocol file modified:**
-```
-Protocol file modified: tools/phasectl.py
-   Expected: abc123...
-   Actual:   def456...
-```
-
-### Configuration
-
-In `.repo/plan.yaml`:
-
-```yaml
-plan:
-  protocol_lock:
-    protected_globs:
-      - "tools/**"
-      - ".repo/plan.yaml"
-      - ".repo/protocol_manifest.json"
-    allow_in_phases:
-      - "P00-protocol-maintenance"
-```
-
-### For Autonomous Agents
+## Protocol Integrity
+
+The protocol protects critical files from modification:
+- Judge logic (`tools/judge.py`)
+- Controller logic (`tools/phasectl.py`)
+- Shared utilities (`tools/lib/**`)
+- Plan configuration (`.repo/plan.yaml`)
+- Protocol manifest (`.repo/protocol_manifest.json`)
+
+**How it works:**
+1. `.repo/protocol_manifest.json` contains SHA256 hashes of all protocol files
+2. At judge startup, before any gates: verify all hashes match
+3. At phase start: store hashes of plan.yaml and manifest for mid-phase tamper detection
+4. If ANY mismatch → immediate failure with clear error message
+
+**For autonomous agents:**
 
 **DO NOT:**
 - Modify files in `tools/**`
 - Edit `.repo/plan.yaml` gates or phases
 - Change `.repo/protocol_manifest.json`
-- Modify protocol files during normal phases
 
-**If you need to fix judge bugs:**
+**If you need to fix protocol bugs:**
 1. Complete current phase
 2. Ask human to create protocol maintenance phase
 3. Make fixes in that dedicated phase
 4. Run `./tools/generate_manifest.py`
 5. Complete maintenance phase
-
-### For Humans
-
-**Tuning gates (allowed anytime):**
-- Edit `.repo/plan.yaml` gate thresholds
-- Adjust scope patterns
-- Modify test commands
-- Change phase descriptions
-
-**Modifying protocol logic (requires maintenance phase):**
-- Changing judge gate checks
-- Updating phasectl flow
-- Modifying shared utilities
-
-**To create a maintenance phase:**
-
-```yaml
-phases:
-  - id: P00-protocol-maintenance
-    description: "Update judge to add security gate"
-    scope:
-      include: ["tools/**", ".repo/protocol_manifest.json"]
-    gates:
-      tests: { must_pass: true }
-```
-
-After completing maintenance:
-```bash
-./tools/generate_manifest.py
-./tools/phasectl.py review P00-protocol-maintenance
-./tools/phasectl.py next
-```
-
----
-
-## This Protocol vs Frameworks
-
-**This is a protocol, not a framework.**
-
-You don't install it, you follow it.
-
-**What that means:**
-
-**Frameworks:**
-- Import classes: `from framework import Agent`
-- Learn API: `agent.run(task)`
-- Dependency: `pip install framework`
-
-**This protocol:**
-- Follow conventions: `.repo/briefs/CURRENT.json`
-- Run commands: `./tools/phasectl.py review P01`
-- No imports: Just files and shell scripts
-
-**Like Git:**
-- Git doesn't dictate your code
-- Git defines conventions (`.git/`, `HEAD`, commits)
-- Tools follow those conventions
-- This protocol is the same
-
-**You could:**
-- Rewrite `phasectl.py` in Bash
-- Rewrite `judge.py` in Rust
-- Use Make instead of Python
-
-**As long as:**
-- You write `.repo/briefs/CURRENT.json` correctly
-- You read `plan.yaml` correctly
-- You create `.repo/critiques/<phase-id>.OK` on approval
-
-**The protocol is the spec. This repo is one implementation.**
-
----
-
-## Quick Command Cheat Sheet
-
-```bash
-# Recover context
-./orient.sh
-
-# Check current phase
-cat .repo/briefs/CURRENT.json
-
-# Read current brief
-cat .repo/briefs/$(jq -r .phase_id < .repo/briefs/CURRENT.json).md
-
-# Submit for review
-./tools/phasectl.py review <phase-id>
-
-# Check if approved
-ls .repo/critiques/<phase-id>.OK
-
-# Read critique if failed
-cat .repo/critiques/<phase-id>.md
-
-# Advance to next phase
-./tools/phasectl.py next
-
-# See test results
-cat .repo/traces/last_test.txt
-
-# Check diff before review
-git diff --name-only HEAD
-```
 
 ---
 
@@ -1208,28 +760,13 @@ git diff --name-only HEAD
 
 **The protocol in one sentence:**
 
-Read brief → Implement within scope → Review with judge → Fix issues → Advance → Repeat until roadmap complete.
+Read brief → Implement within scope → Review with judge → Fix issues → Advance → Repeat.
 
-**Key principles:**
-1. All state in files (context-window proof)
-2. Judge enforces gates (quality guaranteed)
-3. Scope boundaries prevent drift (focus maintained)
-4. Autonomous execution (overnight work possible)
-5. Protocol, not framework (simple, replaceable)
-
-**Your job as an LLM agent:**
+**Your job:**
 1. Follow the brief exactly
 2. Respect scope boundaries
 3. Submit for review when done
 4. Fix critiques completely
 5. Advance only when approved
-
-**The judge's job:**
-1. Enforce quality gates
-2. Prevent scope drift
-3. Block progression until all gates pass
-4. Provide actionable feedback
-
-**Together:** You get autonomous multi-phase execution with quality guarantees.
 
 **Start here:** `./orient.sh`

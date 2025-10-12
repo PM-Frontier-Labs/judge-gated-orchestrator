@@ -161,26 +161,53 @@ judge-gated-orchestrator/
 └── README.md             # This file
 ```
 
-**For humans:** Read this file
-**For LLMs:** Read `PROTOCOL.md`
-**To validate:** Read `TESTME.md`
+## Documentation Guide
+
+### For Humans 👤
+
+Start here if you're setting up or using the protocol:
+
+1. **README.md** (this file) - Overview, philosophy, and why this exists
+2. **GETTING_STARTED.md** - Practical guide from zero to running autonomous execution
+   - Installation and demo
+   - Setting up your project
+   - Planning your roadmap
+   - Executing phases with Claude
+   - Troubleshooting and tips
+
+### For AI Assistants 🤖
+
+**Planning mode** (collaborative roadmap creation):
+- **LLM_PLANNING.md** - Complete guide for helping humans design phases, scope, and gates
+- Use this when: Human says "help me create a plan.yaml" or "let's break this project into phases"
+
+**Execution mode** (autonomous phase implementation):
+- **PROTOCOL.md** - Execution manual with file specs, commands, gates, and error handling
+- Use this when: Human says "execute the current phase" or "read PROTOCOL.md and start working"
+
+### For Validation 🧪
+
+- **TESTME.md** - 12 tests to validate protocol implementation (25-30 minutes)
+
+### Navigation
+
+| Audience | Goal | Read This |
+|----------|------|-----------|
+| Human setting up | Understand what this is | README.md |
+| Human using it | Learn how to use | GETTING_STARTED.md |
+| AI planning roadmap | Help create plan.yaml | LLM_PLANNING.md |
+| AI executing phases | Implement within gates | PROTOCOL.md |
+| Anyone validating | Verify it works | TESTME.md |
 
 ## Next Steps
 
-### For Humans Evaluating This
+**New here?** Read `GETTING_STARTED.md` for a step-by-step guide.
 
-1. **Try the demo:** Follow "Quick Demo" above (30 seconds)
-2. **Read the protocol:** See `PROTOCOL.md` for detailed specs
-3. **Test it:** Follow `TESTME.md` validation steps
-4. **Implement your own phases:** Replace demo with your roadmap
+**Ready to use it?** Point Claude at `LLM_PLANNING.md` to design your roadmap.
 
-### For Claude Code / AI Agents
+**Want to validate?** Follow `TESTME.md` (12 tests, 25-30 minutes).
 
-Read `PROTOCOL.md` for execution instructions. That file contains the operational manual for working in this protocol.
-
-### For CI/CD Integration
-
-The protocol is just files + shell commands. Easy to integrate:
+**Integrating with CI/CD?** The protocol is just files + shell commands:
 ```bash
 ./tools/phasectl.py review $PHASE_ID
 if [ $? -eq 0 ]; then

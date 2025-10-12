@@ -41,20 +41,30 @@ def generate_package():
 # Purpose: Autonomous AI execution protocol with quality gates
 
 ===============================================================================
-SECTION 1: DOCUMENTATION
+SECTION 1: DOCUMENTATION (HUMANS)
 ===============================================================================
 
 --- README.md ---
 {read_file('README.md')}
 
---- PROTOCOL.md ---
-{read_file('PROTOCOL.md')}
+--- GETTING_STARTED.md ---
+{read_file('GETTING_STARTED.md')}
 
 --- TESTME.md ---
 {read_file('TESTME.md')}
 
 ===============================================================================
-SECTION 2: CORE TOOLS (PYTHON)
+SECTION 2: DOCUMENTATION (AI ASSISTANTS)
+===============================================================================
+
+--- LLM_PLANNING.md ---
+{read_file('LLM_PLANNING.md')}
+
+--- PROTOCOL.md ---
+{read_file('PROTOCOL.md')}
+
+===============================================================================
+SECTION 3: CORE TOOLS (PYTHON)
 ===============================================================================
 
 --- tools/phasectl.py ---
@@ -70,7 +80,7 @@ SECTION 2: CORE TOOLS (PYTHON)
 {read_file('tools/generate_manifest.py')}
 
 ===============================================================================
-SECTION 3: SHARED LIBRARIES
+SECTION 4: SHARED LIBRARIES
 ===============================================================================
 
 --- tools/lib/__init__.py ---
@@ -89,7 +99,7 @@ SECTION 3: SHARED LIBRARIES
 {read_file('tools/lib/protocol_guard.py')}
 
 ===============================================================================
-SECTION 4: TESTS
+SECTION 5: TESTS
 ===============================================================================
 
 --- tests/mvp/test_golden.py ---
@@ -105,7 +115,7 @@ SECTION 4: TESTS
 {read_file('tests/test_test_scoping.py')}
 
 ===============================================================================
-SECTION 5: CONFIGURATION
+SECTION 6: CONFIGURATION
 ===============================================================================
 
 --- .repo/plan.yaml ---
@@ -118,7 +128,7 @@ SECTION 5: CONFIGURATION
 {read_file('requirements.txt')}
 
 ===============================================================================
-SECTION 6: EXAMPLE CODE
+SECTION 7: EXAMPLE CODE
 ===============================================================================
 
 --- src/mvp/__init__.py ---
@@ -128,7 +138,7 @@ SECTION 6: EXAMPLE CODE
 {read_file('src/mvp/feature.py')}
 
 ===============================================================================
-SECTION 7: PROJECT STRUCTURE
+SECTION 8: PROJECT STRUCTURE
 ===============================================================================
 
 ```
@@ -167,7 +177,9 @@ judge-gated-orchestrator/
 ├── docs/mvp.md                  # Documentation
 ├── orient.sh                    # Status in 10 seconds
 ├── README.md                    # Human-readable overview
-├── PROTOCOL.md                  # LLM operational manual
+├── GETTING_STARTED.md           # Human setup and usage guide
+├── LLM_PLANNING.md              # AI planning mode guide
+├── PROTOCOL.md                  # AI execution mode manual
 ├── TESTME.md                    # Validation guide (12 tests)
 ├── COMPLETE_PACKAGE.txt         # Complete bundled codebase
 ├── COMPLETE_PACKAGE.md          # Markdown version
@@ -175,7 +187,7 @@ judge-gated-orchestrator/
 ```
 
 ===============================================================================
-SECTION 8: USAGE GUIDE
+SECTION 9: USAGE GUIDE
 ===============================================================================
 
 ## Quick Start
