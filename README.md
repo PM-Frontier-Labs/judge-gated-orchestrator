@@ -100,6 +100,30 @@ cat .repo/briefs/P02-impl-feature.md
 
 **That's it.** Claude Code (or any AI agent) can now work autonomously through all phases.
 
+## What the Demo Shows
+
+This repo includes a working 2-phase demo to prove the protocol works:
+
+**Phase P01 (Scaffold):**
+- Creates `src/mvp/__init__.py` with a `hello_world()` function
+- Adds test in `tests/mvp/test_golden.py`
+- Documents in `docs/mvp.md`
+- **Gates:** Tests pass, docs updated
+
+**Phase P02 (Feature):**
+- Adds `src/mvp/feature.py` with `calculate_score()` function
+- Adds tests in `tests/mvp/test_feature.py`
+- Updates docs
+- **Gates:** Tests pass, docs updated, LLM review
+
+**Purpose:** These are throwaway placeholder files. They exist only to demonstrate:
+- How to write phase briefs
+- How gates enforce quality
+- How review → critique → fix → approve works
+- That the protocol actually functions
+
+**Your turn:** Delete `src/mvp/`, `tests/mvp/`, `docs/mvp.md` and create your own phases. The protocol is the valuable part, not the demo code.
+
 ## File Format Reference
 
 ### `.repo/briefs/CURRENT.json`
@@ -128,7 +152,6 @@ plan:
       gates:
         tests: { must_pass: true }
         docs: { must_update: ["README.md"] }
-        drift: { allowed_out_of_scope_changes: 0 }
 ```
 
 ### `.repo/critiques/<phase>.md` (Needs Work)
@@ -173,13 +196,22 @@ As long as you follow the file conventions.
 
 Define gates in `plan.yaml`:
 
-| Gate | Checks | Example |
-|------|--------|---------|
-| **tests** | Test suite passes | `pytest` exit code 0 |
-| **docs** | Files updated | `README.md` modified |
-| **drift** | Scope boundaries | Only `src/` files changed |
-| **lint** | Code quality | Max complexity < 12 |
-| **llm_review** | Semantic check | Claude reviews architecture |
+| Gate | Checks | Status |
+|------|--------|--------|
+| **tests** | Test suite passes | ✅ Implemented |
+| **docs** | Files updated | ✅ Implemented |
+| **llm_review** | Semantic code review | ✅ Implemented (optional) |
+| **drift** | Scope boundaries | ⏳ Not yet implemented |
+| **lint** | Code quality rules | ⏳ Not yet implemented |
+
+**Implemented gates:**
+- `tests: { must_pass: true }` - Runs test command, fails if exit code != 0
+- `docs: { must_update: ["path/to/file.md"] }` - Checks files exist and not empty
+- `llm_review: { enabled: true }` - Claude reviews changed code (requires API key)
+
+**Roadmap gates:**
+- `drift: { allowed_out_of_scope_changes: 0 }` - Check git diff against scope patterns
+- `lint: { max_complexity: 10 }` - Static analysis rules
 
 ## Adding LLM Review (Optional)
 

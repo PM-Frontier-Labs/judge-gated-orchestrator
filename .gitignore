@@ -40,7 +40,6 @@ htmlcov/
 # Runtime files
 .repo/critiques/*.md
 .repo/critiques/*.OK
-.repo/status/*.json
 .repo/traces/*.txt
 
 # Environment variables

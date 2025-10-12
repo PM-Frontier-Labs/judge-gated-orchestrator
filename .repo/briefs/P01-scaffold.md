@@ -22,7 +22,6 @@ Create the skeleton module structure with a golden test and initial documentatio
 ## Gates
 - **Tests:** Must pass
 - **Docs:** Must update `docs/mvp.md`
-- **Drift:** 0 allowed out-of-scope changes
 
 ## Implementation Steps
 

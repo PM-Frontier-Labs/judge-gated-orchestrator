@@ -16,8 +16,7 @@ Implement a simple feature with refactoring and documentation section.
 ## Gates
 - **Tests:** Must pass
 - **Docs:** Must update `docs/mvp.md#feature` section
-- **Lint:** Max cyclomatic complexity 12
-- **Drift:** 0 allowed out-of-scope changes
+- **LLM Review:** Enabled (semantic code quality check)
 
 ## Implementation Steps
 
@@ -25,7 +24,6 @@ Implement a simple feature with refactoring and documentation section.
    - Create `src/mvp/feature.py`
    - Implement a `calculate_score(value: int) -> int` function
    - Function should validate input and return value * 2
-   - Keep cyclomatic complexity below 12
 
 2. **Create feature tests**
    - Create `tests/mvp/test_feature.py`
