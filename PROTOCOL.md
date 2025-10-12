@@ -47,7 +47,10 @@ Points to the active phase.
   "phase_id": "P01-scaffold",
   "brief_path": ".repo/briefs/P01-scaffold.md",
   "status": "active",
-  "started_at": 1760223767.0468428
+  "started_at": 1760223767.0468428,
+  "baseline_sha": "abc123def456",
+  "plan_sha": "789012345678",
+  "manifest_sha": "901234567890"
 }
 ```
 
@@ -56,8 +59,13 @@ Points to the active phase.
 - `brief_path` (string): Relative path to phase brief
 - `status` (string): Always "active" for current phase
 - `started_at` (float): Unix timestamp when phase started
+- `baseline_sha` (string, optional): Fixed git commit SHA for consistent diffs throughout phase
+- `plan_sha` (string, optional): Hash of plan.yaml at phase start (phase binding)
+- `manifest_sha` (string, optional): Hash of protocol_manifest.json at phase start (phase binding)
 
 **Read this first** when recovering context.
+
+**Baseline SHA:** Captured at phase start via `git rev-parse HEAD`. All gates (drift, docs, LLM) use this as the diff anchor instead of dynamic merge-base. This prevents false drift positives as the base branch advances.
 
 ---
 
@@ -229,15 +237,18 @@ scope:
 ```
 
 **Matching rules:**
-- Uses `fnmatch` (shell-style glob patterns)
-- `**` matches multiple directory levels
-- `*` matches anything in one level
+- Uses `pathspec` library (.gitignore-style glob patterns) with graceful fallback to `fnmatch`
+- `**` matches multiple directory levels recursively (e.g., `src/**/*.py` matches `src/foo/bar/baz.py`)
+- `*` matches anything in one level (e.g., `src/*.py` matches `src/foo.py` but not `src/sub/bar.py`)
 - File must match `include` AND NOT match `exclude`
 
 **Example:**
-- `src/mvp/feature.py` → ✅ In scope
-- `src/mvp/legacy/old.py` → ❌ Excluded
+- `src/mvp/feature.py` → ✅ In scope (matches `src/**/*.py`)
+- `src/mvp/sub/deep.py` → ✅ In scope (matches `src/**/*.py`)
+- `src/mvp/legacy/old.py` → ❌ Excluded (matches `**/legacy/**`)
 - `tools/judge.py` → ❌ Not in include patterns
+
+**Note:** Proper globstar (`**`) support requires `pathspec>=0.11.0` in requirements.txt. Without it, the system falls back to `fnmatch` with limited `**` support.
 
 ### Drift Detection
 
@@ -246,10 +257,20 @@ Judge runs:
 # Uncommitted changes
 git diff --name-only HEAD
 
-# Committed changes from base branch
+# Committed changes from baseline (preferred)
+git diff --name-only <baseline_sha>...HEAD
+
+# OR fallback to merge-base (if no baseline_sha)
 git merge-base HEAD main
 git diff --name-only <merge-base>...HEAD
 ```
+
+**Baseline SHA approach (Phase 1):**
+- Captured at phase start: `baseline_sha = git rev-parse HEAD`
+- Stored in `.repo/briefs/CURRENT.json`
+- Used consistently by all gates (drift, docs, LLM)
+- **Advantage:** Diffs remain stable even as base branch advances
+- **Fallback:** If no `baseline_sha`, uses merge-base (may drift)
 
 **Then classifies each file:**
 - If matches scope.include AND NOT scope.exclude → in-scope
@@ -262,6 +283,8 @@ drift:
 ```
 
 If `out_of_scope_count > allowed`, review fails.
+
+**Why baseline SHA matters:** Without it, diffs use merge-base with main. As main advances during overnight work, earlier commits from the same branch appear as "out-of-scope" in later phases, causing false positives.
 
 ### Forbidden Changes
 

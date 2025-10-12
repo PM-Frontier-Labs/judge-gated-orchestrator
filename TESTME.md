@@ -4,7 +4,9 @@
 
 **Purpose:** Validate the protocol implementation works correctly
 
-**Time:** 15-20 minutes for full validation
+**Time:** 20-25 minutes for full validation (includes Phase 1 enhancements)
+
+**Note:** Tests 10-11 validate Phase 1 critical fixes (baseline SHA stability and proper globstar pattern matching)
 
 ---
 
@@ -518,6 +520,100 @@ git branch -D test-protocol-integrity
 
 ---
 
+## Test 10: Baseline SHA Stability
+
+**Goal:** Verify baseline SHA provides consistent diffs throughout phase lifecycle
+
+**Background:** Phase 1 fix - prevents false drift positives as base branch advances.
+
+**Steps:**
+
+```bash
+# 1. Create test branch
+git checkout -b test-baseline-stability
+
+# 2. Check current CURRENT.json for baseline_sha
+cat .repo/briefs/CURRENT.json | grep baseline_sha
+# Expected: "baseline_sha": "abc123..." (captured at phase start)
+
+# 3. Record the baseline
+BASELINE=$(cat .repo/briefs/CURRENT.json | python3 -c "import sys, json; print(json.load(sys.stdin).get('baseline_sha', 'none'))")
+echo "Baseline SHA: $BASELINE"
+
+# 4. Make a change in scope
+echo "# Test change" >> src/mvp/feature.py
+
+# 5. Run review - should show the change
+./tools/phasectl.py review P02-impl-feature | grep "Change Summary"
+# Expected: Shows src/mvp/feature.py as in-scope
+
+# 6. Verify baseline hasn't changed
+BASELINE_AFTER=$(cat .repo/briefs/CURRENT.json | python3 -c "import sys, json; print(json.load(sys.stdin).get('baseline_sha', 'none'))")
+test "$BASELINE" = "$BASELINE_AFTER" && echo "✓ Baseline SHA stable" || echo "✗ Baseline changed!"
+
+# 7. Simulate main branch advancing (in real scenario, this would cause drift with merge-base)
+# With baseline_sha, the diff anchor remains fixed
+
+# 8. Clean up
+git checkout src/mvp/feature.py
+git checkout main
+git branch -D test-baseline-stability
+```
+
+**Success criteria:**
+- ✅ CURRENT.json contains baseline_sha field
+- ✅ Baseline SHA captured at phase start (git rev-parse HEAD)
+- ✅ Baseline remains stable throughout phase (doesn't change with new commits)
+- ✅ All gates (drift, docs, LLM) use same baseline
+- ✅ Diffs are consistent even as base branch advances
+
+**Why this matters:** Without baseline SHA, diffs use merge-base with main. As main advances during overnight work, earlier commits appear as "out-of-scope" causing false drift positives.
+
+---
+
+## Test 11: Scope Pattern Matching
+
+**Goal:** Verify proper globstar (`**`) support for nested directory matching
+
+**Background:** Phase 1 fix - replaced fnmatch with pathspec for accurate pattern matching.
+
+**Steps:**
+
+```bash
+# Run the dedicated scope matching tests
+pytest tests/test_scope_matching.py -v
+
+# Expected output:
+# test_globstar_recursive_matching PASSED
+# test_single_star_vs_double_star PASSED
+# test_exclude_patterns PASSED
+# test_multiple_include_patterns PASSED
+# test_forbidden_files PASSED
+# test_forbidden_with_wildcards PASSED
+# test_edge_case_empty_patterns PASSED
+# test_edge_case_no_files PASSED
+# test_gitignore_style_patterns PASSED
+```
+
+**What these tests verify:**
+
+1. **Globstar recursion**: `src/**/*.py` matches `src/foo/bar/deep/nested.py`
+2. **Single vs double star**: `src/*.py` vs `src/**/*.py` behavior
+3. **Exclude overrides**: `**/test_*.py` properly excludes test files
+4. **Multiple patterns**: Multiple include patterns work together
+5. **Forbidden files**: Forbidden pattern detection (e.g., `.env*`)
+6. **Edge cases**: Empty patterns, no files, nested exclusions
+
+**Success criteria:**
+- ✅ All 9 scope tests pass
+- ✅ Globstar `**` matches nested paths correctly
+- ✅ Pattern matching uses pathspec library (.gitignore-style)
+- ✅ Graceful fallback to fnmatch if pathspec unavailable
+
+**Why this matters:** Without pathspec, `fnmatch` fails on patterns like `src/**/*.py` for nested directories, causing false drift classification.
+
+---
+
 ## Full System Test
 
 **Goal:** Complete workflow from scratch
@@ -657,12 +753,13 @@ Use this to verify the system is production-ready:
 **Quality Gates:**
 - [ ] Protocol integrity detects judge tampering
 - [ ] Phase binding catches mid-phase plan changes
+- [ ] Baseline SHA provides stable diffs throughout phase
 - [ ] Tests gate catches test failures
-- [ ] Docs gate catches missing documentation
+- [ ] Docs gate catches missing documentation AND verifies actual changes
 - [ ] Drift gate catches out-of-scope changes
-- [ ] Drift gate respects include/exclude patterns
+- [ ] Drift gate respects include/exclude patterns with proper globstar support
 - [ ] Forbidden files are blocked
-- [ ] LLM review works when enabled (optional)
+- [ ] LLM review works when enabled (optional) and reviews all changes
 
 **Error Handling:**
 - [ ] Missing files produce clear errors
@@ -688,12 +785,14 @@ Use this to verify the system is production-ready:
 
 **The protocol implementation is valid if:**
 
-1. ✅ All 9 tests pass without modification
+1. ✅ All 11 tests pass without modification (including Phase 1 enhancements)
 2. ✅ Full system test completes successfully
 3. ✅ Validation checklist 100% checked
 4. ✅ Error handling graceful for all error conditions
 5. ✅ Context recovery works from any state
 6. ✅ Protocol integrity prevents agent self-modification
+7. ✅ Baseline SHA provides stable diffs (Test 10)
+8. ✅ Globstar pattern matching works correctly (Test 11)
 
 **When complete, you can confidently:**
 - Use the protocol for real projects
@@ -728,8 +827,8 @@ Open an issue or PR: https://github.com/PM-Frontier-Labs/judge-gated-orchestrato
 
 ---
 
-**Time to complete:** 15-20 minutes for full validation
+**Time to complete:** 20-25 minutes for full validation (includes Phase 1 tests)
 
 **Difficulty:** Beginner (just follow steps)
 
-**Result:** Confidence the protocol works as documented
+**Result:** Confidence the protocol works as documented, including Phase 1 critical fixes
