@@ -1,5 +1,6 @@
 # JUDGE-GATED ORCHESTRATOR - COMPLETE PACKAGE
-# Version: 1.0 (888 LOC, refactored Oct 2025)
+# Version: 2.5 (2183 LOC, includes Phase 1+2+2.5)
+# Generated: 2025-10-12
 # Purpose: Autonomous AI execution protocol with quality gates
 
 ===============================================================================
@@ -34,6 +35,7 @@ Any tool that follows these conventions can participate. This repo includes a re
 
 ✅ **Autonomous execution** - Agent works through phases without supervision
 ✅ **Quality enforcement** - Tests, docs, drift prevention, optional LLM review
+✅ **Protocol integrity** - SHA256-based tamper detection prevents agents from modifying judge
 ✅ **Context-window proof** - All state in files, `./orient.sh` recovers context in <10 seconds
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
@@ -94,11 +96,16 @@ pip install -r requirements.txt
 
 | Gate | What It Checks | Example |
 |------|----------------|---------|
+| **protocol_lock** | Protocol integrity | SHA256 verify `tools/judge.py` unchanged |
 | **tests** | Test suite passes | `pytest` exit code must be 0 |
 | **lint** | Static analysis | `ruff check .` exit code must be 0 |
 | **docs** | Files updated | `README.md` must be modified |
 | **drift** | Scope boundaries | Only `src/mvp/**` can change |
 | **llm_review** | Semantic quality | Claude reviews architecture |
+
+**Test scoping (Phase 2.5):**
+- `test_scope: "scope"` - Only run tests matching phase scope (fast, focused)
+- `quarantine: [...]` - Skip specific tests with documented reasons (flaky APIs, legacy tests)
 
 Gates are configurable per phase. Enforce what matters for your project.
 
@@ -152,11 +159,14 @@ judge-gated-orchestrator/
 │   │   ├── P01-scaffold.OK (approved)
 │   │   └── P02-impl-feature.md (needs fixes)
 │   ├── traces/           # Test output
-│   └── plan.yaml         # Roadmap + gates
+│   ├── plan.yaml         # Roadmap + gates
+│   └── protocol_manifest.json  # SHA256 hashes for integrity
 ├── tools/
 │   ├── phasectl.py       # Controller (review/next)
 │   ├── judge.py          # Gate validator
-│   └── llm_judge.py      # Optional LLM review
+│   ├── llm_judge.py      # Optional LLM review
+│   ├── generate_manifest.py  # Update protocol hashes
+│   └── lib/              # Shared utilities + protocol guard
 ├── orient.sh             # Status in 10 seconds
 └── README.md             # This file
 ```
@@ -214,6 +224,7 @@ Then read `PROTOCOL.md` to start working.
 
 MIT
 
+
 --- PROTOCOL.md ---
 # Gated Phase Protocol - LLM Operational Manual
 
@@ -264,7 +275,10 @@ Points to the active phase.
   "phase_id": "P01-scaffold",
   "brief_path": ".repo/briefs/P01-scaffold.md",
   "status": "active",
-  "started_at": 1760223767.0468428
+  "started_at": 1760223767.0468428,
+  "baseline_sha": "abc123def456",
+  "plan_sha": "789012345678",
+  "manifest_sha": "901234567890"
 }
 ```
 
@@ -273,8 +287,13 @@ Points to the active phase.
 - `brief_path` (string): Relative path to phase brief
 - `status` (string): Always "active" for current phase
 - `started_at` (float): Unix timestamp when phase started
+- `baseline_sha` (string, optional): Fixed git commit SHA for consistent diffs throughout phase
+- `plan_sha` (string, optional): Hash of plan.yaml at phase start (phase binding)
+- `manifest_sha` (string, optional): Hash of protocol_manifest.json at phase start (phase binding)
 
 **Read this first** when recovering context.
+
+**Baseline SHA:** Captured at phase start via `git rev-parse HEAD`. All gates (drift, docs, LLM) use this as the diff anchor instead of dynamic merge-base. This prevents false drift positives as the base branch advances.
 
 ---
 
@@ -290,6 +309,17 @@ plan:
   base_branch: "main"
   test_command: "pytest tests/ -v"  # Optional, defaults to pytest
   lint_command: "ruff check ."      # Optional, defaults to ruff
+
+  # LLM review configuration (Phase 2 - optional)
+  llm_review_config:
+    model: "claude-sonnet-4-20250514"       # Model to use
+    max_tokens: 2000                         # Max response tokens
+    temperature: 0                           # Response randomness
+    timeout_seconds: 60                      # API timeout
+    budget_usd: null                         # Cost limit (null = no limit)
+    fail_on_transport_error: false           # Block on API errors (false = resilient)
+    include_extensions: [".py"]              # File extensions to review
+    exclude_patterns: []                     # Patterns to skip (e.g., "**/test_*.py")
 
   phases:
     - id: P01-phase-name
@@ -397,6 +427,54 @@ Please address the issues above and re-run:
 
 ---
 
+### `.repo/critiques/<phase-id>.json`
+
+Machine-readable critique format (Phase 2 addition). Written alongside `.md` for CI/tooling integration.
+
+**Format:**
+```json
+{
+  "phase": "P01-scaffold",
+  "timestamp": 1760234567.0,
+  "passed": false,
+  "issues": [
+    {
+      "gate": "tests",
+      "messages": [
+        "Tests failed with exit code 1. See .repo/traces/last_test.txt"
+      ]
+    },
+    {
+      "gate": "drift",
+      "messages": [
+        "Out-of-scope changes detected (3 files, 0 allowed):",
+        "  - README.md",
+        "  - tools/judge.py",
+        "  - requirements.txt"
+      ]
+    }
+  ],
+  "total_issue_count": 2
+}
+```
+
+**Fields:**
+- `phase` (string): Phase identifier
+- `timestamp` (float): Unix timestamp when critique was generated
+- `passed` (boolean): Always `false` for critiques
+- `issues` (array): List of issues grouped by gate
+  - `gate` (string): Gate that failed (tests, drift, docs, artifacts, lint, llm_review)
+  - `messages` (array of strings): Issue descriptions for this gate
+- `total_issue_count` (int): Total number of gate failures
+
+**Use this for:**
+- CI/CD integration (parse verdict without regex)
+- Automated reporting and dashboards
+- Programmatic critique analysis
+- Machine learning on failure patterns
+
+---
+
 ### `.repo/critiques/<phase-id>.OK`
 
 Approval marker. Phase passed all gates.
@@ -409,6 +487,34 @@ Phase P01-scaffold approved at 1760223767.123
 **When this file exists:**
 - Phase is approved
 - You may run `./tools/phasectl.py next` to advance
+
+---
+
+### `.repo/critiques/<phase-id>.OK.json`
+
+Machine-readable approval format (Phase 2 addition). Written alongside `.OK` for CI/tooling integration.
+
+**Format:**
+```json
+{
+  "phase": "P01-scaffold",
+  "timestamp": 1760223767.123,
+  "passed": true,
+  "approved_at": 1760223767.123
+}
+```
+
+**Fields:**
+- `phase` (string): Phase identifier
+- `timestamp` (float): Unix timestamp when approval was generated
+- `passed` (boolean): Always `true` for approvals
+- `approved_at` (float): Unix timestamp of approval (same as timestamp)
+
+**Use this for:**
+- CI/CD integration (programmatic approval checks)
+- Automated advancement to next phase
+- Build pipeline triggers
+- Audit trail and reporting
 
 ---
 
@@ -446,15 +552,18 @@ scope:
 ```
 
 **Matching rules:**
-- Uses `fnmatch` (shell-style glob patterns)
-- `**` matches multiple directory levels
-- `*` matches anything in one level
+- Uses `pathspec` library (.gitignore-style glob patterns) with graceful fallback to `fnmatch`
+- `**` matches multiple directory levels recursively (e.g., `src/**/*.py` matches `src/foo/bar/baz.py`)
+- `*` matches anything in one level (e.g., `src/*.py` matches `src/foo.py` but not `src/sub/bar.py`)
 - File must match `include` AND NOT match `exclude`
 
 **Example:**
-- `src/mvp/feature.py` → ✅ In scope
-- `src/mvp/legacy/old.py` → ❌ Excluded
+- `src/mvp/feature.py` → ✅ In scope (matches `src/**/*.py`)
+- `src/mvp/sub/deep.py` → ✅ In scope (matches `src/**/*.py`)
+- `src/mvp/legacy/old.py` → ❌ Excluded (matches `**/legacy/**`)
 - `tools/judge.py` → ❌ Not in include patterns
+
+**Note:** Proper globstar (`**`) support requires `pathspec>=0.11.0` in requirements.txt. Without it, the system falls back to `fnmatch` with limited `**` support.
 
 ### Drift Detection
 
@@ -463,10 +572,20 @@ Judge runs:
 # Uncommitted changes
 git diff --name-only HEAD
 
-# Committed changes from base branch
+# Committed changes from baseline (preferred)
+git diff --name-only <baseline_sha>...HEAD
+
+# OR fallback to merge-base (if no baseline_sha)
 git merge-base HEAD main
 git diff --name-only <merge-base>...HEAD
 ```
+
+**Baseline SHA approach (Phase 1):**
+- Captured at phase start: `baseline_sha = git rev-parse HEAD`
+- Stored in `.repo/briefs/CURRENT.json`
+- Used consistently by all gates (drift, docs, LLM)
+- **Advantage:** Diffs remain stable even as base branch advances
+- **Fallback:** If no `baseline_sha`, uses merge-base (may drift)
 
 **Then classifies each file:**
 - If matches scope.include AND NOT scope.exclude → in-scope
@@ -479,6 +598,8 @@ drift:
 ```
 
 If `out_of_scope_count > allowed`, review fails.
+
+**Why baseline SHA matters:** Without it, diffs use merge-base with main. As main advances during overnight work, earlier commits from the same branch appear as "out-of-scope" in later phases, causing false positives.
 
 ### Forbidden Changes
 
@@ -513,7 +634,10 @@ artifacts:
 
 ```yaml
 gates:
-  tests: { must_pass: true }
+  tests:
+    must_pass: true
+    test_scope: "scope"  # "scope" | "all" (default: "all")
+    quarantine: []       # Tests expected to fail (optional)
 ```
 
 **Check:** Test runner exit code == 0
@@ -523,6 +647,80 @@ gates:
 **Fails if:** Exit code != 0
 
 **See:** `.repo/traces/last_test.txt` for details
+
+#### Test Scoping (Phase 2.5)
+
+Control which tests run based on phase scope:
+
+**`test_scope: "scope"`** - Only run tests matching `scope.include` patterns
+```yaml
+scope:
+  include: ["src/mvp/**", "tests/mvp/**"]
+gates:
+  tests:
+    must_pass: true
+    test_scope: "scope"  # Runs only tests/mvp/** tests
+```
+
+**Benefits:**
+- Fast: Doesn't run 1000 unrelated legacy tests
+- Focused: Only tests what you're changing
+- Prevents irrelevant failures from blocking progress
+- Aligns with scope philosophy
+
+**`test_scope: "all"`** - Run entire test suite (default behavior)
+
+**Example output:**
+```
+🧪 Running tests...
+  📍 Test scope: Running tests matching phase scope
+  Running: pytest tests/mvp/ -v
+```
+
+#### Test Quarantine (Phase 2.5)
+
+Skip specific tests that are expected to fail:
+
+```yaml
+gates:
+  tests:
+    must_pass: true
+    quarantine:
+      - path: "tests/mvp/test_legacy.py::test_deprecated_endpoint"
+        reason: "Removing this endpoint in P02, tests updated in P03"
+      - path: "tests/integration/test_external_api.py::test_timeout"
+        reason: "External API occasionally times out, non-blocking"
+```
+
+**Use cases:**
+- Breaking API deliberately, fixing tests in next phase
+- Flaky external service tests (timeouts, rate limits)
+- Tests dependent on infrastructure not yet built
+- Legacy tests unrelated to current work
+
+**Benefits:**
+- Documents WHY test is skipped (version controlled)
+- Temporary escape hatch (visible in plan.yaml)
+- Agent-friendly (clear signal "this failure is expected")
+- Uses pytest `--deselect` (standard mechanism)
+
+**Example output:**
+```
+🧪 Running tests...
+  ⚠️  Quarantined tests (2 tests will be skipped):
+     - tests/mvp/test_legacy.py::test_deprecated_endpoint
+       Reason: Removing this endpoint in P02, tests updated in P03
+     - tests/integration/test_external_api.py::test_timeout
+       Reason: External API occasionally times out, non-blocking
+
+  Running: pytest tests/ --deselect tests/mvp/test_legacy.py::test_deprecated_endpoint --deselect tests/integration/test_external_api.py::test_timeout -v
+```
+
+**Best practices:**
+- Use `test_scope: "scope"` as primary mechanism (most common)
+- Use `quarantine` sparingly for specific exceptions
+- Document reason clearly (future maintainers need context)
+- Remove from quarantine list once fixed
 
 ### 3. Lint Gate (Optional)
 
@@ -1032,6 +1230,137 @@ gates:
 
 ---
 
+## Protocol Integrity Protection
+
+### What's Protected
+
+The protocol prevents autonomous agents from modifying critical files:
+- **Judge logic** (`tools/judge.py`)
+- **Controller logic** (`tools/phasectl.py`)
+- **Shared utilities** (`tools/lib/**`)
+- **Plan configuration** (`.repo/plan.yaml`)
+- **Protocol manifest** (`.repo/protocol_manifest.json`)
+
+### How It Works
+
+**1. Protocol Manifest**
+
+`.repo/protocol_manifest.json` contains SHA256 hashes of all protocol files.
+
+**2. Integrity Check**
+
+At judge startup, before any other gates:
+- Judge verifies its own hash (self-check)
+- Judge verifies all protected files match manifest hashes
+- Judge verifies `plan.yaml` and manifest haven't changed mid-phase
+- If ANY mismatch → immediate failure with clear error message
+
+**3. Phase Binding**
+
+When advancing to a new phase, `phasectl.py` stores hashes of:
+- `.repo/plan.yaml` (current plan state)
+- `.repo/protocol_manifest.json` (current manifest state)
+
+These hashes are checked on every judge run to detect mid-phase tampering.
+
+**4. Protocol Maintenance Phases**
+
+To modify protocol files:
+1. Complete current phase
+2. Create a dedicated `P00-protocol-maintenance` phase in `plan.yaml`
+3. Make protocol changes within that phase
+4. Run `./tools/generate_manifest.py` to update hashes
+5. Complete maintenance phase and advance
+
+### Error Messages
+
+**Judge tampered:**
+```
+🚨 JUDGE TAMPER DETECTED: tools/judge.py
+   Expected: abc123...
+   Actual:   def456...
+   The judge has been modified. This is a critical protocol violation.
+```
+
+**Plan changed mid-phase:**
+```
+Plan changed mid-phase: .repo/plan.yaml
+   Expected: abc123...
+   Actual:   def456...
+   The plan cannot be modified during phase execution.
+```
+
+**Protocol file modified:**
+```
+Protocol file modified: tools/phasectl.py
+   Expected: abc123...
+   Actual:   def456...
+```
+
+### Configuration
+
+In `.repo/plan.yaml`:
+
+```yaml
+plan:
+  protocol_lock:
+    protected_globs:
+      - "tools/**"
+      - ".repo/plan.yaml"
+      - ".repo/protocol_manifest.json"
+    allow_in_phases:
+      - "P00-protocol-maintenance"
+```
+
+### For Autonomous Agents
+
+**DO NOT:**
+- Modify files in `tools/**`
+- Edit `.repo/plan.yaml` gates or phases
+- Change `.repo/protocol_manifest.json`
+- Modify protocol files during normal phases
+
+**If you need to fix judge bugs:**
+1. Complete current phase
+2. Ask human to create protocol maintenance phase
+3. Make fixes in that dedicated phase
+4. Run `./tools/generate_manifest.py`
+5. Complete maintenance phase
+
+### For Humans
+
+**Tuning gates (allowed anytime):**
+- Edit `.repo/plan.yaml` gate thresholds
+- Adjust scope patterns
+- Modify test commands
+- Change phase descriptions
+
+**Modifying protocol logic (requires maintenance phase):**
+- Changing judge gate checks
+- Updating phasectl flow
+- Modifying shared utilities
+
+**To create a maintenance phase:**
+
+```yaml
+phases:
+  - id: P00-protocol-maintenance
+    description: "Update judge to add security gate"
+    scope:
+      include: ["tools/**", ".repo/protocol_manifest.json"]
+    gates:
+      tests: { must_pass: true }
+```
+
+After completing maintenance:
+```bash
+./tools/generate_manifest.py
+./tools/phasectl.py review P00-protocol-maintenance
+./tools/phasectl.py next
+```
+
+---
+
 ## This Protocol vs Frameworks
 
 **This is a protocol, not a framework.**
@@ -1133,6 +1462,7 @@ Read brief → Implement within scope → Review with judge → Fix issues → A
 
 **Start here:** `./orient.sh`
 
+
 --- TESTME.md ---
 # Gated Phase Protocol - Testing Guide
 
@@ -1140,7 +1470,9 @@ Read brief → Implement within scope → Review with judge → Fix issues → A
 
 **Purpose:** Validate the protocol implementation works correctly
 
-**Time:** 15-20 minutes for full validation
+**Time:** 25-30 minutes for full validation (includes Phase 1 + Phase 2.5 enhancements)
+
+**Note:** Tests 10-12 validate Phase 1 (baseline SHA, globstar patterns) and Phase 2.5 (test scoping, quarantine)
 
 ---
 
@@ -1572,6 +1904,251 @@ git checkout .repo/briefs/CURRENT.json
 
 ---
 
+## Test 9: Protocol Integrity Protection
+
+**Goal:** Verify protocol tamper detection prevents agent self-modification
+
+**Steps:**
+
+```bash
+# Test 9a: Judge Tamper Detection
+git checkout -b test-protocol-integrity
+
+# 1. Check current judge hash
+grep "tools/judge.py" .repo/protocol_manifest.json
+# Expected: Shows SHA256 hash like "26c244..."
+
+# 2. Tamper with judge (add innocent comment)
+echo "# Test comment" >> tools/judge.py
+
+# 3. Submit for review
+./tools/phasectl.py review P02-impl-feature
+
+# Expected output:
+#   🔐 Checking protocol integrity...
+#   ❌ Phase P02-impl-feature needs revision:
+#
+#   # Critique: P02-impl-feature
+#   ## Issues Found
+#   - 🚨 JUDGE TAMPER DETECTED: tools/judge.py
+#      Expected: 26c2444577b19139d794adbf2d0a92ee102a746a056ce6af0105bfcb4cf0d82b
+#      Actual:   [different hash]
+#      The judge has been modified. This is a critical protocol violation.
+
+# 4. Verify critique
+cat .repo/critiques/P02-impl-feature.md | grep "JUDGE TAMPER"
+# Expected: Shows tamper detection message
+
+# 5. Revert tampering
+git checkout tools/judge.py
+
+# 6. Re-review
+./tools/phasectl.py review P02-impl-feature
+# Expected: No protocol integrity errors
+
+# Test 9b: Plan Change Mid-Phase Detection
+# 1. Check current CURRENT.json
+cat .repo/briefs/CURRENT.json | grep plan_sha
+# Expected: Shows plan_sha if phase binding enabled
+
+# 2. Modify plan.yaml (change description)
+sed -i.bak 's/P02-impl-feature/P02-impl-feature-modified/' .repo/plan.yaml
+
+# 3. Submit for review
+./tools/phasectl.py review P02-impl-feature
+
+# Expected output (if phase binding active):
+#   🔐 Checking protocol integrity...
+#   ❌ Phase needs revision:
+#   - Plan changed mid-phase: .repo/plan.yaml
+#      Expected: [original hash]
+#      Actual:   [new hash]
+
+# 4. Restore plan
+mv .repo/plan.yaml.bak .repo/plan.yaml
+
+# Test 9c: Protocol Maintenance Phase
+# 1. Verify protocol maintenance phases are allowed
+grep -A5 "protocol_lock:" .repo/plan.yaml
+# Expected: Shows allow_in_phases: ["P00-protocol-maintenance"]
+
+# 2. Clean up
+git checkout main
+git branch -D test-protocol-integrity
+```
+
+**Success criteria:**
+- ✅ Judge self-check detects tampering immediately
+- ✅ Clear error messages with expected vs actual hashes
+- ✅ Phase binding detects mid-phase plan changes
+- ✅ Protocol files cannot be modified in normal phases
+- ✅ After revert, system returns to normal operation
+
+---
+
+## Test 10: Baseline SHA Stability
+
+**Goal:** Verify baseline SHA provides consistent diffs throughout phase lifecycle
+
+**Background:** Phase 1 fix - prevents false drift positives as base branch advances.
+
+**Steps:**
+
+```bash
+# 1. Create test branch
+git checkout -b test-baseline-stability
+
+# 2. Check current CURRENT.json for baseline_sha
+cat .repo/briefs/CURRENT.json | grep baseline_sha
+# Expected: "baseline_sha": "abc123..." (captured at phase start)
+
+# 3. Record the baseline
+BASELINE=$(cat .repo/briefs/CURRENT.json | python3 -c "import sys, json; print(json.load(sys.stdin).get('baseline_sha', 'none'))")
+echo "Baseline SHA: $BASELINE"
+
+# 4. Make a change in scope
+echo "# Test change" >> src/mvp/feature.py
+
+# 5. Run review - should show the change
+./tools/phasectl.py review P02-impl-feature | grep "Change Summary"
+# Expected: Shows src/mvp/feature.py as in-scope
+
+# 6. Verify baseline hasn't changed
+BASELINE_AFTER=$(cat .repo/briefs/CURRENT.json | python3 -c "import sys, json; print(json.load(sys.stdin).get('baseline_sha', 'none'))")
+test "$BASELINE" = "$BASELINE_AFTER" && echo "✓ Baseline SHA stable" || echo "✗ Baseline changed!"
+
+# 7. Simulate main branch advancing (in real scenario, this would cause drift with merge-base)
+# With baseline_sha, the diff anchor remains fixed
+
+# 8. Clean up
+git checkout src/mvp/feature.py
+git checkout main
+git branch -D test-baseline-stability
+```
+
+**Success criteria:**
+- ✅ CURRENT.json contains baseline_sha field
+- ✅ Baseline SHA captured at phase start (git rev-parse HEAD)
+- ✅ Baseline remains stable throughout phase (doesn't change with new commits)
+- ✅ All gates (drift, docs, LLM) use same baseline
+- ✅ Diffs are consistent even as base branch advances
+
+**Why this matters:** Without baseline SHA, diffs use merge-base with main. As main advances during overnight work, earlier commits appear as "out-of-scope" causing false drift positives.
+
+---
+
+## Test 11: Scope Pattern Matching
+
+**Goal:** Verify proper globstar (`**`) support for nested directory matching
+
+**Background:** Phase 1 fix - replaced fnmatch with pathspec for accurate pattern matching.
+
+**Steps:**
+
+```bash
+# Run the dedicated scope matching tests
+pytest tests/test_scope_matching.py -v
+
+# Expected output:
+# test_globstar_recursive_matching PASSED
+# test_single_star_vs_double_star PASSED
+# test_exclude_patterns PASSED
+# test_multiple_include_patterns PASSED
+# test_forbidden_files PASSED
+# test_forbidden_with_wildcards PASSED
+# test_edge_case_empty_patterns PASSED
+# test_edge_case_no_files PASSED
+# test_gitignore_style_patterns PASSED
+```
+
+**What these tests verify:**
+
+1. **Globstar recursion**: `src/**/*.py` matches `src/foo/bar/deep/nested.py`
+2. **Single vs double star**: `src/*.py` vs `src/**/*.py` behavior
+3. **Exclude overrides**: `**/test_*.py` properly excludes test files
+4. **Multiple patterns**: Multiple include patterns work together
+5. **Forbidden files**: Forbidden pattern detection (e.g., `.env*`)
+6. **Edge cases**: Empty patterns, no files, nested exclusions
+
+**Success criteria:**
+- ✅ All 9 scope tests pass
+- ✅ Globstar `**` matches nested paths correctly
+- ✅ Pattern matching uses pathspec library (.gitignore-style)
+- ✅ Graceful fallback to fnmatch if pathspec unavailable
+
+**Why this matters:** Without pathspec, `fnmatch` fails on patterns like `src/**/*.py` for nested directories, causing false drift classification.
+
+---
+
+## Test 12: Test Scoping and Quarantine
+
+**Goal:** Verify test scoping filters tests correctly and quarantine skips specific tests
+
+**Background:** Phase 2.5 feature - handles large codebases with irrelevant/flaky tests.
+
+**Steps:**
+
+```bash
+# Test 12a: Test Scoping
+# 1. Create test branch
+git checkout -b test-scoping
+
+# 2. Check if P02 has test_scope configured
+grep -A10 "P02-impl-feature" .repo/plan.yaml | grep test_scope
+# Expected: test_scope: "scope"
+
+# 3. Run review and check test command
+./tools/phasectl.py review P02-impl-feature 2>&1 | grep "Test scope"
+# Expected: Shows "📍 Test scope: Running tests matching phase scope"
+
+# 4. Verify only scoped tests run
+# (In P02, scope includes tests/mvp/**, so only MVP tests should run)
+
+# Test 12b: Quarantine List
+# 1. Add a quarantine entry to plan.yaml
+cat >> .repo/plan.yaml << 'EOF'
+        quarantine:
+          - path: "tests/mvp/test_golden.py::test_hello_world"
+            reason: "Test quarantine validation"
+EOF
+
+# 2. Run review
+./tools/phasectl.py review P02-impl-feature 2>&1 | grep -A5 "Quarantined tests"
+# Expected output:
+#   ⚠️  Quarantined tests (1 test will be skipped):
+#      - tests/mvp/test_golden.py::test_hello_world
+#        Reason: Test quarantine validation
+
+# 3. Verify quarantined test was skipped
+# (Check last_test.txt to confirm test didn't run)
+grep -q "test_hello_world" .repo/traces/last_test.txt && echo "Test ran (unexpected)" || echo "✓ Test skipped"
+
+# 4. Restore plan.yaml
+git checkout .repo/plan.yaml
+
+# Test 12c: Run documentation tests
+pytest tests/test_test_scoping.py -v
+# Expected: All 7 tests pass
+
+# 5. Clean up
+git checkout main
+git branch -D test-scoping
+```
+
+**What these features solve:**
+1. **Test scoping**: Work incrementally on large codebases without running 1000 unrelated tests
+2. **Quarantine**: Handle flaky external APIs, legacy tests, deliberately broken tests
+
+**Success criteria:**
+- ✅ test_scope: "scope" filters tests to matching scope patterns
+- ✅ Quarantine list skips specific tests with documented reasons
+- ✅ Clear output showing which tests are scoped/quarantined
+- ✅ All test_test_scoping.py tests pass
+
+**Why this matters:** Real-world codebases have legacy/flaky tests that would block autonomous work. Test scoping (primary) + quarantine (escape hatch) enables incremental progress.
+
+---
+
 ## Full System Test
 
 **Goal:** Complete workflow from scratch
@@ -1709,12 +2286,17 @@ Use this to verify the system is production-ready:
 - [ ] Next command advances phases correctly
 
 **Quality Gates:**
+- [ ] Protocol integrity detects judge tampering
+- [ ] Phase binding catches mid-phase plan changes
+- [ ] Baseline SHA provides stable diffs throughout phase
 - [ ] Tests gate catches test failures
-- [ ] Docs gate catches missing documentation
+- [ ] Test scoping filters tests to phase scope (Phase 2.5)
+- [ ] Test quarantine skips specific tests with reasons (Phase 2.5)
+- [ ] Docs gate catches missing documentation AND verifies actual changes
 - [ ] Drift gate catches out-of-scope changes
-- [ ] Drift gate respects include/exclude patterns
+- [ ] Drift gate respects include/exclude patterns with proper globstar support
 - [ ] Forbidden files are blocked
-- [ ] LLM review works when enabled (optional)
+- [ ] LLM review works when enabled (optional) and reviews all changes
 
 **Error Handling:**
 - [ ] Missing files produce clear errors
@@ -1740,11 +2322,15 @@ Use this to verify the system is production-ready:
 
 **The protocol implementation is valid if:**
 
-1. ✅ All 8 tests pass without modification
+1. ✅ All 12 tests pass without modification (including Phase 1+2.5 enhancements)
 2. ✅ Full system test completes successfully
 3. ✅ Validation checklist 100% checked
 4. ✅ Error handling graceful for all error conditions
 5. ✅ Context recovery works from any state
+6. ✅ Protocol integrity prevents agent self-modification
+7. ✅ Baseline SHA provides stable diffs (Test 10)
+8. ✅ Globstar pattern matching works correctly (Test 11)
+9. ✅ Test scoping and quarantine work correctly (Test 12)
 
 **When complete, you can confidently:**
 - Use the protocol for real projects
@@ -1779,284 +2365,16 @@ Open an issue or PR: https://github.com/PM-Frontier-Labs/judge-gated-orchestrato
 
 ---
 
-**Time to complete:** 15-20 minutes for full validation
+**Time to complete:** 25-30 minutes for full validation (includes Phase 1 + Phase 2.5 tests)
 
 **Difficulty:** Beginner (just follow steps)
 
-**Result:** Confidence the protocol works as documented
+**Result:** Confidence the protocol works as documented, including Phase 1 + Phase 2.5 enhancements
+
 
 ===============================================================================
 SECTION 2: CORE TOOLS (PYTHON)
 ===============================================================================
-
---- tools/judge.py ---
-#!/usr/bin/env python3
-"""
-Judge: Evaluates a phase against plan gates.
-
-Checks:
-- Artifacts exist
-- Tests pass
-- Documentation updated
-- LLM code review (if enabled)
-"""
-
-import sys
-import time
-from pathlib import Path
-from typing import Dict, List, Any
-
-try:
-    import yaml
-except ImportError:
-    print("❌ Error: pyyaml not installed. Run: pip install pyyaml")
-    sys.exit(1)
-
-# Import shared utilities
-from lib.git_ops import get_changed_files
-from lib.scope import classify_files, check_forbidden_files
-from lib.traces import check_gate_trace
-
-# Import LLM judge (optional)
-try:
-    from llm_judge import llm_code_review
-    LLM_JUDGE_AVAILABLE = True
-except ImportError:
-    LLM_JUDGE_AVAILABLE = False
-
-REPO_ROOT = Path(__file__).parent.parent
-REPO_DIR = REPO_ROOT / ".repo"
-CRITIQUES_DIR = REPO_DIR / "critiques"
-TRACES_DIR = REPO_DIR / "traces"
-
-
-def load_plan() -> Dict[str, Any]:
-    """Load plan.yaml and validate."""
-    plan_file = REPO_DIR / "plan.yaml"
-    if not plan_file.exists():
-        print(f"❌ Error: {plan_file} not found")
-        sys.exit(1)
-
-    try:
-        with plan_file.open() as f:
-            return yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        print(f"❌ Error: Invalid YAML in {plan_file}: {e}")
-        sys.exit(1)
-
-
-def get_phase(plan: Dict[str, Any], phase_id: str) -> Dict[str, Any]:
-    """Get phase configuration from plan."""
-    phases = plan.get("plan", {}).get("phases", [])
-    for phase in phases:
-        if phase.get("id") == phase_id:
-            return phase
-    raise ValueError(f"Phase {phase_id} not found in plan")
-
-
-def check_artifacts(phase: Dict[str, Any]) -> List[str]:
-    """Check that required artifacts exist."""
-    issues = []
-    artifacts = phase.get("artifacts", {}).get("must_exist", [])
-
-    for artifact in artifacts:
-        path = REPO_ROOT / artifact
-        if not path.exists():
-            issues.append(f"Missing required artifact: {artifact}")
-
-    return issues
-
-
-
-
-def check_docs(phase: Dict[str, Any]) -> List[str]:
-    """Check that documentation was updated."""
-    issues = []
-    docs_gate = phase.get("gates", {}).get("docs", {})
-    must_update = docs_gate.get("must_update", [])
-
-    if not must_update:
-        return issues
-
-    # Check if docs exist and are not empty
-    for doc in must_update:
-        # Handle section anchors like "docs/mvp.md#feature"
-        doc_path = doc.split("#")[0]
-        path = REPO_ROOT / doc_path
-
-        if not path.exists():
-            issues.append(f"Documentation not found: {doc_path}")
-        elif path.stat().st_size == 0:
-            issues.append(f"Documentation is empty: {doc_path}")
-
-    return issues
-
-
-
-
-def check_drift(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
-    """Check for changes outside phase scope (plan drift)."""
-    issues = []
-
-    # Check if drift gate is enabled
-    drift_gate = phase.get("gates", {}).get("drift")
-    if not drift_gate:
-        return []  # Drift checking not enabled for this phase
-
-    # Get base branch
-    base_branch = plan.get("plan", {}).get("base_branch", "main")
-
-    # Get changed files
-    changed_files = get_changed_files(
-        REPO_ROOT,
-        include_committed=True,
-        base_branch=base_branch
-    )
-
-    if not changed_files:
-        return []  # No changes or not a git repo
-
-    # Get scope patterns
-    scope = phase.get("scope", {})
-    include_patterns = scope.get("include", [])
-    exclude_patterns = scope.get("exclude", [])
-
-    if not include_patterns:
-        return []  # No scope defined, can't check drift
-
-    # Classify files using shared utility
-    in_scope, out_of_scope = classify_files(
-        changed_files,
-        include_patterns,
-        exclude_patterns
-    )
-
-    # Check forbidden patterns using shared utility
-    drift_rules = phase.get("drift_rules", {})
-    forbid_patterns = drift_rules.get("forbid_changes", [])
-    forbidden_files = check_forbidden_files(changed_files, forbid_patterns)
-
-    if forbidden_files:
-        issues.append("Forbidden files changed (these require a separate phase):")
-        for f in forbidden_files:
-            issues.append(f"  - {f}")
-        issues.append(f"Fix: git checkout HEAD {' '.join(forbidden_files)}")
-        issues.append("")
-
-    # Check out-of-scope changes
-    allowed_drift = drift_gate.get("allowed_out_of_scope_changes", 0)
-
-    if len(out_of_scope) > allowed_drift:
-        issues.append(f"Out-of-scope changes detected ({len(out_of_scope)} files, {allowed_drift} allowed):")
-        for f in out_of_scope:
-            issues.append(f"  - {f}")
-        issues.append("")
-        issues.append("Options to fix:")
-        issues.append(f"1. Revert: git checkout HEAD {' '.join(out_of_scope)}")
-        issues.append(f"2. Update phase scope in .repo/briefs/{phase['id']}.md")
-        issues.append("3. Split into separate phase for out-of-scope work")
-
-    return issues
-
-
-def write_critique(phase_id: str, issues: List[str]):
-    """Write a critique file."""
-    critique_file = CRITIQUES_DIR / f"{phase_id}.md"
-    critique_file.write_text(f"""# Critique: {phase_id}
-
-## Issues Found
-
-{chr(10).join(f"- {issue}" for issue in issues)}
-
-## Resolution
-
-Please address the issues above and re-run:
-```
-./tools/phasectl.py review {phase_id}
-```
-""")
-    print(f"📝 Critique written to {critique_file.relative_to(REPO_ROOT)}")
-
-
-def write_approval(phase_id: str):
-    """Write an approval marker."""
-    ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
-    ok_file.write_text(f"Phase {phase_id} approved at {time.time()}\n")
-    print(f"✅ Approval written to {ok_file.relative_to(REPO_ROOT)}")
-
-
-def judge_phase(phase_id: str):
-    """Run all checks and produce verdict."""
-    print(f"⚖️  Judging phase {phase_id}...")
-
-    # Load plan
-    plan = load_plan()
-
-    try:
-        phase = get_phase(plan, phase_id)
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return 2
-
-    # Run all checks - Phase → Gates → Verdict
-    all_issues = []
-
-    print("  🔍 Checking artifacts...")
-    all_issues.extend(check_artifacts(phase))
-
-    print("  🔍 Checking tests...")
-    all_issues.extend(check_gate_trace("tests", TRACES_DIR, "Tests"))
-
-    # Lint check (optional)
-    lint_gate = phase.get("gates", {}).get("lint", {})
-    if lint_gate.get("must_pass", False):
-        print("  🔍 Checking linting...")
-        all_issues.extend(check_gate_trace("lint", TRACES_DIR, "Linting"))
-
-    print("  🔍 Checking documentation...")
-    all_issues.extend(check_docs(phase))
-
-    print("  🔍 Checking for plan drift...")
-    all_issues.extend(check_drift(phase, plan))
-
-    # LLM code review (optional)
-    if LLM_JUDGE_AVAILABLE:
-        llm_gate = phase.get("gates", {}).get("llm_review", {})
-        if llm_gate.get("enabled", False):
-            print("  🤖 Running LLM code review...")
-            all_issues.extend(llm_code_review(phase, REPO_ROOT))
-
-    # Clean up old critiques/approvals
-    for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):
-        old_file.unlink()
-
-    # Verdict
-    if all_issues:
-        write_critique(phase_id, all_issues)
-        return 1
-    else:
-        write_approval(phase_id)
-        return 0
-
-
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: judge.py <PHASE_ID>")
-        return 1
-
-    phase_id = sys.argv[1]
-
-    try:
-        return judge_phase(phase_id)
-    except Exception as e:
-        print(f"❌ Judge error: {e}")
-        import traceback
-        traceback.print_exc()
-        return 2
-
-
-if __name__ == "__main__":
-    sys.exit(main())
 
 --- tools/phasectl.py ---
 #!/usr/bin/env python3
@@ -2108,7 +2426,7 @@ def load_plan():
         sys.exit(1)
 
 
-def run_tests(plan):
+def run_tests(plan, phase=None):
     """Run tests and save results to trace file."""
     print("🧪 Running tests...")
 
@@ -2120,6 +2438,50 @@ def run_tests(plan):
         test_cmd = test_config.get("command", "pytest tests/ -v").split()
     else:
         test_cmd = ["pytest", "tests/", "-v"]
+
+    # Apply test scoping and quarantine if phase provided
+    if phase:
+        test_gate = phase.get("gates", {}).get("tests", {})
+
+        # Test scoping: "scope" | "all" | custom path
+        test_scope = test_gate.get("test_scope", "all")
+
+        if test_scope == "scope":
+            # Filter test paths to match phase scope
+            scope_patterns = phase.get("scope", {}).get("include", [])
+            test_paths = []
+
+            for pattern in scope_patterns:
+                # Extract test paths from scope patterns
+                # E.g., "tests/mvp/**" -> "tests/mvp/"
+                if pattern.startswith("tests/"):
+                    # Remove wildcards and get base path
+                    base_path = pattern.split("*")[0].rstrip("/")
+                    if base_path not in test_paths:
+                        test_paths.append(base_path)
+
+            if test_paths:
+                print("  📍 Test scope: Running tests matching phase scope")
+                # Replace default test path with scoped paths
+                # pytest tests/ -v -> pytest tests/mvp/ tests/api/ -v
+                new_cmd = [test_cmd[0]]  # Keep pytest
+                new_cmd.extend(test_paths)
+                # Keep flags (e.g., -v)
+                new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+                test_cmd = new_cmd
+
+        # Quarantine list: tests expected to fail
+        quarantine = test_gate.get("quarantine", [])
+        if quarantine:
+            print(f"  ⚠️  Quarantined tests ({len(quarantine)} tests will be skipped):")
+            for item in quarantine:
+                test_path = item.get("path", "")
+                reason = item.get("reason", "No reason provided")
+                print(f"     - {test_path}")
+                print(f"       Reason: {reason}")
+                # Add --deselect for pytest
+                test_cmd.extend(["--deselect", test_path])
+            print()
 
     # Run command and save trace
     exit_code = run_command_with_trace("tests", test_cmd, REPO_ROOT, TRACES_DIR)
@@ -2176,14 +2538,24 @@ def show_diff_summary(phase_id: str, plan: dict):
     if not phase:
         return  # Can't show summary without phase config
 
-    # Get base branch
+    # Load baseline SHA from CURRENT.json for consistent diffs
+    baseline_sha = None
+    if CURRENT_FILE.exists():
+        try:
+            current = json.loads(CURRENT_FILE.read_text())
+            baseline_sha = current.get("baseline_sha")
+        except (json.JSONDecodeError, KeyError):
+            pass  # Tolerate missing or malformed CURRENT.json
+
+    # Get base branch (fallback only)
     base_branch = plan.get("plan", {}).get("base_branch", "main")
 
-    # Get changed files using shared utility
+    # Get changed files using baseline SHA for consistent diffs
     changed_files = get_changed_files(
         REPO_ROOT,
         include_committed=True,
-        base_branch=base_branch
+        base_branch=base_branch,
+        baseline_sha=baseline_sha
     )
 
     if not changed_files:
@@ -2260,11 +2632,15 @@ def review_phase(phase_id: str):
     # Load plan
     plan = load_plan()
 
+    # Get phase config for test scoping
+    phases = plan.get("plan", {}).get("phases", [])
+    phase = next((p for p in phases if p["id"] == phase_id), None)
+
     # Show diff summary
     show_diff_summary(phase_id, plan)
 
-    # Run tests
-    test_exit_code = run_tests(plan)
+    # Run tests (with phase-specific scoping/quarantine)
+    test_exit_code = run_tests(plan, phase)
     if test_exit_code is None:
         return 2  # Test runner not available
 
@@ -2349,13 +2725,43 @@ def next_phase():
         print(f"❌ Error: Brief for {next_id} not found: {next_brief}")
         return 1
 
-    # Update CURRENT.json
-    CURRENT_FILE.write_text(json.dumps({
+    # Compute binding hashes for phase
+    import hashlib
+
+    def sha256(filepath):
+        return hashlib.sha256(filepath.read_bytes()).hexdigest()
+
+    plan_path = REPO_DIR / "plan.yaml"
+    manifest_path = REPO_DIR / "protocol_manifest.json"
+
+    # Get baseline SHA for consistent diffs throughout phase
+    baseline_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True
+    )
+    baseline_sha = baseline_result.stdout.strip() if baseline_result.returncode == 0 else None
+
+    current_data = {
         "phase_id": next_id,
         "brief_path": str(next_brief.relative_to(REPO_ROOT)),
         "status": "active",
         "started_at": time.time()
-    }, indent=2))
+    }
+
+    # Add baseline SHA for consistent diff anchor
+    if baseline_sha:
+        current_data["baseline_sha"] = baseline_sha
+
+    # Add phase binding hashes if files exist
+    if plan_path.exists():
+        current_data["plan_sha"] = sha256(plan_path)
+    if manifest_path.exists():
+        current_data["manifest_sha"] = sha256(manifest_path)
+
+    # Update CURRENT.json
+    CURRENT_FILE.write_text(json.dumps(current_data, indent=2))
 
     print(f"➡️  Advanced to phase {next_id}")
     print(f"📄 Brief: {next_brief.relative_to(REPO_ROOT)}")
@@ -2387,6 +2793,529 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 
+
+--- tools/judge.py ---
+#!/usr/bin/env python3
+"""
+Judge: Evaluates a phase against plan gates.
+
+Checks:
+- Artifacts exist
+- Tests pass
+- Documentation updated
+- LLM code review (if enabled)
+"""
+
+import sys
+import time
+from pathlib import Path
+from typing import Dict, List, Any
+
+try:
+    import yaml
+except ImportError:
+    print("❌ Error: pyyaml not installed. Run: pip install pyyaml")
+    sys.exit(1)
+
+# Import shared utilities
+from lib.git_ops import get_changed_files
+from lib.scope import classify_files, check_forbidden_files
+from lib.traces import check_gate_trace
+from lib.protocol_guard import verify_protocol_lock, verify_phase_binding
+
+# Import LLM judge (optional)
+try:
+    from llm_judge import llm_code_review
+    LLM_JUDGE_AVAILABLE = True
+except ImportError:
+    LLM_JUDGE_AVAILABLE = False
+
+REPO_ROOT = Path(__file__).parent.parent
+REPO_DIR = REPO_ROOT / ".repo"
+CRITIQUES_DIR = REPO_DIR / "critiques"
+TRACES_DIR = REPO_DIR / "traces"
+
+
+def load_plan() -> Dict[str, Any]:
+    """Load plan.yaml and validate."""
+    plan_file = REPO_DIR / "plan.yaml"
+    if not plan_file.exists():
+        print(f"❌ Error: {plan_file} not found")
+        sys.exit(1)
+
+    try:
+        with plan_file.open() as f:
+            return yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"❌ Error: Invalid YAML in {plan_file}: {e}")
+        sys.exit(1)
+
+
+def get_phase(plan: Dict[str, Any], phase_id: str) -> Dict[str, Any]:
+    """Get phase configuration from plan."""
+    phases = plan.get("plan", {}).get("phases", [])
+    for phase in phases:
+        if phase.get("id") == phase_id:
+            return phase
+    raise ValueError(f"Phase {phase_id} not found in plan")
+
+
+def check_artifacts(phase: Dict[str, Any]) -> List[str]:
+    """Check that required artifacts exist."""
+    issues = []
+    artifacts = phase.get("artifacts", {}).get("must_exist", [])
+
+    for artifact in artifacts:
+        path = REPO_ROOT / artifact
+        if not path.exists():
+            issues.append(f"Missing required artifact: {artifact}")
+
+    return issues
+
+
+
+
+def check_docs(phase: Dict[str, Any], changed_files: List[str] = None) -> List[str]:
+    """Check that documentation was actually updated in this phase."""
+    issues = []
+    docs_gate = phase.get("gates", {}).get("docs", {})
+    must_update = docs_gate.get("must_update", [])
+
+    if not must_update:
+        return issues
+
+    if changed_files is None:
+        changed_files = []
+
+    # Check each required doc
+    for doc in must_update:
+        # Handle section anchors like "docs/mvp.md#feature"
+        doc_path = doc.split("#")[0]
+        anchor = doc.split("#")[1] if "#" in doc else None
+        path = REPO_ROOT / doc_path
+
+        # Check existence
+        if not path.exists():
+            issues.append(f"Documentation not found: {doc_path}")
+            continue
+
+        # Check non-empty
+        if path.stat().st_size == 0:
+            issues.append(f"Documentation is empty: {doc_path}")
+            continue
+
+        # CRITICAL: Check if doc was actually changed in this phase
+        if doc_path not in changed_files:
+            issues.append(
+                f"Documentation not updated in this phase: {doc_path}\n"
+                f"   This file must be modified as part of {phase['id']}"
+            )
+            continue
+
+        # If anchor specified, verify heading exists
+        if anchor:
+            content = path.read_text()
+            # Look for markdown heading: # anchor or ## anchor, etc.
+            import re
+            pattern = rf'^#+\s+{re.escape(anchor)}'
+            if not re.search(pattern, content, re.MULTILINE | re.IGNORECASE):
+                issues.append(
+                    f"Documentation section not found: {doc}#{anchor}\n"
+                    f"   Expected heading '{anchor}' in {doc_path}"
+                )
+
+    return issues
+
+
+
+
+def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str = None) -> List[str]:
+    """Check for changes outside phase scope (plan drift)."""
+    issues = []
+
+    # Check if drift gate is enabled
+    drift_gate = phase.get("gates", {}).get("drift")
+    if not drift_gate:
+        return []  # Drift checking not enabled for this phase
+
+    # Get base branch (fallback only)
+    base_branch = plan.get("plan", {}).get("base_branch", "main")
+
+    # Get changed files using baseline SHA for consistent diffs
+    changed_files = get_changed_files(
+        REPO_ROOT,
+        include_committed=True,
+        base_branch=base_branch,
+        baseline_sha=baseline_sha
+    )
+
+    if not changed_files:
+        return []  # No changes or not a git repo
+
+    # Get scope patterns
+    scope = phase.get("scope", {})
+    include_patterns = scope.get("include", [])
+    exclude_patterns = scope.get("exclude", [])
+
+    if not include_patterns:
+        return []  # No scope defined, can't check drift
+
+    # Classify files using shared utility
+    in_scope, out_of_scope = classify_files(
+        changed_files,
+        include_patterns,
+        exclude_patterns
+    )
+
+    # Check forbidden patterns using shared utility
+    drift_rules = phase.get("drift_rules", {})
+    forbid_patterns = drift_rules.get("forbid_changes", [])
+    forbidden_files = check_forbidden_files(changed_files, forbid_patterns)
+
+    if forbidden_files:
+        issues.append("Forbidden files changed (these require a separate phase):")
+        for f in forbidden_files:
+            issues.append(f"  - {f}")
+
+        # Get uncommitted changes to provide correct remediation
+        import subprocess
+        uncommitted_result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True
+        )
+        uncommitted_set = set(uncommitted_result.stdout.strip().split("\n")) if uncommitted_result.returncode == 0 else set()
+
+        uncommitted_forbidden = [f for f in forbidden_files if f in uncommitted_set]
+        committed_forbidden = [f for f in forbidden_files if f not in uncommitted_set]
+
+        if uncommitted_forbidden:
+            issues.append(f"Fix uncommitted: git restore --worktree --staged -- {' '.join(uncommitted_forbidden)}")
+        if committed_forbidden:
+            if baseline_sha:
+                issues.append(f"Fix committed: git restore --source={baseline_sha} -- {' '.join(committed_forbidden)}")
+            else:
+                issues.append(f"Fix committed: git revert <commits> (or restore: git restore --source=<baseline> -- {' '.join(committed_forbidden[:2])})")
+
+        issues.append("")
+
+    # Check out-of-scope changes
+    allowed_drift = drift_gate.get("allowed_out_of_scope_changes", 0)
+
+    if len(out_of_scope) > allowed_drift:
+        issues.append(f"Out-of-scope changes detected ({len(out_of_scope)} files, {allowed_drift} allowed):")
+        for f in out_of_scope:
+            issues.append(f"  - {f}")
+        issues.append("")
+
+        # Determine which files are committed vs uncommitted for better remediation
+        import subprocess
+
+        # Get uncommitted changes
+        uncommitted_result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True
+        )
+        uncommitted_set = set(uncommitted_result.stdout.strip().split("\n")) if uncommitted_result.returncode == 0 else set()
+
+        # Classify out-of-scope files
+        uncommitted_out = [f for f in out_of_scope if f in uncommitted_set]
+        committed_out = [f for f in out_of_scope if f not in uncommitted_set]
+
+        issues.append("Options to fix:")
+
+        if uncommitted_out:
+            issues.append(f"1. Revert uncommitted changes: git restore --worktree --staged -- {' '.join(uncommitted_out[:3])}")
+            if len(uncommitted_out) > 3:
+                issues.append(f"   (and {len(uncommitted_out) - 3} more)")
+
+        if committed_out:
+            if baseline_sha:
+                issues.append(f"2. Restore committed files to baseline: git restore --source={baseline_sha} -- {' '.join(committed_out[:3])}")
+            else:
+                issues.append("2. Revert committed changes: git revert <commit-range> (or restore specific files)")
+            if len(committed_out) > 3:
+                issues.append(f"   (and {len(committed_out) - 3} more)")
+
+        issues.append(f"3. Update phase scope in .repo/briefs/{phase['id']}.md")
+        issues.append("4. Split into separate phase for out-of-scope work")
+
+    return issues
+
+
+def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, List[str]] = None):
+    """Write critique files atomically (both .md and .json)."""
+    import tempfile
+    import os
+    import json
+
+    # Markdown critique
+    critique_content = f"""# Critique: {phase_id}
+
+## Issues Found
+
+{chr(10).join(f"- {issue}" for issue in issues)}
+
+## Resolution
+
+Please address the issues above and re-run:
+```
+./tools/phasectl.py review {phase_id}
+```
+"""
+
+    critique_file = CRITIQUES_DIR / f"{phase_id}.md"
+
+    # Write MD to temp file first (atomic operation)
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        dir=CRITIQUES_DIR,
+        delete=False,
+        prefix=f".{phase_id}_",
+        suffix=".tmp"
+    ) as tmp:
+        tmp.write(critique_content)
+        tmp_path = tmp.name
+
+    # Atomic replace MD
+    os.replace(tmp_path, critique_file)
+
+    # JSON critique (machine-readable)
+    if gate_results is None:
+        gate_results = {}
+
+    critique_json = {
+        "phase": phase_id,
+        "timestamp": time.time(),
+        "passed": False,
+        "issues": [
+            {
+                "gate": gate,
+                "messages": msgs
+            }
+            for gate, msgs in gate_results.items() if msgs
+        ],
+        "total_issue_count": len(issues)
+    }
+
+    json_file = CRITIQUES_DIR / f"{phase_id}.json"
+
+    # Write JSON to temp file
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        dir=CRITIQUES_DIR,
+        delete=False,
+        prefix=f".{phase_id}_json_",
+        suffix=".tmp"
+    ) as tmp:
+        json.dump(critique_json, tmp, indent=2)
+        tmp_path = tmp.name
+
+    # Atomic replace JSON
+    os.replace(tmp_path, json_file)
+
+    # Clean up old approval files AFTER successful write
+    ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
+    ok_json_file = CRITIQUES_DIR / f"{phase_id}.OK.json"
+    if ok_file.exists():
+        ok_file.unlink()
+    if ok_json_file.exists():
+        ok_json_file.unlink()
+
+    print(f"📝 Critique written to {critique_file.relative_to(REPO_ROOT)}")
+    print(f"📊 JSON critique: {json_file.relative_to(REPO_ROOT)}")
+
+
+def write_approval(phase_id: str):
+    """Write approval markers atomically (both .OK and .OK.json)."""
+    import tempfile
+    import os
+    import json
+
+    approval_timestamp = time.time()
+    approval_content = f"Phase {phase_id} approved at {approval_timestamp}\n"
+    ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
+
+    # Write .OK to temp file first (atomic operation)
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        dir=CRITIQUES_DIR,
+        delete=False,
+        prefix=f".{phase_id}_",
+        suffix=".tmp"
+    ) as tmp:
+        tmp.write(approval_content)
+        tmp_path = tmp.name
+
+    # Atomic replace .OK
+    os.replace(tmp_path, ok_file)
+
+    # JSON approval (machine-readable)
+    approval_json = {
+        "phase": phase_id,
+        "timestamp": approval_timestamp,
+        "passed": True,
+        "approved_at": approval_timestamp
+    }
+
+    ok_json_file = CRITIQUES_DIR / f"{phase_id}.OK.json"
+
+    # Write JSON to temp file
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        dir=CRITIQUES_DIR,
+        delete=False,
+        prefix=f".{phase_id}_ok_json_",
+        suffix=".tmp"
+    ) as tmp:
+        json.dump(approval_json, tmp, indent=2)
+        tmp_path = tmp.name
+
+    # Atomic replace JSON
+    os.replace(tmp_path, ok_json_file)
+
+    # Clean up old critique files AFTER successful write
+    critique_file = CRITIQUES_DIR / f"{phase_id}.md"
+    critique_json_file = CRITIQUES_DIR / f"{phase_id}.json"
+    if critique_file.exists():
+        critique_file.unlink()
+    if critique_json_file.exists():
+        critique_json_file.unlink()
+
+    print(f"✅ Approval written to {ok_file.relative_to(REPO_ROOT)}")
+    print(f"📊 JSON approval: {ok_json_file.relative_to(REPO_ROOT)}")
+
+
+def judge_phase(phase_id: str):
+    """Run all checks and produce verdict."""
+    print(f"⚖️  Judging phase {phase_id}...")
+
+    # Load plan
+    plan = load_plan()
+
+    try:
+        phase = get_phase(plan, phase_id)
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        return 2
+
+    # Load baseline SHA from CURRENT.json for consistent diffs
+    baseline_sha = None
+    current_file = REPO_DIR / "briefs/CURRENT.json"
+    if current_file.exists():
+        try:
+            import json
+            current = json.loads(current_file.read_text())
+            baseline_sha = current.get("baseline_sha")
+            if baseline_sha:
+                print(f"  📍 Using baseline: {baseline_sha[:8]}...")
+        except (json.JSONDecodeError, KeyError):
+            pass  # Tolerate missing or malformed CURRENT.json
+
+    # CRITICAL: Verify protocol integrity FIRST
+    print("  🔐 Checking protocol integrity...")
+
+    # Check phase binding (plan/manifest unchanged mid-phase)
+    current_file = REPO_DIR / "briefs/CURRENT.json"
+    if current_file.exists():
+        try:
+            import json
+            current = json.loads(current_file.read_text())
+            binding_issues = verify_phase_binding(REPO_ROOT, current)
+            if binding_issues:
+                write_critique(phase_id, binding_issues)
+                return 1
+        except (json.JSONDecodeError, KeyError):
+            pass  # Tolerate missing or malformed CURRENT.json
+
+    # Check protocol lock (judge/tools haven't been tampered with)
+    lock_issues = verify_protocol_lock(REPO_ROOT, plan, phase_id)
+    if lock_issues:
+        write_critique(phase_id, lock_issues)
+        return 1
+
+    # Run all checks - Phase → Gates → Verdict
+    all_issues = []
+    gate_results = {}  # Track results per gate for JSON output
+
+    print("  🔍 Checking artifacts...")
+    artifacts_issues = check_artifacts(phase)
+    gate_results["artifacts"] = artifacts_issues
+    all_issues.extend(artifacts_issues)
+
+    print("  🔍 Checking tests...")
+    tests_issues = check_gate_trace("tests", TRACES_DIR, "Tests")
+    gate_results["tests"] = tests_issues
+    all_issues.extend(tests_issues)
+
+    # Lint check (optional)
+    lint_gate = phase.get("gates", {}).get("lint", {})
+    if lint_gate.get("must_pass", False):
+        print("  🔍 Checking linting...")
+        lint_issues = check_gate_trace("lint", TRACES_DIR, "Linting")
+        gate_results["lint"] = lint_issues
+        all_issues.extend(lint_issues)
+
+    # Get changed files for docs and drift gates
+    base_branch = plan.get("plan", {}).get("base_branch", "main")
+    changed_files = get_changed_files(
+        REPO_ROOT,
+        include_committed=True,
+        base_branch=base_branch,
+        baseline_sha=baseline_sha
+    )
+
+    print("  🔍 Checking documentation...")
+    docs_issues = check_docs(phase, changed_files)
+    gate_results["docs"] = docs_issues
+    all_issues.extend(docs_issues)
+
+    print("  🔍 Checking for plan drift...")
+    drift_issues = check_drift(phase, plan, baseline_sha)
+    gate_results["drift"] = drift_issues
+    all_issues.extend(drift_issues)
+
+    # LLM code review (optional)
+    if LLM_JUDGE_AVAILABLE:
+        llm_gate = phase.get("gates", {}).get("llm_review", {})
+        if llm_gate.get("enabled", False):
+            print("  🤖 Running LLM code review...")
+            llm_issues = llm_code_review(phase, REPO_ROOT, plan, baseline_sha)
+            gate_results["llm_review"] = llm_issues
+            all_issues.extend(llm_issues)
+
+    # Verdict (write functions handle cleanup atomically)
+    if all_issues:
+        write_critique(phase_id, all_issues, gate_results)
+        return 1
+    else:
+        write_approval(phase_id)
+        return 0
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: judge.py <PHASE_ID>")
+        return 1
+
+    phase_id = sys.argv[1]
+
+    try:
+        return judge_phase(phase_id)
+    except Exception as e:
+        print(f"❌ Judge error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
 --- tools/llm_judge.py ---
 #!/usr/bin/env python3
 """
@@ -2403,11 +3332,12 @@ from pathlib import Path
 from lib.git_ops import get_changed_files as get_changed_files_raw
 
 
-def llm_code_review(phase: Dict[str, Any], repo_root: Path) -> List[str]:
+def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any] = None, baseline_sha: str = None) -> List[str]:
     """
     Use Claude to review code quality semantically.
 
-    Only reviews files that were actually changed (via git diff).
+    Reviews all files changed in this phase (committed + uncommitted).
+    Uses same change basis as other gates for consistency.
     """
     # Check if LLM review is enabled
     llm_gate = phase.get("gates", {}).get("llm_review", {})
@@ -2425,10 +3355,30 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path) -> List[str]:
     except ImportError:
         return ["LLM review enabled but anthropic package not installed. Run: pip install anthropic"]
 
-    # Get changed files (uncommitted only)
+    # Get LLM configuration from plan (with defaults)
+    llm_config = {}
+    if plan:
+        llm_config = plan.get("plan", {}).get("llm_review_config", {})
+        base_branch = plan.get("plan", {}).get("base_branch", "main")
+    else:
+        base_branch = "main"
+
+    # Extract config with defaults
+    model = llm_config.get("model", "claude-sonnet-4-20250514")
+    max_tokens = llm_config.get("max_tokens", 2000)
+    temperature = llm_config.get("temperature", 0)
+    timeout_seconds = llm_config.get("timeout_seconds", 60)
+    # budget_usd = llm_config.get("budget_usd")  # Reserved for future cost tracking
+    fail_on_error = llm_config.get("fail_on_transport_error", False)
+    include_extensions = llm_config.get("include_extensions", [".py"])
+    exclude_patterns = llm_config.get("exclude_patterns", [])
+
+    # Get changed files (committed + uncommitted, same as other gates)
     changed_file_strs = get_changed_files_raw(
         repo_root,
-        include_committed=False
+        include_committed=True,  # FIXED: Include committed changes
+        base_branch=base_branch,
+        baseline_sha=baseline_sha  # NEW: Use same baseline as other gates
     )
 
     # Convert to Path objects and filter to existing files
@@ -2442,11 +3392,24 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path) -> List[str]:
         # No changes detected - approve
         return []
 
-    # Filter to only review code files (Python for now)
-    code_files = [f for f in changed_files if f.suffix == ".py"]
+    # Filter files by configured extensions
+    code_files = []
+    for f in changed_files:
+        # Check if extension matches
+        if f.suffix in include_extensions:
+            # Check if not excluded by patterns
+            relative_path = str(f.relative_to(repo_root))
+            excluded = False
+            for pattern in exclude_patterns:
+                import fnmatch
+                if fnmatch.fnmatch(relative_path, pattern):
+                    excluded = True
+                    break
+            if not excluded:
+                code_files.append(f)
 
     if not code_files:
-        # No code files changed - approve
+        # No matching files changed - approve
         return []
 
     # Build code context
@@ -2487,17 +3450,19 @@ Instructions:
 """
 
     try:
+        # Use configured model and parameters
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            temperature=0,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout_seconds,
             messages=[{"role": "user", "content": prompt}]
         )
 
         review_text = response.content[0].text.strip()
 
-        # Parse response
-        if "APPROVED" in review_text.upper():
+        # Parse response (look for APPROVED or LGTM)
+        if "APPROVED" in review_text.upper() or "LGTM" in review_text.upper():
             return []
 
         # Extract issues
@@ -2516,7 +3481,69 @@ Instructions:
         return issues
 
     except Exception as e:
-        return [f"LLM review failed: {str(e)}"]
+        if fail_on_error:
+            return [f"LLM review failed: {str(e)}"]
+        else:
+            print(f"⚠️  LLM review skipped due to error: {e}")
+            return []  # Don't block on transport errors if configured
+
+
+--- tools/generate_manifest.py ---
+#!/usr/bin/env python3
+"""Generate protocol integrity manifest."""
+import json
+import hashlib
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).parent.parent
+MANIFEST_PATH = REPO_ROOT / ".repo/protocol_manifest.json"
+
+PROTOCOL_FILES = [
+    "tools/judge.py",
+    "tools/phasectl.py",
+    "tools/llm_judge.py",
+    ".repo/plan.yaml",
+    "tools/lib/__init__.py",
+    "tools/lib/git_ops.py",
+    "tools/lib/scope.py",
+    "tools/lib/traces.py",
+    "tools/lib/protocol_guard.py",
+]
+
+
+def sha256(filepath: Path) -> str:
+    """Compute SHA256 hash of file."""
+    return hashlib.sha256(filepath.read_bytes()).hexdigest()
+
+
+def main():
+    """Generate manifest with hashes of all protocol files."""
+    print("Generating protocol manifest...")
+    print()
+
+    manifest = {"version": 1, "files": {}}
+
+    for rel_path in PROTOCOL_FILES:
+        abs_path = REPO_ROOT / rel_path
+        if abs_path.exists():
+            file_hash = sha256(abs_path)
+            manifest["files"][rel_path] = file_hash
+            print(f"✓ {rel_path}")
+            print(f"  {file_hash}")
+        else:
+            print(f"⚠ {rel_path} not found")
+
+    MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n")
+
+    print()
+    print(f"✅ Generated {MANIFEST_PATH.relative_to(REPO_ROOT)}")
+    print(f"   {len(manifest['files'])} files protected")
+
+
+if __name__ == "__main__":
+    main()
+
 
 ===============================================================================
 SECTION 3: SHARED LIBRARIES
@@ -2526,6 +3553,7 @@ SECTION 3: SHARED LIBRARIES
 """
 Shared utilities for judge-gated orchestrator.
 """
+
 
 --- tools/lib/git_ops.py ---
 """Git operations for judge system."""
@@ -2538,9 +3566,21 @@ from typing import List
 def get_changed_files(
     repo_root: Path,
     include_committed: bool = True,
-    base_branch: str = "main"
+    base_branch: str = "main",
+    baseline_sha: str = None
 ) -> List[str]:
-    """Get changed files. If include_committed=False, only uncommitted changes."""
+    """
+    Get changed files.
+
+    Args:
+        repo_root: Repository root path
+        include_committed: Include committed changes (default True)
+        base_branch: Base branch for merge-base fallback (default "main")
+        baseline_sha: Fixed baseline commit SHA for consistent diffs (preferred)
+
+    Returns:
+        List of changed file paths
+    """
     try:
         all_changes = []
 
@@ -2555,28 +3595,40 @@ def get_changed_files(
         uncommitted = [f for f in result.stdout.strip().split("\n") if f]
         all_changes.extend(uncommitted)
 
-        # Optionally get committed changes from base branch
+        # Optionally get committed changes
         if include_committed:
-            # Get merge base
-            result = subprocess.run(
-                ["git", "merge-base", "HEAD", base_branch],
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            merge_base = result.stdout.strip()
+            if baseline_sha:
+                # Use fixed baseline SHA for consistent diffs (preferred)
+                result = subprocess.run(
+                    ["git", "diff", "--name-only", f"{baseline_sha}...HEAD"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                committed = [f for f in result.stdout.strip().split("\n") if f]
+                all_changes.extend(committed)
+            else:
+                # Fallback: use merge-base (can drift as base_branch advances)
+                result = subprocess.run(
+                    ["git", "merge-base", "HEAD", base_branch],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                merge_base = result.stdout.strip()
 
-            # Get committed changes
-            result = subprocess.run(
-                ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            committed = [f for f in result.stdout.strip().split("\n") if f]
-            all_changes.extend(committed)
+                # Get committed changes
+                result = subprocess.run(
+                    ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                committed = [f for f in result.stdout.strip().split("\n") if f]
+                all_changes.extend(committed)
 
         # Remove duplicates and empty strings
         unique_changes = list(set(all_changes))
@@ -2586,16 +3638,34 @@ def get_changed_files(
         # Not a git repo or base branch doesn't exist
         return []
 
+
 --- tools/lib/scope.py ---
 """File scope operations for drift checking."""
 
-import fnmatch
 from typing import List, Tuple
+
+try:
+    import pathspec
+    PATHSPEC_AVAILABLE = True
+except ImportError:
+    PATHSPEC_AVAILABLE = False
+    # Fallback to fnmatch (limited globstar support)
+    import fnmatch
 
 
 def matches_pattern(path: str, patterns: List[str]) -> bool:
-    """Check if path matches any glob pattern."""
-    return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
+    """
+    Check if path matches any glob pattern.
+
+    Uses pathspec (gitignore-style) if available, otherwise falls back to fnmatch.
+    """
+    if PATHSPEC_AVAILABLE:
+        # Use pathspec for proper ** globstar support
+        spec = pathspec.PathSpec.from_lines('gitwildmatch', patterns)
+        return spec.match_file(path)
+    else:
+        # Fallback: fnmatch (limited ** support)
+        return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
 
 
 def classify_files(
@@ -2603,19 +3673,38 @@ def classify_files(
     include_patterns: List[str],
     exclude_patterns: List[str] = None
 ) -> Tuple[List[str], List[str]]:
-    """Return (in_scope, out_of_scope) based on include/exclude patterns."""
+    """
+    Return (in_scope, out_of_scope) based on include/exclude patterns.
+
+    Uses .gitignore-style pattern matching (supports ** for recursive matching).
+    """
     exclude_patterns = exclude_patterns or []
     in_scope = []
     out_of_scope = []
 
-    for file_path in changed_files:
-        included = matches_pattern(file_path, include_patterns)
-        excluded = matches_pattern(file_path, exclude_patterns)
+    if PATHSPEC_AVAILABLE:
+        # Use pathspec for accurate matching
+        include_spec = pathspec.PathSpec.from_lines('gitwildmatch', include_patterns)
+        exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns) if exclude_patterns else None
 
-        if included and not excluded:
-            in_scope.append(file_path)
-        else:
-            out_of_scope.append(file_path)
+        for file_path in changed_files:
+            included = include_spec.match_file(file_path)
+            excluded = exclude_spec.match_file(file_path) if exclude_spec else False
+
+            if included and not excluded:
+                in_scope.append(file_path)
+            else:
+                out_of_scope.append(file_path)
+    else:
+        # Fallback to fnmatch (limited ** support)
+        for file_path in changed_files:
+            included = matches_pattern(file_path, include_patterns)
+            excluded = matches_pattern(file_path, exclude_patterns)
+
+            if included and not excluded:
+                in_scope.append(file_path)
+            else:
+                out_of_scope.append(file_path)
 
     return in_scope, out_of_scope
 
@@ -2628,6 +3717,7 @@ def check_forbidden_files(
     if not forbid_patterns:
         return []
     return [f for f in changed_files if matches_pattern(f, forbid_patterns)]
+
 
 --- tools/lib/traces.py ---
 """Trace file operations for gate commands."""
@@ -2695,9 +3785,177 @@ def check_gate_trace(gate_name: str, traces_dir: Path, error_prefix: str) -> Lis
 
     return [f"Could not parse {gate_name} exit code from trace"]
 
+
+--- tools/lib/protocol_guard.py ---
+"""Protocol integrity verification."""
+import hashlib
+import json
+import fnmatch
+from pathlib import Path
+from typing import List, Dict, Any
+
+
+def sha256(file_path: Path) -> str:
+    """Compute SHA256 hash of file."""
+    return hashlib.sha256(file_path.read_bytes()).hexdigest()
+
+
+def verify_protocol_lock(
+    repo_root: Path,
+    plan: Dict[str, Any],
+    phase_id: str
+) -> List[str]:
+    """
+    Verify protocol files haven't been tampered with.
+
+    Returns list of issues (empty = all good).
+    """
+    issues = []
+
+    # Load protocol lock config
+    lock = plan.get("plan", {}).get("protocol_lock", {})
+    if not lock:
+        return []  # Protocol lock not configured
+
+    protected_globs = lock.get("protected_globs", [])
+    allow_in_phases = set(lock.get("allow_in_phases", []))
+
+    # Load manifest
+    manifest_path = repo_root / ".repo/protocol_manifest.json"
+    if not manifest_path.exists():
+        return ["Protocol manifest missing. Run: ./tools/generate_manifest.py"]
+
+    manifest = json.loads(manifest_path.read_text())
+    files = manifest.get("files", {})
+
+    # CRITICAL: Self-check judge integrity FIRST
+    judge_rel = "tools/judge.py"
+    judge_abs = repo_root / judge_rel
+    if judge_rel in files:
+        actual_hash = sha256(judge_abs)
+        expected_hash = files[judge_rel]
+        if actual_hash != expected_hash:
+            issues.append(
+                f"🚨 JUDGE TAMPER DETECTED: {judge_rel}\n"
+                f"   Expected: {expected_hash}\n"
+                f"   Actual:   {actual_hash}\n"
+                f"   The judge has been modified. This is a critical protocol violation."
+            )
+            return issues  # Fail immediately on judge tamper
+
+    # If in maintenance phase, allow changes
+    if phase_id in allow_in_phases:
+        return []
+
+    # Verify all manifest files
+    for rel_path, expected_hash in files.items():
+        file_path = repo_root / rel_path
+        if not file_path.exists():
+            issues.append(f"Protocol file missing: {rel_path}")
+        else:
+            actual_hash = sha256(file_path)
+            if actual_hash != expected_hash:
+                issues.append(
+                    f"Protocol file modified: {rel_path}\n"
+                    f"   Expected: {expected_hash}\n"
+                    f"   Actual:   {actual_hash}"
+                )
+
+    # Check git diff for protected files
+    from lib.git_ops import get_changed_files
+    base_branch = plan.get("plan", {}).get("base_branch", "main")
+
+    try:
+        changed_files = get_changed_files(
+            repo_root,
+            include_committed=True,
+            base_branch=base_branch
+        )
+
+        for changed_file in changed_files:
+            if any(fnmatch.fnmatch(changed_file, glob) for glob in protected_globs):
+                # Skip if already reported in manifest check
+                if changed_file not in files:
+                    issues.append(f"Protected file changed: {changed_file}")
+    except Exception:
+        # Git operations may fail in non-git repos or first commit
+        pass
+
+    return issues
+
+
+def verify_phase_binding(
+    repo_root: Path,
+    current: Dict[str, Any]
+) -> List[str]:
+    """
+    Verify plan and manifest haven't changed mid-phase.
+
+    Returns list of issues (empty = all good).
+    """
+    issues = []
+
+    plan_path = repo_root / ".repo/plan.yaml"
+    manifest_path = repo_root / ".repo/protocol_manifest.json"
+
+    # Check plan binding
+    if "plan_sha" in current:
+        if not plan_path.exists():
+            issues.append("Plan file missing: .repo/plan.yaml")
+        else:
+            actual_plan_sha = sha256(plan_path)
+            expected_plan_sha = current["plan_sha"]
+            if actual_plan_sha != expected_plan_sha:
+                issues.append(
+                    f"Plan changed mid-phase: .repo/plan.yaml\n"
+                    f"   Expected: {expected_plan_sha}\n"
+                    f"   Actual:   {actual_plan_sha}\n"
+                    f"   The plan cannot be modified during phase execution."
+                )
+
+    # Check manifest binding
+    if "manifest_sha" in current:
+        if not manifest_path.exists():
+            issues.append("Manifest file missing: .repo/protocol_manifest.json")
+        else:
+            actual_manifest_sha = sha256(manifest_path)
+            expected_manifest_sha = current["manifest_sha"]
+            if actual_manifest_sha != expected_manifest_sha:
+                issues.append(
+                    f"Manifest changed mid-phase: .repo/protocol_manifest.json\n"
+                    f"   Expected: {expected_manifest_sha}\n"
+                    f"   Actual:   {actual_manifest_sha}\n"
+                    f"   The manifest cannot be modified during phase execution."
+                )
+
+    return issues
+
+
 ===============================================================================
 SECTION 4: TESTS
 ===============================================================================
+
+--- tests/mvp/test_golden.py ---
+"""
+Golden path tests for MVP module.
+"""
+
+import sys
+from pathlib import Path
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+
+from mvp import hello_world
+
+
+def test_hello_world():
+    """Test that hello_world returns the expected greeting."""
+    result = hello_world()
+    assert result == "Hello from MVP!"
+    assert isinstance(result, str)
+    assert len(result) > 0
+
 
 --- tests/mvp/test_feature.py ---
 """
@@ -2743,26 +4001,284 @@ def test_calculate_score_type_validation():
     with pytest.raises(TypeError):
         calculate_score(None)
 
---- tests/mvp/test_golden.py ---
-"""
-Golden path tests for MVP module.
-"""
+
+--- tests/test_scope_matching.py ---
+"""Tests for scope pattern matching with globstar support."""
 
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+# Add tools/lib to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 
-from mvp import hello_world
+from lib.scope import classify_files, check_forbidden_files
 
 
-def test_hello_world():
-    """Test that hello_world returns the expected greeting."""
-    result = hello_world()
-    assert result == "Hello from MVP!"
-    assert isinstance(result, str)
-    assert len(result) > 0
+def test_globstar_recursive_matching():
+    """Test that ** matches nested directories."""
+    files = [
+        "src/foo.py",
+        "src/bar/baz.py",
+        "src/bar/qux/deep.py",
+        "docs/readme.md",
+        "tests/test_foo.py"
+    ]
+    include = ["src/**/*.py"]
+    exclude = []
+
+    in_scope, out_of_scope = classify_files(files, include, exclude)
+
+    # All .py files under src/ should be in scope
+    assert "src/foo.py" in in_scope
+    assert "src/bar/baz.py" in in_scope
+    assert "src/bar/qux/deep.py" in in_scope
+
+    # Non-src files should be out of scope
+    assert "docs/readme.md" in out_of_scope
+    assert "tests/test_foo.py" in out_of_scope
+
+
+def test_single_star_vs_double_star():
+    """Test difference between * and ** patterns."""
+    files = [
+        "src/foo.py",
+        "src/sub/bar.py",
+        "src/sub/deep/baz.py"
+    ]
+
+    # Single star - matches only in current dir
+    include_single = ["src/*.py"]
+    in_scope, out_of_scope = classify_files(files, include_single, [])
+
+    assert "src/foo.py" in in_scope
+    # Single star won't match nested paths with pathspec
+    # (fnmatch would fail here - this is the key difference)
+
+    # Double star - matches recursively
+    include_double = ["src/**/*.py"]
+    in_scope, out_of_scope = classify_files(files, include_double, [])
+
+    assert "src/foo.py" in in_scope
+    assert "src/sub/bar.py" in in_scope
+    assert "src/sub/deep/baz.py" in in_scope
+
+
+def test_exclude_patterns():
+    """Test that exclude patterns override include."""
+    files = [
+        "src/foo.py",
+        "src/test_bar.py",
+        "src/sub/baz.py",
+        "src/sub/test_qux.py"
+    ]
+    include = ["src/**/*.py"]
+    exclude = ["**/test_*.py"]
+
+    in_scope, out_of_scope = classify_files(files, include, exclude)
+
+    # Regular files should be in scope
+    assert "src/foo.py" in in_scope
+    assert "src/sub/baz.py" in in_scope
+
+    # Test files should be excluded
+    assert "src/test_bar.py" in out_of_scope
+    assert "src/sub/test_qux.py" in out_of_scope
+
+
+def test_multiple_include_patterns():
+    """Test multiple include patterns."""
+    files = [
+        "src/foo.py",
+        "tests/test_bar.py",
+        "docs/readme.md",
+        "scripts/deploy.sh"
+    ]
+    include = ["src/**/*.py", "tests/**/*.py"]
+    exclude = []
+
+    in_scope, out_of_scope = classify_files(files, include, exclude)
+
+    assert "src/foo.py" in in_scope
+    assert "tests/test_bar.py" in in_scope
+    assert "docs/readme.md" in out_of_scope
+    assert "scripts/deploy.sh" in out_of_scope
+
+
+def test_forbidden_files():
+    """Test forbidden file detection."""
+    files = [
+        "src/foo.py",
+        "requirements.txt",
+        "pyproject.toml",
+        "README.md"
+    ]
+    forbid = ["requirements.txt", "pyproject.toml"]
+
+    forbidden = check_forbidden_files(files, forbid)
+
+    assert "requirements.txt" in forbidden
+    assert "pyproject.toml" in forbidden
+    assert "src/foo.py" not in forbidden
+    assert "README.md" not in forbidden
+
+
+def test_forbidden_with_wildcards():
+    """Test forbidden patterns with wildcards."""
+    files = [
+        "src/foo.py",
+        ".env",
+        ".env.local",
+        "config/.secrets.yml",
+        "README.md"
+    ]
+    forbid = [".env*", "**/.secrets.yml"]
+
+    forbidden = check_forbidden_files(files, forbid)
+
+    assert ".env" in forbidden
+    assert ".env.local" in forbidden
+    assert "config/.secrets.yml" in forbidden
+    assert "src/foo.py" not in forbidden
+
+
+def test_edge_case_empty_patterns():
+    """Test behavior with empty patterns."""
+    files = ["src/foo.py", "docs/readme.md"]
+
+    # Empty include - all should be out of scope
+    in_scope, out_of_scope = classify_files(files, [], [])
+    assert len(in_scope) == 0
+    assert len(out_of_scope) == 2
+
+    # Empty exclude - no exclusions
+    in_scope, out_of_scope = classify_files(files, ["**/*.py"], [])
+    assert "src/foo.py" in in_scope
+
+
+def test_edge_case_no_files():
+    """Test behavior with no files."""
+    in_scope, out_of_scope = classify_files([], ["**/*.py"], [])
+    assert len(in_scope) == 0
+    assert len(out_of_scope) == 0
+
+
+def test_gitignore_style_patterns():
+    """Test .gitignore-style patterns."""
+    files = [
+        "node_modules/foo.js",
+        "src/node_modules/bar.js",  # nested
+        ".git/config",
+        "src/.git/HEAD",  # nested
+        "build/output.js",
+        "src/build/main.js"  # nested
+    ]
+    exclude = ["node_modules/**", ".git/**", "build/**"]
+
+    in_scope, out_of_scope = classify_files(files, ["**/*"], exclude)
+
+    # All excluded patterns should be out of scope
+    assert "node_modules/foo.js" in out_of_scope
+    assert ".git/config" in out_of_scope
+    assert "build/output.js" in out_of_scope
+
+
+--- tests/test_test_scoping.py ---
+"""
+Tests for test scoping and quarantine functionality (Phase 2.5).
+
+These are documentation tests showing expected behavior.
+The actual implementation is tested through integration tests.
+"""
+
+
+def test_default_test_scope_runs_all():
+    """
+    Test that default behavior (test_scope not specified) runs all tests.
+
+    Expected: pytest tests/ -v (all tests)
+    """
+    pass
+
+
+def test_test_scope_all_runs_all():
+    """
+    Test that test_scope: 'all' runs all tests explicitly.
+
+    Config:
+        test_scope: "all"
+        scope.include: ["tests/mvp/**"]
+
+    Expected: pytest tests/ -v (all tests, ignores narrow scope)
+    """
+    pass
+
+
+def test_test_scope_filters_to_scope():
+    """
+    Test that test_scope: 'scope' filters test paths.
+
+    Config:
+        test_scope: "scope"
+        scope.include: ["tests/mvp/**", "tests/integration/**"]
+
+    Expected: pytest tests/mvp/ tests/integration/ -v
+    """
+    pass
+
+
+def test_quarantine_adds_deselect_args():
+    """
+    Test that quarantine list adds --deselect arguments.
+
+    Config:
+        quarantine:
+          - path: "tests/test_flaky.py::test_timeout"
+          - path: "tests/test_legacy.py::test_old"
+
+    Expected: pytest tests/ --deselect tests/test_flaky.py::test_timeout --deselect tests/test_legacy.py::test_old -v
+    """
+    pass
+
+
+def test_scope_and_quarantine_combined():
+    """
+    Test that test_scope and quarantine work together.
+
+    Config:
+        test_scope: "scope"
+        scope.include: ["tests/mvp/**"]
+        quarantine:
+          - path: "tests/mvp/test_api.py::test_deprecated"
+
+    Expected: pytest tests/mvp/ --deselect tests/mvp/test_api.py::test_deprecated -v
+    """
+    pass
+
+
+def test_empty_quarantine_list():
+    """
+    Test that empty quarantine list doesn't break anything.
+
+    Config:
+        quarantine: []
+
+    Expected: pytest tests/ -v (no --deselect args)
+    """
+    pass
+
+
+def test_no_test_paths_in_scope():
+    """
+    Test behavior when scope has no test paths.
+
+    Config:
+        test_scope: "scope"
+        scope.include: ["src/mvp/**"]  # No tests/ paths
+
+    Expected: pytest tests/ -v (falls back to default)
+    """
+    pass
+
 
 ===============================================================================
 SECTION 5: CONFIGURATION
@@ -2779,6 +4295,26 @@ plan:
 
   # Lint command (optional, defaults to "ruff check .")
   lint_command: "ruff check ."
+
+  # LLM review configuration (optional, applies when llm_review gate is enabled)
+  llm_review_config:
+    model: "claude-sonnet-4-20250514"
+    max_tokens: 2000
+    temperature: 0
+    timeout_seconds: 60
+    budget_usd: null  # Set to limit costs (e.g., 0.50)
+    fail_on_transport_error: false  # Set true for strict validation
+    include_extensions: [".py"]  # File extensions to review
+    exclude_patterns: []  # Patterns to skip (e.g., "**/test_*.py")
+
+  # Protocol integrity enforcement
+  protocol_lock:
+    protected_globs:
+      - "tools/**"
+      - ".repo/plan.yaml"
+      - ".repo/protocol_manifest.json"
+    allow_in_phases:
+      - "P00-protocol-maintenance"
 
   phases:
     - id: P01-scaffold
@@ -2804,7 +4340,17 @@ plan:
       artifacts:
         must_exist: ["src/mvp/feature.py", "tests/mvp/test_feature.py"]
       gates:
-        tests: { must_pass: true }
+        tests:
+          must_pass: true
+          # Test scoping: "scope" runs only tests matching scope.include, "all" runs everything
+          test_scope: "scope"  # Only run tests/mvp/** tests
+          # Quarantine: tests expected to fail (optional)
+          quarantine: []
+            # Example quarantine entries (commented out):
+            # - path: "tests/mvp/test_legacy.py::test_deprecated"
+            #   reason: "Removing deprecated endpoint in this phase, tests updated in P03"
+            # - path: "tests/integration/test_external_api.py::test_timeout"
+            #   reason: "External API occasionally times out, non-blocking"
         lint:  { must_pass: true }
         docs:  { must_update: ["docs/mvp.md#feature"] }
         llm_review: { enabled: true }
@@ -2813,186 +4359,51 @@ plan:
       drift_rules:
         forbid_changes: ["requirements.txt", "pyproject.toml", ".github/**"]
 
---- .repo/briefs/P01-scaffold.md ---
-# Phase P01: Scaffold
 
-## Objective
-Create the skeleton module structure with a golden test and initial documentation.
+--- .repo/protocol_manifest.json ---
+{
+  "version": 1,
+  "files": {
+    "tools/judge.py": "44f891e842ed782a84b2c5840fd6e0bf026403f464c105e97a99e80403947ea7",
+    "tools/phasectl.py": "db32faf7a2723727458b5a982e104c5a78871290f1e3195cad8c8c5c104fac9c",
+    "tools/llm_judge.py": "8bdd77d33f857b32c2c64e21b90c6596a23a4fcbc9b00343e705833ff10664f7",
+    ".repo/plan.yaml": "76f0af41a314154506d98b7c30a3285d40b4f1a9473c2ed2b4fadd675308198e",
+    "tools/lib/__init__.py": "7587d01c70810521dbaa04f36d26bc7ab4164890893073d2a6562bd29ceac9a5",
+    "tools/lib/git_ops.py": "48dcfd8a50721858a9ade86784469680ff8244805632b9d29e6d0e503a8dd1d6",
+    "tools/lib/scope.py": "76473a354866e739499faf6bfdbc078aa5e6e0094a3973d7cbf513e7cd135df7",
+    "tools/lib/traces.py": "14fe079e698e1db6e5144c5093a59765a04058305542ca0d0b8d463e3f5fb020",
+    "tools/lib/protocol_guard.py": "5f669aed06b199cbc0693209326d63c2f5c16303dcaab5896bf55edd757e26ac"
+  }
+}
 
-## Scope 🎯
-
-✅ **YOU MAY TOUCH:**
-- `src/mvp/**` - Module code
-- `tests/mvp/**` - Test files
-- `docs/mvp.md` - Documentation
-
-❌ **DO NOT TOUCH:**
-- `requirements.txt` - Dependencies (use separate phase)
-- `pyproject.toml` - Project config (use separate phase)
-- `src/**/legacy/**` - Legacy code (excluded)
-- Other modules outside `mvp/`
-
-🤔 **IF YOU NEED TO TOUCH THESE:**
-Stop and create a separate phase. Drift prevention will fail the review.
-
-## Required Artifacts
-- [ ] `src/mvp/__init__.py` - Module initialization
-- [ ] `tests/mvp/test_golden.py` - Golden path test
-- [ ] `docs/mvp.md` - Initial documentation
-
-## Gates
-- **Tests:** Must pass
-- **Docs:** Must update `docs/mvp.md`
-- **Drift:** 0 out-of-scope changes allowed (enforced)
-
-## Implementation Steps
-
-1. **Create module structure**
-   - Create `src/mvp/__init__.py` with basic module setup
-   - Add a simple `hello_world()` function for testing
-
-2. **Create golden test**
-   - Create `tests/mvp/test_golden.py`
-   - Write a test that validates `hello_world()` returns expected value
-   - Ensure test passes
-
-3. **Create documentation**
-   - Create `docs/mvp.md`
-   - Document the module purpose and basic API
-
-4. **Submit for review**
-   - Run: `./tools/phasectl.py review P01-scaffold`
-   - Wait for judge feedback
-   - If critique appears, fix issues and re-run review
-   - When approved, run: `./tools/phasectl.py next`
-
-## 4-Step Protocol
-
-1. **Read** this brief and understand scope boundaries
-2. **Implement** only files within the defined scope
-3. **Review** via `./tools/phasectl.py review P01-scaffold`
-4. **Iterate** until judge approves, then advance with `./tools/phasectl.py next`
-
---- .repo/briefs/P02-impl-feature.md ---
-# Phase P02: Implement Feature
-
-## Objective
-Implement a simple feature with refactoring and documentation section.
-
-## Scope 🎯
-
-✅ **YOU MAY TOUCH:**
-- `src/mvp/feature.py` - New feature module
-- `tests/mvp/test_feature.py` - Feature tests
-- `docs/mvp.md` - Update documentation
-
-❌ **DO NOT TOUCH:**
-- `requirements.txt` - Dependencies (use separate phase)
-- `pyproject.toml` - Project config (use separate phase)
-- `.github/**` - CI/CD config (use separate phase)
-- Other modules outside this specific scope
-
-🤔 **IF YOU NEED TO TOUCH THESE:**
-Stop and create a separate phase. Drift prevention will fail the review.
-
-## Required Artifacts
-- [ ] `src/mvp/feature.py` - Feature implementation
-- [ ] `tests/mvp/test_feature.py` - Feature tests
-
-## Gates
-- **Tests:** Must pass
-- **Docs:** Must update `docs/mvp.md#feature` section
-- **LLM Review:** Enabled (semantic code quality check)
-- **Drift:** 0 out-of-scope changes allowed (enforced)
-
-## Implementation Steps
-
-1. **Create feature module**
-   - Create `src/mvp/feature.py`
-   - Implement a `calculate_score(value: int) -> int` function
-   - Function should validate input and return value * 2
-
-2. **Create feature tests**
-   - Create `tests/mvp/test_feature.py`
-   - Test valid inputs (positive, zero, negative)
-   - Test edge cases
-   - Ensure all tests pass
-
-3. **Update documentation**
-   - Add a "## Feature" section to `docs/mvp.md`
-   - Document the `calculate_score` function
-   - Include usage examples
-
-4. **Submit for review**
-   - Run: `./tools/phasectl.py review P02-impl-feature`
-   - Wait for judge feedback
-   - If critique appears, fix issues and re-run review
-   - When approved, pipeline is complete!
-
-## 4-Step Protocol
-
-1. **Read** this brief and understand scope boundaries
-2. **Implement** only files within the defined scope
-3. **Review** via `./tools/phasectl.py review P02-impl-feature`
-4. **Iterate** until judge approves, then complete
 
 --- requirements.txt ---
 pytest>=7.0.0
 pyyaml>=6.0
 anthropic>=0.39.0
 ruff>=0.1.0
+pathspec>=0.11.0
 
---- .gitignore ---
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-/lib/
-/lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-venv/
-ENV/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Runtime files
-.repo/critiques/*.md
-.repo/critiques/*.OK
-.repo/traces/*.txt
-
-# Environment variables
-.env
 
 ===============================================================================
 SECTION 6: EXAMPLE CODE
 ===============================================================================
+
+--- src/mvp/__init__.py ---
+"""
+MVP Module - Demonstration of judge-gated orchestration.
+"""
+
+
+def hello_world() -> str:
+    """
+    Return a simple greeting message.
+
+    Returns:
+        str: A greeting message
+    """
+    return "Hello from MVP!"
+
 
 --- src/mvp/feature.py ---
 """
@@ -3018,12 +4429,55 @@ def calculate_score(value: int) -> int:
 
     return value * 2
 
+
 ===============================================================================
 SECTION 7: PROJECT STRUCTURE
 ===============================================================================
 
-Directory tree:
-/tmp/package_all.sh: line 167: tree: command not found
+```
+judge-gated-orchestrator/
+├── .repo/
+│   ├── briefs/
+│   │   ├── CURRENT.json         # Points to active phase
+│   │   ├── P01-scaffold.md      # Phase briefs
+│   │   └── P02-impl-feature.md
+│   ├── critiques/
+│   │   ├── P01-scaffold.OK      # Approval markers
+│   │   ├── P02-impl-feature.md  # Or critique files
+│   │   └── *.json               # Machine-readable versions (Phase 2)
+│   ├── traces/
+│   │   ├── last_test.txt        # Test execution output
+│   │   └── last_lint.txt
+│   ├── plan.yaml                # Roadmap + gates
+│   └── protocol_manifest.json   # SHA256 hashes for integrity
+├── tools/
+│   ├── phasectl.py              # Controller (review/next)
+│   ├── judge.py                 # Gate validator
+│   ├── llm_judge.py             # Optional LLM review
+│   ├── generate_manifest.py     # Update protocol hashes
+│   ├── generate_complete_package.py  # This script
+│   └── lib/                     # Shared utilities
+│       ├── __init__.py
+│       ├── git_ops.py           # Git operations
+│       ├── scope.py             # Pattern matching (Phase 1: pathspec)
+│       ├── traces.py            # Trace file handling
+│       └── protocol_guard.py    # Integrity checks
+├── src/mvp/                     # Example code
+├── tests/                       # Test suite
+│   ├── mvp/
+│   ├── test_scope_matching.py   # Phase 1 tests
+│   └── test_test_scoping.py     # Phase 2.5 tests
+├── docs/mvp.md                  # Documentation
+├── orient.sh                    # Status in 10 seconds
+├── README.md                    # Human-readable overview
+├── PROTOCOL.md                  # LLM operational manual
+├── TESTME.md                    # Validation guide (12 tests)
+├── PHASE1_IMPLEMENTATION.md     # Phase 1 implementation docs
+├── PHASE2_IMPLEMENTATION.md     # Phase 2 implementation docs
+├── PHASE2_5_IMPLEMENTATION.md   # Phase 2.5 implementation docs
+├── CRITIQUE_ANALYSIS.md         # Prioritized improvements
+└── requirements.txt             # Python dependencies
+```
 
 ===============================================================================
 SECTION 8: USAGE GUIDE
@@ -3031,85 +4485,74 @@ SECTION 8: USAGE GUIDE
 
 ## Quick Start
 
-1. Setup:
-   ```bash
-   mkdir myproject
-   cd myproject
-   git init
-   
-   # Create structure
-   mkdir -p .repo/briefs .repo/critiques .repo/traces
-   mkdir -p tools/lib
-   mkdir -p tests src
-   
-   # Copy files from this package to appropriate locations
-   ```
+```bash
+# 1. Install
+git clone <repo-url>
+cd judge-gated-orchestrator
+pip install -r requirements.txt
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+# 2. Orient (see current state)
+./orient.sh
 
-3. Create your first phase:
-   ```bash
-   # Edit .repo/plan.yaml with your phases
-   # Write .repo/briefs/P01-yourphase.md
-   # Set CURRENT.json to point to P01
-   ```
+# 3. Review current phase
+./tools/phasectl.py review P02-impl-feature
 
-4. Execute:
-   ```bash
-   ./tools/phasectl.py review P01-yourphase
-   ```
+# 4. Advance to next phase (if approved)
+./tools/phasectl.py next
+```
 
-## Key Files
+## Key Commands
 
-- `tools/judge.py` (267 LOC): Gate validation logic
-- `tools/phasectl.py` (327 LOC): Review orchestration
-- `tools/llm_judge.py` (129 LOC): Optional LLM review
-- `tools/lib/git_ops.py` (57 LOC): Git operations
-- `tools/lib/scope.py` (41 LOC): File scope classification
-- `tools/lib/traces.py` (64 LOC): Command trace handling
+**./orient.sh** - Show current state in <10 seconds
+**./tools/phasectl.py review <phase>** - Submit for review
+**./tools/phasectl.py next** - Advance to next phase
+**./tools/generate_manifest.py** - Update protocol hashes
 
-Total: 888 LOC
+## Features by Phase
 
-## Configuration
+**Phase 1 (Critical Fixes):**
+- Per-phase baseline SHA (stable diffs)
+- Docs gate verifies actual changes
+- LLM review includes all changes
+- Pathspec for proper globstar support
 
-Edit `.repo/plan.yaml` to define:
-- Phases (id, description, scope, gates)
-- Test command
-- Lint command
-- Base branch for drift detection
+**Phase 2 (Need-to-Have):**
+- Atomic critique writes (no lost feedback)
+- Correct git commands (committed vs uncommitted)
+- Machine-readable JSON output
+- LLM gate configuration
 
-## Gates
+**Phase 2.5 (Real-World):**
+- Test scoping (run only relevant tests)
+- Test quarantine (skip flaky/legacy tests)
 
-All gates return List[str] (empty = pass, items = issues):
+## Testing
 
-- `check_artifacts()`: Required files exist
-- `check_gate_trace("tests")`: Tests passed (reads trace)
-- `check_gate_trace("lint")`: Linting passed (reads trace)
-- `check_docs()`: Documentation updated
-- `check_drift()`: Changes within scope
-- `llm_code_review()`: Claude semantic review (optional)
+Run full validation suite:
+```bash
+pytest tests/ -v          # Run all tests (21 tests)
+ruff check .              # Lint check
+./tools/generate_manifest.py  # Regenerate hashes
+```
 
-## Extending
+Follow TESTME.md for comprehensive validation (12 tests, 25-30 minutes).
 
-Add new gates:
-1. Write check function: `def check_security(phase) -> List[str]`
-2. Add to judge.py gate checks
-3. Add gate config to plan.yaml
+## Protocol Integrity
 
-## Philosophy
+Protected files (SHA256-verified):
+- tools/judge.py
+- tools/phasectl.py
+- tools/llm_judge.py
+- tools/lib/*.py
+- .repo/plan.yaml
+- .repo/protocol_manifest.json
 
-This is a PROTOCOL, not a framework.
-- No classes to inherit
-- No packages to import
-- Just files following conventions
-- Shell commands to orchestrate
-
-Like Git doesn't dictate code structure, this doesn't dictate architecture.
-It only enforces quality during autonomous execution.
+Modification requires dedicated protocol maintenance phase.
 
 ===============================================================================
 END OF PACKAGE
 ===============================================================================
+
+Total: 2183 lines of Python code across 17 files
+Generated: 2025-10-12
+Version: 2.5 (Phase 1 + Phase 2 + Phase 2.5)
