@@ -6,38 +6,11 @@ Uses git diff to find actually changed files, then reviews them with Claude.
 """
 
 import os
-import subprocess
 from typing import List, Dict, Any
 from pathlib import Path
 
-
-def get_changed_files(repo_root: Path) -> List[Path]:
-    """
-    Get list of files changed in working directory using git diff.
-
-    Returns only files that exist and have been modified.
-    """
-    try:
-        # Get staged and unstaged changes
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-
-        changed_files = []
-        for line in result.stdout.strip().split("\n"):
-            if line:
-                file_path = repo_root / line
-                if file_path.exists() and file_path.is_file():
-                    changed_files.append(file_path)
-
-        return changed_files
-    except subprocess.CalledProcessError:
-        # Not a git repo or git not available
-        return []
+# Import shared utilities
+from lib.git_ops import get_changed_files as get_changed_files_raw
 
 
 def llm_code_review(phase: Dict[str, Any], repo_root: Path) -> List[str]:
@@ -62,8 +35,18 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path) -> List[str]:
     except ImportError:
         return ["LLM review enabled but anthropic package not installed. Run: pip install anthropic"]
 
-    # Get changed files
-    changed_files = get_changed_files(repo_root)
+    # Get changed files (uncommitted only)
+    changed_file_strs = get_changed_files_raw(
+        repo_root,
+        include_committed=False
+    )
+
+    # Convert to Path objects and filter to existing files
+    changed_files = []
+    for file_str in changed_file_strs:
+        file_path = repo_root / file_str
+        if file_path.exists() and file_path.is_file():
+            changed_files.append(file_path)
 
     if not changed_files:
         # No changes detected - approve

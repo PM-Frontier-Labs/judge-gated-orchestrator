@@ -11,7 +11,6 @@ import sys
 import json
 import time
 import subprocess
-import fnmatch
 from pathlib import Path
 
 try:
@@ -19,6 +18,11 @@ try:
 except ImportError:
     print("❌ Error: pyyaml not installed. Run: pip install pyyaml")
     sys.exit(1)
+
+# Import shared utilities
+from lib.git_ops import get_changed_files
+from lib.scope import classify_files, check_forbidden_files
+from lib.traces import run_command_with_trace
 
 REPO_ROOT = Path(__file__).parent.parent
 REPO_DIR = REPO_ROOT / ".repo"
@@ -47,7 +51,7 @@ def run_tests(plan):
     """Run tests and save results to trace file."""
     print("🧪 Running tests...")
 
-    # Get test command from plan, default to pytest
+    # Get test command from plan
     test_config = plan.get("plan", {}).get("test_command", {})
     if isinstance(test_config, str):
         test_cmd = test_config.split()
@@ -56,35 +60,14 @@ def run_tests(plan):
     else:
         test_cmd = ["pytest", "tests/", "-v"]
 
-    # Check if test runner exists
-    try:
-        subprocess.run([test_cmd[0], "--version"],
-                      capture_output=True,
-                      check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    # Run command and save trace
+    exit_code = run_command_with_trace("tests", test_cmd, REPO_ROOT, TRACES_DIR)
+
+    if exit_code is None:
         print(f"❌ Error: {test_cmd[0]} not installed")
         print("   Install it or update test_command in .repo/plan.yaml")
-        return None
 
-    # Run tests and capture output
-    result = subprocess.run(
-        test_cmd,
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True
-    )
-
-    # Save results to trace
-    TRACES_DIR.mkdir(parents=True, exist_ok=True)
-    trace_file = TRACES_DIR / "last_test.txt"
-    trace_file.write_text(
-        f"Exit code: {result.returncode}\n"
-        f"Timestamp: {time.time()}\n"
-        f"\n=== STDOUT ===\n{result.stdout}\n"
-        f"\n=== STDERR ===\n{result.stderr}\n"
-    )
-
-    return result.returncode
+    return exit_code
 
 
 def run_lint(plan, phase_id):
@@ -102,7 +85,7 @@ def run_lint(plan, phase_id):
 
     print("🔍 Running linter...")
 
-    # Get lint command from plan, default to ruff
+    # Get lint command from plan
     lint_config = plan.get("plan", {}).get("lint_command", {})
     if isinstance(lint_config, str):
         lint_cmd = lint_config.split()
@@ -111,82 +94,16 @@ def run_lint(plan, phase_id):
     else:
         lint_cmd = ["ruff", "check", "."]
 
-    # Check if linter exists
-    try:
-        # For ruff, use 'ruff --version' not 'ruff check --version'
-        version_cmd = [lint_cmd[0], "--version"] if lint_cmd[0] != "ruff" else ["ruff", "--version"]
-        subprocess.run(version_cmd,
-                      capture_output=True,
-                      check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    # Run command and save trace
+    exit_code = run_command_with_trace("lint", lint_cmd, REPO_ROOT, TRACES_DIR)
+
+    if exit_code is None:
         print(f"❌ Error: {lint_cmd[0]} not installed")
         print("   Install it or update lint_command in .repo/plan.yaml")
-        return None
 
-    # Run linter and capture output
-    result = subprocess.run(
-        lint_cmd,
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True
-    )
-
-    # Save results to trace
-    TRACES_DIR.mkdir(parents=True, exist_ok=True)
-    trace_file = TRACES_DIR / "last_lint.txt"
-    trace_file.write_text(
-        f"Exit code: {result.returncode}\n"
-        f"Timestamp: {time.time()}\n"
-        f"\n=== STDOUT ===\n{result.stdout}\n"
-        f"\n=== STDERR ===\n{result.stderr}\n"
-    )
-
-    return result.returncode
+    return exit_code
 
 
-def get_changed_files(base_branch: str) -> list:
-    """Get list of files changed from base branch."""
-    try:
-        # First, get uncommitted changes (staged and unstaged)
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        uncommitted = [f for f in result.stdout.strip().split("\n") if f]
-
-        # Then, get committed changes from base branch
-        result = subprocess.run(
-            ["git", "merge-base", "HEAD", base_branch],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        merge_base = result.stdout.strip()
-
-        result = subprocess.run(
-            ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        committed = [f for f in result.stdout.strip().split("\n") if f]
-
-        # Combine both, remove duplicates
-        all_changes = list(set(uncommitted + committed))
-        return [f for f in all_changes if f]  # Filter empty strings
-
-    except subprocess.CalledProcessError:
-        return []
-
-
-def matches_pattern(path: str, patterns: list) -> bool:
-    """Check if path matches any glob pattern."""
-    return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
 
 
 def show_diff_summary(phase_id: str, plan: dict):
@@ -201,8 +118,12 @@ def show_diff_summary(phase_id: str, plan: dict):
     # Get base branch
     base_branch = plan.get("plan", {}).get("base_branch", "main")
 
-    # Get changed files
-    changed_files = get_changed_files(base_branch)
+    # Get changed files using shared utility
+    changed_files = get_changed_files(
+        REPO_ROOT,
+        include_committed=True,
+        base_branch=base_branch
+    )
 
     if not changed_files:
         print("📊 No changes detected")
@@ -217,18 +138,12 @@ def show_diff_summary(phase_id: str, plan: dict):
         print(f"📊 {len(changed_files)} files changed (no scope defined)")
         return
 
-    # Classify files
-    in_scope = []
-    out_of_scope = []
-
-    for file_path in changed_files:
-        included = matches_pattern(file_path, include_patterns)
-        excluded = matches_pattern(file_path, exclude_patterns)
-
-        if included and not excluded:
-            in_scope.append(file_path)
-        else:
-            out_of_scope.append(file_path)
+    # Classify files using shared utility
+    in_scope, out_of_scope = classify_files(
+        changed_files,
+        include_patterns,
+        exclude_patterns
+    )
 
     # Show summary
     print("📊 Change Summary:")
@@ -262,19 +177,18 @@ def show_diff_summary(phase_id: str, plan: dict):
             print("   3. Split into separate phase")
             print()
 
-    # Check forbidden files
+    # Check forbidden files using shared utility
     drift_rules = phase.get("drift_rules", {})
     forbid_patterns = drift_rules.get("forbid_changes", [])
+    forbidden_files = check_forbidden_files(changed_files, forbid_patterns)
 
-    if forbid_patterns:
-        forbidden_files = [f for f in changed_files if matches_pattern(f, forbid_patterns)]
-        if forbidden_files:
-            print(f"🚫 Forbidden files changed ({len(forbidden_files)}):")
-            for f in forbidden_files:
-                print(f"  - {f}")
-            print()
-            print(f"   These require a separate phase. Revert: git checkout HEAD {' '.join(forbidden_files)}")
-            print()
+    if forbidden_files:
+        print(f"🚫 Forbidden files changed ({len(forbidden_files)}):")
+        for f in forbidden_files:
+            print(f"  - {f}")
+        print()
+        print(f"   These require a separate phase. Revert: git checkout HEAD {' '.join(forbidden_files)}")
+        print()
 
 
 def review_phase(phase_id: str):

@@ -11,8 +11,6 @@ Checks:
 
 import sys
 import time
-import subprocess
-import fnmatch
 from pathlib import Path
 from typing import Dict, List, Any
 
@@ -21,6 +19,11 @@ try:
 except ImportError:
     print("❌ Error: pyyaml not installed. Run: pip install pyyaml")
     sys.exit(1)
+
+# Import shared utilities
+from lib.git_ops import get_changed_files
+from lib.scope import classify_files, check_forbidden_files
+from lib.traces import check_gate_trace
 
 # Import LLM judge (optional)
 try:
@@ -72,66 +75,6 @@ def check_artifacts(phase: Dict[str, Any]) -> List[str]:
     return issues
 
 
-def check_tests() -> List[str]:
-    """Check that tests passed (read from trace file)."""
-    issues = []
-    trace_file = TRACES_DIR / "last_test.txt"
-
-    if not trace_file.exists():
-        issues.append("No test results found. Tests may not have run.")
-        return issues
-
-    # Read trace file
-    trace_content = trace_file.read_text()
-    lines = trace_content.split("\n")
-
-    # Parse exit code
-    exit_code = None
-    for line in lines:
-        if line.startswith("Exit code:"):
-            try:
-                exit_code = int(line.split(":")[1].strip())
-                break
-            except (ValueError, IndexError):
-                pass
-
-    if exit_code is None:
-        issues.append("Could not parse test exit code from trace")
-    elif exit_code != 0:
-        issues.append(f"Tests failed with exit code {exit_code}. See .repo/traces/last_test.txt for details.")
-
-    return issues
-
-
-def check_lint() -> List[str]:
-    """Check that linting passed (read from trace file)."""
-    issues = []
-    trace_file = TRACES_DIR / "last_lint.txt"
-
-    if not trace_file.exists():
-        issues.append("No lint results found. Linter may not have run.")
-        return issues
-
-    # Read trace file
-    trace_content = trace_file.read_text()
-    lines = trace_content.split("\n")
-
-    # Parse exit code
-    exit_code = None
-    for line in lines:
-        if line.startswith("Exit code:"):
-            try:
-                exit_code = int(line.split(":")[1].strip())
-                break
-            except (ValueError, IndexError):
-                pass
-
-    if exit_code is None:
-        issues.append("Could not parse lint exit code from trace")
-    elif exit_code != 0:
-        issues.append(f"Linting failed with exit code {exit_code}. See .repo/traces/last_lint.txt for details.")
-
-    return issues
 
 
 def check_docs(phase: Dict[str, Any]) -> List[str]:
@@ -157,50 +100,6 @@ def check_docs(phase: Dict[str, Any]) -> List[str]:
     return issues
 
 
-def get_changed_files(base_branch: str) -> List[str]:
-    """Get list of files changed from base branch using git."""
-    try:
-        # First, get uncommitted changes (staged and unstaged)
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        uncommitted = [f for f in result.stdout.strip().split("\n") if f]
-
-        # Then, get committed changes from base branch
-        result = subprocess.run(
-            ["git", "merge-base", "HEAD", base_branch],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        merge_base = result.stdout.strip()
-
-        result = subprocess.run(
-            ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        committed = [f for f in result.stdout.strip().split("\n") if f]
-
-        # Combine both, remove duplicates
-        all_changes = list(set(uncommitted + committed))
-        return [f for f in all_changes if f]  # Filter empty strings
-
-    except subprocess.CalledProcessError:
-        # Not a git repo or base branch doesn't exist
-        return []
-
-
-def matches_pattern(path: str, patterns: List[str]) -> bool:
-    """Check if path matches any glob pattern."""
-    return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
 
 
 def check_drift(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
@@ -216,7 +115,11 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
     base_branch = plan.get("plan", {}).get("base_branch", "main")
 
     # Get changed files
-    changed_files = get_changed_files(base_branch)
+    changed_files = get_changed_files(
+        REPO_ROOT,
+        include_committed=True,
+        base_branch=base_branch
+    )
 
     if not changed_files:
         return []  # No changes or not a git repo
@@ -229,34 +132,24 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
     if not include_patterns:
         return []  # No scope defined, can't check drift
 
-    # Classify files
-    in_scope = []
-    out_of_scope = []
+    # Classify files using shared utility
+    in_scope, out_of_scope = classify_files(
+        changed_files,
+        include_patterns,
+        exclude_patterns
+    )
 
-    for file_path in changed_files:
-        # Check if file matches include patterns
-        included = matches_pattern(file_path, include_patterns)
-        # Check if file matches exclude patterns
-        excluded = matches_pattern(file_path, exclude_patterns)
-
-        if included and not excluded:
-            in_scope.append(file_path)
-        else:
-            out_of_scope.append(file_path)
-
-    # Check forbidden patterns
+    # Check forbidden patterns using shared utility
     drift_rules = phase.get("drift_rules", {})
     forbid_patterns = drift_rules.get("forbid_changes", [])
+    forbidden_files = check_forbidden_files(changed_files, forbid_patterns)
 
-    if forbid_patterns:
-        forbidden_files = [f for f in changed_files
-                          if matches_pattern(f, forbid_patterns)]
-        if forbidden_files:
-            issues.append("Forbidden files changed (these require a separate phase):")
-            for f in forbidden_files:
-                issues.append(f"  - {f}")
-            issues.append(f"Fix: git checkout HEAD {' '.join(forbidden_files)}")
-            issues.append("")
+    if forbidden_files:
+        issues.append("Forbidden files changed (these require a separate phase):")
+        for f in forbidden_files:
+            issues.append(f"  - {f}")
+        issues.append(f"Fix: git checkout HEAD {' '.join(forbidden_files)}")
+        issues.append("")
 
     # Check out-of-scope changes
     allowed_drift = drift_gate.get("allowed_out_of_scope_changes", 0)
@@ -313,20 +206,20 @@ def judge_phase(phase_id: str):
         print(f"❌ Error: {e}")
         return 2
 
-    # Run all checks
+    # Run all checks - Phase → Gates → Verdict
     all_issues = []
 
     print("  🔍 Checking artifacts...")
     all_issues.extend(check_artifacts(phase))
 
     print("  🔍 Checking tests...")
-    all_issues.extend(check_tests())
+    all_issues.extend(check_gate_trace("tests", TRACES_DIR, "Tests"))
 
     # Lint check (optional)
     lint_gate = phase.get("gates", {}).get("lint", {})
     if lint_gate.get("must_pass", False):
         print("  🔍 Checking linting...")
-        all_issues.extend(check_lint())
+        all_issues.extend(check_gate_trace("lint", TRACES_DIR, "Linting"))
 
     print("  🔍 Checking documentation...")
     all_issues.extend(check_docs(phase))
