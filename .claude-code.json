@@ -1,0 +1,22 @@
+{
+  "name": "Judge-Gated Orchestration Demo",
+  "description": "Autonomous phase-based execution with quality gates",
+  "auto_approve_patterns": [
+    "Read(./**)",
+    "Write(./.repo/**)",
+    "Write(./src/**)",
+    "Write(./tests/**)",
+    "Write(./docs/**)",
+    "Edit(./src/**)",
+    "Edit(./tests/**)",
+    "Bash(./tools/phasectl.py review *)",
+    "Bash(./tools/phasectl.py next)",
+    "Bash(pytest tests/**)",
+    "Bash(git status)",
+    "Bash(git diff *)",
+    "Bash(git add .repo/**)",
+    "Bash(git add src/**)",
+    "Bash(git add tests/**)",
+    "Bash(git add docs/**)"
+  ]
+}

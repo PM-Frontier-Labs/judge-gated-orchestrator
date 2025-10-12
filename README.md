@@ -35,6 +35,15 @@ A minimal, terminal-native orchestration layer for autonomous Claude Code execut
 
 ## 🚀 Quick Start
 
+### New Claude Instance?
+
+**Run this first:**
+```bash
+./orient.sh
+```
+
+See **START_HERE.md** for complete orientation guide.
+
 ### 1. Install Dependencies
 
 ```bash
