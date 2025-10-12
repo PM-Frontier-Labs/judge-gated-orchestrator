@@ -82,6 +82,17 @@ plan:
   test_command: "pytest tests/ -v"  # Optional, defaults to pytest
   lint_command: "ruff check ."      # Optional, defaults to ruff
 
+  # LLM review configuration (Phase 2 - optional)
+  llm_review_config:
+    model: "claude-sonnet-4-20250514"       # Model to use
+    max_tokens: 2000                         # Max response tokens
+    temperature: 0                           # Response randomness
+    timeout_seconds: 60                      # API timeout
+    budget_usd: null                         # Cost limit (null = no limit)
+    fail_on_transport_error: false           # Block on API errors (false = resilient)
+    include_extensions: [".py"]              # File extensions to review
+    exclude_patterns: []                     # Patterns to skip (e.g., "**/test_*.py")
+
   phases:
     - id: P01-phase-name
       description: "What this phase accomplishes"
@@ -188,6 +199,54 @@ Please address the issues above and re-run:
 
 ---
 
+### `.repo/critiques/<phase-id>.json`
+
+Machine-readable critique format (Phase 2 addition). Written alongside `.md` for CI/tooling integration.
+
+**Format:**
+```json
+{
+  "phase": "P01-scaffold",
+  "timestamp": 1760234567.0,
+  "passed": false,
+  "issues": [
+    {
+      "gate": "tests",
+      "messages": [
+        "Tests failed with exit code 1. See .repo/traces/last_test.txt"
+      ]
+    },
+    {
+      "gate": "drift",
+      "messages": [
+        "Out-of-scope changes detected (3 files, 0 allowed):",
+        "  - README.md",
+        "  - tools/judge.py",
+        "  - requirements.txt"
+      ]
+    }
+  ],
+  "total_issue_count": 2
+}
+```
+
+**Fields:**
+- `phase` (string): Phase identifier
+- `timestamp` (float): Unix timestamp when critique was generated
+- `passed` (boolean): Always `false` for critiques
+- `issues` (array): List of issues grouped by gate
+  - `gate` (string): Gate that failed (tests, drift, docs, artifacts, lint, llm_review)
+  - `messages` (array of strings): Issue descriptions for this gate
+- `total_issue_count` (int): Total number of gate failures
+
+**Use this for:**
+- CI/CD integration (parse verdict without regex)
+- Automated reporting and dashboards
+- Programmatic critique analysis
+- Machine learning on failure patterns
+
+---
+
 ### `.repo/critiques/<phase-id>.OK`
 
 Approval marker. Phase passed all gates.
@@ -200,6 +259,34 @@ Phase P01-scaffold approved at 1760223767.123
 **When this file exists:**
 - Phase is approved
 - You may run `./tools/phasectl.py next` to advance
+
+---
+
+### `.repo/critiques/<phase-id>.OK.json`
+
+Machine-readable approval format (Phase 2 addition). Written alongside `.OK` for CI/tooling integration.
+
+**Format:**
+```json
+{
+  "phase": "P01-scaffold",
+  "timestamp": 1760223767.123,
+  "passed": true,
+  "approved_at": 1760223767.123
+}
+```
+
+**Fields:**
+- `phase` (string): Phase identifier
+- `timestamp` (float): Unix timestamp when approval was generated
+- `passed` (boolean): Always `true` for approvals
+- `approved_at` (float): Unix timestamp of approval (same as timestamp)
+
+**Use this for:**
+- CI/CD integration (programmatic approval checks)
+- Automated advancement to next phase
+- Build pipeline triggers
+- Audit trail and reporting
 
 ---
 
