@@ -115,14 +115,24 @@ def show_diff_summary(phase_id: str, plan: dict):
     if not phase:
         return  # Can't show summary without phase config
 
-    # Get base branch
+    # Load baseline SHA from CURRENT.json for consistent diffs
+    baseline_sha = None
+    if CURRENT_FILE.exists():
+        try:
+            current = json.loads(CURRENT_FILE.read_text())
+            baseline_sha = current.get("baseline_sha")
+        except (json.JSONDecodeError, KeyError):
+            pass  # Tolerate missing or malformed CURRENT.json
+
+    # Get base branch (fallback only)
     base_branch = plan.get("plan", {}).get("base_branch", "main")
 
-    # Get changed files using shared utility
+    # Get changed files using baseline SHA for consistent diffs
     changed_files = get_changed_files(
         REPO_ROOT,
         include_committed=True,
-        base_branch=base_branch
+        base_branch=base_branch,
+        baseline_sha=baseline_sha
     )
 
     if not changed_files:
@@ -297,12 +307,25 @@ def next_phase():
     plan_path = REPO_DIR / "plan.yaml"
     manifest_path = REPO_DIR / "protocol_manifest.json"
 
+    # Get baseline SHA for consistent diffs throughout phase
+    baseline_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True
+    )
+    baseline_sha = baseline_result.stdout.strip() if baseline_result.returncode == 0 else None
+
     current_data = {
         "phase_id": next_id,
         "brief_path": str(next_brief.relative_to(REPO_ROOT)),
         "status": "active",
         "started_at": time.time()
     }
+
+    # Add baseline SHA for consistent diff anchor
+    if baseline_sha:
+        current_data["baseline_sha"] = baseline_sha
 
     # Add phase binding hashes if files exist
     if plan_path.exists():

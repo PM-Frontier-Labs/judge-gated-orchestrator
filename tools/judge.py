@@ -78,8 +78,8 @@ def check_artifacts(phase: Dict[str, Any]) -> List[str]:
 
 
 
-def check_docs(phase: Dict[str, Any]) -> List[str]:
-    """Check that documentation was updated."""
+def check_docs(phase: Dict[str, Any], changed_files: List[str] = None) -> List[str]:
+    """Check that documentation was actually updated in this phase."""
     issues = []
     docs_gate = phase.get("gates", {}).get("docs", {})
     must_update = docs_gate.get("must_update", [])
@@ -87,23 +87,52 @@ def check_docs(phase: Dict[str, Any]) -> List[str]:
     if not must_update:
         return issues
 
-    # Check if docs exist and are not empty
+    if changed_files is None:
+        changed_files = []
+
+    # Check each required doc
     for doc in must_update:
         # Handle section anchors like "docs/mvp.md#feature"
         doc_path = doc.split("#")[0]
+        anchor = doc.split("#")[1] if "#" in doc else None
         path = REPO_ROOT / doc_path
 
+        # Check existence
         if not path.exists():
             issues.append(f"Documentation not found: {doc_path}")
-        elif path.stat().st_size == 0:
+            continue
+
+        # Check non-empty
+        if path.stat().st_size == 0:
             issues.append(f"Documentation is empty: {doc_path}")
+            continue
+
+        # CRITICAL: Check if doc was actually changed in this phase
+        if doc_path not in changed_files:
+            issues.append(
+                f"Documentation not updated in this phase: {doc_path}\n"
+                f"   This file must be modified as part of {phase['id']}"
+            )
+            continue
+
+        # If anchor specified, verify heading exists
+        if anchor:
+            content = path.read_text()
+            # Look for markdown heading: # anchor or ## anchor, etc.
+            import re
+            pattern = rf'^#+\s+{re.escape(anchor)}'
+            if not re.search(pattern, content, re.MULTILINE | re.IGNORECASE):
+                issues.append(
+                    f"Documentation section not found: {doc}#{anchor}\n"
+                    f"   Expected heading '{anchor}' in {doc_path}"
+                )
 
     return issues
 
 
 
 
-def check_drift(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
+def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str = None) -> List[str]:
     """Check for changes outside phase scope (plan drift)."""
     issues = []
 
@@ -112,14 +141,15 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
     if not drift_gate:
         return []  # Drift checking not enabled for this phase
 
-    # Get base branch
+    # Get base branch (fallback only)
     base_branch = plan.get("plan", {}).get("base_branch", "main")
 
-    # Get changed files
+    # Get changed files using baseline SHA for consistent diffs
     changed_files = get_changed_files(
         REPO_ROOT,
         include_committed=True,
-        base_branch=base_branch
+        base_branch=base_branch,
+        baseline_sha=baseline_sha
     )
 
     if not changed_files:
@@ -207,6 +237,19 @@ def judge_phase(phase_id: str):
         print(f"❌ Error: {e}")
         return 2
 
+    # Load baseline SHA from CURRENT.json for consistent diffs
+    baseline_sha = None
+    current_file = REPO_DIR / "briefs/CURRENT.json"
+    if current_file.exists():
+        try:
+            import json
+            current = json.loads(current_file.read_text())
+            baseline_sha = current.get("baseline_sha")
+            if baseline_sha:
+                print(f"  📍 Using baseline: {baseline_sha[:8]}...")
+        except (json.JSONDecodeError, KeyError):
+            pass  # Tolerate missing or malformed CURRENT.json
+
     # CRITICAL: Verify protocol integrity FIRST
     print("  🔐 Checking protocol integrity...")
 
@@ -250,18 +293,27 @@ def judge_phase(phase_id: str):
         print("  🔍 Checking linting...")
         all_issues.extend(check_gate_trace("lint", TRACES_DIR, "Linting"))
 
+    # Get changed files for docs and drift gates
+    base_branch = plan.get("plan", {}).get("base_branch", "main")
+    changed_files = get_changed_files(
+        REPO_ROOT,
+        include_committed=True,
+        base_branch=base_branch,
+        baseline_sha=baseline_sha
+    )
+
     print("  🔍 Checking documentation...")
-    all_issues.extend(check_docs(phase))
+    all_issues.extend(check_docs(phase, changed_files))
 
     print("  🔍 Checking for plan drift...")
-    all_issues.extend(check_drift(phase, plan))
+    all_issues.extend(check_drift(phase, plan, baseline_sha))
 
     # LLM code review (optional)
     if LLM_JUDGE_AVAILABLE:
         llm_gate = phase.get("gates", {}).get("llm_review", {})
         if llm_gate.get("enabled", False):
             print("  🤖 Running LLM code review...")
-            all_issues.extend(llm_code_review(phase, REPO_ROOT))
+            all_issues.extend(llm_code_review(phase, REPO_ROOT, plan, baseline_sha))
 
     # Clean up old critiques/approvals
     for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):

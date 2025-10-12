@@ -13,11 +13,12 @@ from pathlib import Path
 from lib.git_ops import get_changed_files as get_changed_files_raw
 
 
-def llm_code_review(phase: Dict[str, Any], repo_root: Path) -> List[str]:
+def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any] = None, baseline_sha: str = None) -> List[str]:
     """
     Use Claude to review code quality semantically.
 
-    Only reviews files that were actually changed (via git diff).
+    Reviews all files changed in this phase (committed + uncommitted).
+    Uses same change basis as other gates for consistency.
     """
     # Check if LLM review is enabled
     llm_gate = phase.get("gates", {}).get("llm_review", {})
@@ -35,10 +36,17 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path) -> List[str]:
     except ImportError:
         return ["LLM review enabled but anthropic package not installed. Run: pip install anthropic"]
 
-    # Get changed files (uncommitted only)
+    # Get base branch (fallback only)
+    base_branch = "main"
+    if plan:
+        base_branch = plan.get("plan", {}).get("base_branch", "main")
+
+    # Get changed files (committed + uncommitted, same as other gates)
     changed_file_strs = get_changed_files_raw(
         repo_root,
-        include_committed=False
+        include_committed=True,  # FIXED: Include committed changes
+        base_branch=base_branch,
+        baseline_sha=baseline_sha  # NEW: Use same baseline as other gates
     )
 
     # Convert to Path objects and filter to existing files

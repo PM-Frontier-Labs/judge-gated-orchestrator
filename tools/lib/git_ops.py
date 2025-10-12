@@ -8,9 +8,21 @@ from typing import List
 def get_changed_files(
     repo_root: Path,
     include_committed: bool = True,
-    base_branch: str = "main"
+    base_branch: str = "main",
+    baseline_sha: str = None
 ) -> List[str]:
-    """Get changed files. If include_committed=False, only uncommitted changes."""
+    """
+    Get changed files.
+
+    Args:
+        repo_root: Repository root path
+        include_committed: Include committed changes (default True)
+        base_branch: Base branch for merge-base fallback (default "main")
+        baseline_sha: Fixed baseline commit SHA for consistent diffs (preferred)
+
+    Returns:
+        List of changed file paths
+    """
     try:
         all_changes = []
 
@@ -25,28 +37,40 @@ def get_changed_files(
         uncommitted = [f for f in result.stdout.strip().split("\n") if f]
         all_changes.extend(uncommitted)
 
-        # Optionally get committed changes from base branch
+        # Optionally get committed changes
         if include_committed:
-            # Get merge base
-            result = subprocess.run(
-                ["git", "merge-base", "HEAD", base_branch],
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            merge_base = result.stdout.strip()
+            if baseline_sha:
+                # Use fixed baseline SHA for consistent diffs (preferred)
+                result = subprocess.run(
+                    ["git", "diff", "--name-only", f"{baseline_sha}...HEAD"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                committed = [f for f in result.stdout.strip().split("\n") if f]
+                all_changes.extend(committed)
+            else:
+                # Fallback: use merge-base (can drift as base_branch advances)
+                result = subprocess.run(
+                    ["git", "merge-base", "HEAD", base_branch],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                merge_base = result.stdout.strip()
 
-            # Get committed changes
-            result = subprocess.run(
-                ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            committed = [f for f in result.stdout.strip().split("\n") if f]
-            all_changes.extend(committed)
+                # Get committed changes
+                result = subprocess.run(
+                    ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                committed = [f for f in result.stdout.strip().split("\n") if f]
+                all_changes.extend(committed)
 
         # Remove duplicates and empty strings
         unique_changes = list(set(all_changes))
