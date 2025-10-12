@@ -24,6 +24,7 @@ except ImportError:
 from lib.git_ops import get_changed_files
 from lib.scope import classify_files, check_forbidden_files
 from lib.traces import check_gate_trace
+from lib.protocol_guard import verify_protocol_lock, verify_phase_binding
 
 # Import LLM judge (optional)
 try:
@@ -205,6 +206,34 @@ def judge_phase(phase_id: str):
     except ValueError as e:
         print(f"❌ Error: {e}")
         return 2
+
+    # CRITICAL: Verify protocol integrity FIRST
+    print("  🔐 Checking protocol integrity...")
+
+    # Check phase binding (plan/manifest unchanged mid-phase)
+    current_file = REPO_DIR / "briefs/CURRENT.json"
+    if current_file.exists():
+        try:
+            import json
+            current = json.loads(current_file.read_text())
+            binding_issues = verify_phase_binding(REPO_ROOT, current)
+            if binding_issues:
+                # Clean up old critiques/approvals
+                for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):
+                    old_file.unlink()
+                write_critique(phase_id, binding_issues)
+                return 1
+        except (json.JSONDecodeError, KeyError):
+            pass  # Tolerate missing or malformed CURRENT.json
+
+    # Check protocol lock (judge/tools haven't been tampered with)
+    lock_issues = verify_protocol_lock(REPO_ROOT, plan, phase_id)
+    if lock_issues:
+        # Clean up old critiques/approvals
+        for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):
+            old_file.unlink()
+        write_critique(phase_id, lock_issues)
+        return 1
 
     # Run all checks - Phase → Gates → Verdict
     all_issues = []

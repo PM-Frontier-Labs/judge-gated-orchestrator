@@ -288,13 +288,30 @@ def next_phase():
         print(f"❌ Error: Brief for {next_id} not found: {next_brief}")
         return 1
 
-    # Update CURRENT.json
-    CURRENT_FILE.write_text(json.dumps({
+    # Compute binding hashes for phase
+    import hashlib
+
+    def sha256(filepath):
+        return hashlib.sha256(filepath.read_bytes()).hexdigest()
+
+    plan_path = REPO_DIR / "plan.yaml"
+    manifest_path = REPO_DIR / "protocol_manifest.json"
+
+    current_data = {
         "phase_id": next_id,
         "brief_path": str(next_brief.relative_to(REPO_ROOT)),
         "status": "active",
         "started_at": time.time()
-    }, indent=2))
+    }
+
+    # Add phase binding hashes if files exist
+    if plan_path.exists():
+        current_data["plan_sha"] = sha256(plan_path)
+    if manifest_path.exists():
+        current_data["manifest_sha"] = sha256(manifest_path)
+
+    # Update CURRENT.json
+    CURRENT_FILE.write_text(json.dumps(current_data, indent=2))
 
     print(f"➡️  Advanced to phase {next_id}")
     print(f"📄 Brief: {next_brief.relative_to(REPO_ROOT)}")

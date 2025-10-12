@@ -815,6 +815,137 @@ gates:
 
 ---
 
+## Protocol Integrity Protection
+
+### What's Protected
+
+The protocol prevents autonomous agents from modifying critical files:
+- **Judge logic** (`tools/judge.py`)
+- **Controller logic** (`tools/phasectl.py`)
+- **Shared utilities** (`tools/lib/**`)
+- **Plan configuration** (`.repo/plan.yaml`)
+- **Protocol manifest** (`.repo/protocol_manifest.json`)
+
+### How It Works
+
+**1. Protocol Manifest**
+
+`.repo/protocol_manifest.json` contains SHA256 hashes of all protocol files.
+
+**2. Integrity Check**
+
+At judge startup, before any other gates:
+- Judge verifies its own hash (self-check)
+- Judge verifies all protected files match manifest hashes
+- Judge verifies `plan.yaml` and manifest haven't changed mid-phase
+- If ANY mismatch → immediate failure with clear error message
+
+**3. Phase Binding**
+
+When advancing to a new phase, `phasectl.py` stores hashes of:
+- `.repo/plan.yaml` (current plan state)
+- `.repo/protocol_manifest.json` (current manifest state)
+
+These hashes are checked on every judge run to detect mid-phase tampering.
+
+**4. Protocol Maintenance Phases**
+
+To modify protocol files:
+1. Complete current phase
+2. Create a dedicated `P00-protocol-maintenance` phase in `plan.yaml`
+3. Make protocol changes within that phase
+4. Run `./tools/generate_manifest.py` to update hashes
+5. Complete maintenance phase and advance
+
+### Error Messages
+
+**Judge tampered:**
+```
+🚨 JUDGE TAMPER DETECTED: tools/judge.py
+   Expected: abc123...
+   Actual:   def456...
+   The judge has been modified. This is a critical protocol violation.
+```
+
+**Plan changed mid-phase:**
+```
+Plan changed mid-phase: .repo/plan.yaml
+   Expected: abc123...
+   Actual:   def456...
+   The plan cannot be modified during phase execution.
+```
+
+**Protocol file modified:**
+```
+Protocol file modified: tools/phasectl.py
+   Expected: abc123...
+   Actual:   def456...
+```
+
+### Configuration
+
+In `.repo/plan.yaml`:
+
+```yaml
+plan:
+  protocol_lock:
+    protected_globs:
+      - "tools/**"
+      - ".repo/plan.yaml"
+      - ".repo/protocol_manifest.json"
+    allow_in_phases:
+      - "P00-protocol-maintenance"
+```
+
+### For Autonomous Agents
+
+**DO NOT:**
+- Modify files in `tools/**`
+- Edit `.repo/plan.yaml` gates or phases
+- Change `.repo/protocol_manifest.json`
+- Modify protocol files during normal phases
+
+**If you need to fix judge bugs:**
+1. Complete current phase
+2. Ask human to create protocol maintenance phase
+3. Make fixes in that dedicated phase
+4. Run `./tools/generate_manifest.py`
+5. Complete maintenance phase
+
+### For Humans
+
+**Tuning gates (allowed anytime):**
+- Edit `.repo/plan.yaml` gate thresholds
+- Adjust scope patterns
+- Modify test commands
+- Change phase descriptions
+
+**Modifying protocol logic (requires maintenance phase):**
+- Changing judge gate checks
+- Updating phasectl flow
+- Modifying shared utilities
+
+**To create a maintenance phase:**
+
+```yaml
+phases:
+  - id: P00-protocol-maintenance
+    description: "Update judge to add security gate"
+    scope:
+      include: ["tools/**", ".repo/protocol_manifest.json"]
+    gates:
+      tests: { must_pass: true }
+```
+
+After completing maintenance:
+```bash
+./tools/generate_manifest.py
+./tools/phasectl.py review P00-protocol-maintenance
+./tools/phasectl.py next
+```
+
+---
+
 ## This Protocol vs Frameworks
 
 **This is a protocol, not a framework.**

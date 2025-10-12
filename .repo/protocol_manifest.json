@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "files": {
+    "tools/judge.py": "26c2444577b19139d794adbf2d0a92ee102a746a056ce6af0105bfcb4cf0d82b",
+    "tools/phasectl.py": "58f890a3b49ae0f8e3dd86e6d5763b7ef9c62ab98acccdefcc4d89b40697f891",
+    "tools/llm_judge.py": "b7d2c12edc63dbcf060a2295b27cf80cec0b731e50db10c67496fed5c3b9a6a4",
+    ".repo/plan.yaml": "27dcc4a1e7ead274f4ec49d7106c576574d7520da4ec4bb3c4744a2cfb958833",
+    "tools/lib/__init__.py": "7587d01c70810521dbaa04f36d26bc7ab4164890893073d2a6562bd29ceac9a5",
+    "tools/lib/git_ops.py": "6afd14d3f7df5e07d825966e788a64597119571af6006e5c2ccadbd4a0df4d46",
+    "tools/lib/scope.py": "fb040113d2493a785da9cfbc1f997c7e7622df08606760d0c30866274c8c27ec",
+    "tools/lib/traces.py": "14fe079e698e1db6e5144c5093a59765a04058305542ca0d0b8d463e3f5fb020",
+    "tools/lib/protocol_guard.py": "5f669aed06b199cbc0693209326d63c2f5c16303dcaab5896bf55edd757e26ac"
+  }
+}

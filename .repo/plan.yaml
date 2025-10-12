@@ -9,6 +9,15 @@ plan:
   # Lint command (optional, defaults to "ruff check .")
   lint_command: "ruff check ."
 
+  # Protocol integrity enforcement
+  protocol_lock:
+    protected_globs:
+      - "tools/**"
+      - ".repo/plan.yaml"
+      - ".repo/protocol_manifest.json"
+    allow_in_phases:
+      - "P00-protocol-maintenance"
+
   phases:
     - id: P01-scaffold
       description: "Create skeleton module + golden test + docs."
