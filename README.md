@@ -200,17 +200,17 @@ Define gates in `plan.yaml`:
 |------|--------|--------|
 | **tests** | Test suite passes | ✅ Implemented |
 | **docs** | Files updated | ✅ Implemented |
+| **drift** | Scope boundaries | ✅ Implemented |
 | **llm_review** | Semantic code review | ✅ Implemented (optional) |
-| **drift** | Scope boundaries | ⏳ Not yet implemented |
 | **lint** | Code quality rules | ⏳ Not yet implemented |
 
 **Implemented gates:**
 - `tests: { must_pass: true }` - Runs test command, fails if exit code != 0
 - `docs: { must_update: ["path/to/file.md"] }` - Checks files exist and not empty
+- `drift: { allowed_out_of_scope_changes: 0 }` - Checks git diff against scope patterns, blocks out-of-scope changes
 - `llm_review: { enabled: true }` - Claude reviews changed code (requires API key)
 
 **Roadmap gates:**
-- `drift: { allowed_out_of_scope_changes: 0 }` - Check git diff against scope patterns
 - `lint: { max_complexity: 10 }` - Static analysis rules
 
 ## Adding LLM Review (Optional)
@@ -228,6 +228,49 @@ export ANTHROPIC_API_KEY='sk-ant-...'
 ```
 
 Cost: ~$0.01 per review. LLM catches architecture issues that rules miss.
+
+## Drift Prevention (Scope Enforcement)
+
+Keep work in scope with automatic drift detection:
+
+```yaml
+plan:
+  base_branch: "main"  # Required for drift checking
+
+phases:
+  - id: P01-scaffold
+    scope:
+      include: ["src/mvp/**", "tests/mvp/**"]
+      exclude: ["**/legacy/**"]
+    gates:
+      drift:
+        allowed_out_of_scope_changes: 0
+    drift_rules:
+      forbid_changes: ["requirements.txt", "pyproject.toml"]
+```
+
+**How it works:**
+1. Compares `git diff` against phase scope patterns
+2. Fails if changes detected outside `include` patterns
+3. Blocks forbidden files (config, dependencies, etc.)
+4. Shows fix options before judge runs
+
+**Before review:**
+```bash
+./tools/phasectl.py review P01
+
+📊 Change Summary:
+✅ In scope (3 files):
+  - src/mvp/__init__.py
+  - tests/mvp/test_golden.py
+
+❌ Out of scope (1 file):
+  - requirements.txt (forbidden)
+
+💡 Fix: git checkout HEAD requirements.txt
+```
+
+Prevents accidental scope creep and "drive-by" changes.
 
 ## Why a Protocol?
 

@@ -11,6 +11,7 @@ import sys
 import json
 import time
 import subprocess
+import fnmatch
 from pathlib import Path
 
 try:
@@ -86,12 +87,149 @@ def run_tests(plan):
     return result.returncode
 
 
+def get_changed_files(base_branch: str) -> list:
+    """Get list of files changed from base branch."""
+    try:
+        # First, get uncommitted changes (staged and unstaged)
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        uncommitted = [f for f in result.stdout.strip().split("\n") if f]
+
+        # Then, get committed changes from base branch
+        result = subprocess.run(
+            ["git", "merge-base", "HEAD", base_branch],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        merge_base = result.stdout.strip()
+
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        committed = [f for f in result.stdout.strip().split("\n") if f]
+
+        # Combine both, remove duplicates
+        all_changes = list(set(uncommitted + committed))
+        return [f for f in all_changes if f]  # Filter empty strings
+
+    except subprocess.CalledProcessError:
+        return []
+
+
+def matches_pattern(path: str, patterns: list) -> bool:
+    """Check if path matches any glob pattern."""
+    return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
+
+
+def show_diff_summary(phase_id: str, plan: dict):
+    """Show summary of changed files vs phase scope."""
+    # Get phase config
+    phases = plan.get("plan", {}).get("phases", [])
+    phase = next((p for p in phases if p["id"] == phase_id), None)
+
+    if not phase:
+        return  # Can't show summary without phase config
+
+    # Get base branch
+    base_branch = plan.get("plan", {}).get("base_branch", "main")
+
+    # Get changed files
+    changed_files = get_changed_files(base_branch)
+
+    if not changed_files:
+        print("📊 No changes detected")
+        return
+
+    # Get scope patterns
+    scope = phase.get("scope", {})
+    include_patterns = scope.get("include", [])
+    exclude_patterns = scope.get("exclude", [])
+
+    if not include_patterns:
+        print(f"📊 {len(changed_files)} files changed (no scope defined)")
+        return
+
+    # Classify files
+    in_scope = []
+    out_of_scope = []
+
+    for file_path in changed_files:
+        included = matches_pattern(file_path, include_patterns)
+        excluded = matches_pattern(file_path, exclude_patterns)
+
+        if included and not excluded:
+            in_scope.append(file_path)
+        else:
+            out_of_scope.append(file_path)
+
+    # Show summary
+    print("📊 Change Summary:")
+    print()
+
+    if in_scope:
+        print(f"✅ In scope ({len(in_scope)} files):")
+        for f in in_scope[:10]:  # Show first 10
+            print(f"  - {f}")
+        if len(in_scope) > 10:
+            print(f"  ... and {len(in_scope) - 10} more")
+        print()
+
+    if out_of_scope:
+        print(f"❌ Out of scope ({len(out_of_scope)} files):")
+        for f in out_of_scope:
+            print(f"  - {f}")
+        print()
+
+        # Check drift gate
+        drift_gate = phase.get("gates", {}).get("drift", {})
+        allowed = drift_gate.get("allowed_out_of_scope_changes", 0)
+
+        print(f"⚠️  Drift limit: {allowed} files allowed, {len(out_of_scope)} found")
+        print()
+
+        if len(out_of_scope) > allowed:
+            print("💡 Fix options:")
+            print(f"   1. Revert: git checkout HEAD {' '.join(out_of_scope[:3])}{'...' if len(out_of_scope) > 3 else ''}")
+            print(f"   2. Update scope in .repo/briefs/{phase_id}.md")
+            print(f"   3. Split into separate phase")
+            print()
+
+    # Check forbidden files
+    drift_rules = phase.get("drift_rules", {})
+    forbid_patterns = drift_rules.get("forbid_changes", [])
+
+    if forbid_patterns:
+        forbidden_files = [f for f in changed_files if matches_pattern(f, forbid_patterns)]
+        if forbidden_files:
+            print(f"🚫 Forbidden files changed ({len(forbidden_files)}):")
+            for f in forbidden_files:
+                print(f"  - {f}")
+            print()
+            print(f"   These require a separate phase. Revert: git checkout HEAD {' '.join(forbidden_files)}")
+            print()
+
+
 def review_phase(phase_id: str):
     """Submit phase for review and block until judge provides feedback."""
     print(f"📋 Submitting phase {phase_id} for review...")
+    print()
 
     # Load plan
     plan = load_plan()
+
+    # Show diff summary
+    show_diff_summary(phase_id, plan)
 
     # Run tests
     test_exit_code = run_tests(plan)

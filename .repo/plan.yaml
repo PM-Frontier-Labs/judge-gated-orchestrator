@@ -10,13 +10,17 @@ plan:
     - id: P01-scaffold
       description: "Create skeleton module + golden test + docs."
       scope:
-        include: ["src/mvp/**", "tests/mvp/**", "docs/mvp.md", "tools/**", ".repo/**"]
+        include: ["src/mvp/**", "tests/mvp/**", "docs/mvp.md"]
         exclude: ["src/**/legacy/**"]
       artifacts:
         must_exist: ["src/mvp/__init__.py", "tests/mvp/test_golden.py", "docs/mvp.md"]
       gates:
         tests: { must_pass: true }
         docs:  { must_update: ["docs/mvp.md"] }
+        drift:
+          allowed_out_of_scope_changes: 0
+      drift_rules:
+        forbid_changes: ["requirements.txt", "pyproject.toml"]
 
     - id: P02-impl-feature
       description: "Implement simple feature with refactor + doc section."
@@ -28,3 +32,7 @@ plan:
         tests: { must_pass: true }
         docs:  { must_update: ["docs/mvp.md#feature"] }
         llm_review: { enabled: true }
+        drift:
+          allowed_out_of_scope_changes: 0
+      drift_rules:
+        forbid_changes: ["requirements.txt", "pyproject.toml", ".github/**"]

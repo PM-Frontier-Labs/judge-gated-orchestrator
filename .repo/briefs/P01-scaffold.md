@@ -3,16 +3,21 @@
 ## Objective
 Create the skeleton module structure with a golden test and initial documentation.
 
-## Scope
-**Include:**
-- `src/mvp/**`
-- `tests/mvp/**`
-- `docs/mvp.md`
-- `tools/**`
-- `.repo/**`
+## Scope 🎯
 
-**Exclude:**
-- `src/**/legacy/**`
+✅ **YOU MAY TOUCH:**
+- `src/mvp/**` - Module code
+- `tests/mvp/**` - Test files
+- `docs/mvp.md` - Documentation
+
+❌ **DO NOT TOUCH:**
+- `requirements.txt` - Dependencies (use separate phase)
+- `pyproject.toml` - Project config (use separate phase)
+- `src/**/legacy/**` - Legacy code (excluded)
+- Other modules outside `mvp/`
+
+🤔 **IF YOU NEED TO TOUCH THESE:**
+Stop and create a separate phase. Drift prevention will fail the review.
 
 ## Required Artifacts
 - [ ] `src/mvp/__init__.py` - Module initialization
@@ -22,6 +27,7 @@ Create the skeleton module structure with a golden test and initial documentatio
 ## Gates
 - **Tests:** Must pass
 - **Docs:** Must update `docs/mvp.md`
+- **Drift:** 0 out-of-scope changes allowed (enforced)
 
 ## Implementation Steps
 

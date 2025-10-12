@@ -11,6 +11,8 @@ Checks:
 
 import sys
 import time
+import subprocess
+import fnmatch
 from pathlib import Path
 from typing import Dict, List, Any
 
@@ -124,6 +126,123 @@ def check_docs(phase: Dict[str, Any]) -> List[str]:
     return issues
 
 
+def get_changed_files(base_branch: str) -> List[str]:
+    """Get list of files changed from base branch using git."""
+    try:
+        # First, get uncommitted changes (staged and unstaged)
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        uncommitted = [f for f in result.stdout.strip().split("\n") if f]
+
+        # Then, get committed changes from base branch
+        result = subprocess.run(
+            ["git", "merge-base", "HEAD", base_branch],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        merge_base = result.stdout.strip()
+
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        committed = [f for f in result.stdout.strip().split("\n") if f]
+
+        # Combine both, remove duplicates
+        all_changes = list(set(uncommitted + committed))
+        return [f for f in all_changes if f]  # Filter empty strings
+
+    except subprocess.CalledProcessError:
+        # Not a git repo or base branch doesn't exist
+        return []
+
+
+def matches_pattern(path: str, patterns: List[str]) -> bool:
+    """Check if path matches any glob pattern."""
+    return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
+
+
+def check_drift(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
+    """Check for changes outside phase scope (plan drift)."""
+    issues = []
+
+    # Check if drift gate is enabled
+    drift_gate = phase.get("gates", {}).get("drift")
+    if not drift_gate:
+        return []  # Drift checking not enabled for this phase
+
+    # Get base branch
+    base_branch = plan.get("plan", {}).get("base_branch", "main")
+
+    # Get changed files
+    changed_files = get_changed_files(base_branch)
+
+    if not changed_files:
+        return []  # No changes or not a git repo
+
+    # Get scope patterns
+    scope = phase.get("scope", {})
+    include_patterns = scope.get("include", [])
+    exclude_patterns = scope.get("exclude", [])
+
+    if not include_patterns:
+        return []  # No scope defined, can't check drift
+
+    # Classify files
+    in_scope = []
+    out_of_scope = []
+
+    for file_path in changed_files:
+        # Check if file matches include patterns
+        included = matches_pattern(file_path, include_patterns)
+        # Check if file matches exclude patterns
+        excluded = matches_pattern(file_path, exclude_patterns)
+
+        if included and not excluded:
+            in_scope.append(file_path)
+        else:
+            out_of_scope.append(file_path)
+
+    # Check forbidden patterns
+    drift_rules = phase.get("drift_rules", {})
+    forbid_patterns = drift_rules.get("forbid_changes", [])
+
+    if forbid_patterns:
+        forbidden_files = [f for f in changed_files
+                          if matches_pattern(f, forbid_patterns)]
+        if forbidden_files:
+            issues.append("Forbidden files changed (these require a separate phase):")
+            for f in forbidden_files:
+                issues.append(f"  - {f}")
+            issues.append(f"Fix: git checkout HEAD {' '.join(forbidden_files)}")
+            issues.append("")
+
+    # Check out-of-scope changes
+    allowed_drift = drift_gate.get("allowed_out_of_scope_changes", 0)
+
+    if len(out_of_scope) > allowed_drift:
+        issues.append(f"Out-of-scope changes detected ({len(out_of_scope)} files, {allowed_drift} allowed):")
+        for f in out_of_scope:
+            issues.append(f"  - {f}")
+        issues.append("")
+        issues.append("Options to fix:")
+        issues.append(f"1. Revert: git checkout HEAD {' '.join(out_of_scope)}")
+        issues.append(f"2. Update phase scope in .repo/briefs/{phase['id']}.md")
+        issues.append(f"3. Split into separate phase for out-of-scope work")
+
+    return issues
+
+
 def write_critique(phase_id: str, issues: List[str]):
     """Write a critique file."""
     critique_file = CRITIQUES_DIR / f"{phase_id}.md"
@@ -174,6 +293,9 @@ def judge_phase(phase_id: str):
 
     print("  🔍 Checking documentation...")
     all_issues.extend(check_docs(phase))
+
+    print("  🔍 Checking for plan drift...")
+    all_issues.extend(check_drift(phase, plan))
 
     # LLM code review (optional)
     if LLM_JUDGE_AVAILABLE:

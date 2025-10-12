@@ -3,11 +3,21 @@
 ## Objective
 Implement a simple feature with refactoring and documentation section.
 
-## Scope
-**Include:**
-- `src/mvp/feature.py`
-- `tests/mvp/test_feature.py`
-- `docs/mvp.md`
+## Scope 🎯
+
+✅ **YOU MAY TOUCH:**
+- `src/mvp/feature.py` - New feature module
+- `tests/mvp/test_feature.py` - Feature tests
+- `docs/mvp.md` - Update documentation
+
+❌ **DO NOT TOUCH:**
+- `requirements.txt` - Dependencies (use separate phase)
+- `pyproject.toml` - Project config (use separate phase)
+- `.github/**` - CI/CD config (use separate phase)
+- Other modules outside this specific scope
+
+🤔 **IF YOU NEED TO TOUCH THESE:**
+Stop and create a separate phase. Drift prevention will fail the review.
 
 ## Required Artifacts
 - [ ] `src/mvp/feature.py` - Feature implementation
@@ -17,6 +27,7 @@ Implement a simple feature with refactoring and documentation section.
 - **Tests:** Must pass
 - **Docs:** Must update `docs/mvp.md#feature` section
 - **LLM Review:** Enabled (semantic code quality check)
+- **Drift:** 0 out-of-scope changes allowed (enforced)
 
 ## Implementation Steps
 
