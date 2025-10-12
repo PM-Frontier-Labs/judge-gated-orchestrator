@@ -407,6 +407,16 @@ def judge_phase(phase_id: str):
     # Load plan
     plan = load_plan()
 
+    # Validate plan schema
+    from lib.plan_validator import validate_plan
+    validation_errors = validate_plan(plan)
+    if validation_errors:
+        print("❌ Plan validation failed:")
+        for error in validation_errors:
+            print(f"   - {error}")
+        print("\nFix errors in .repo/plan.yaml and try again.")
+        return 2
+
     try:
         phase = get_phase(plan, phase_id)
     except ValueError as e:
@@ -514,8 +524,17 @@ def main():
 
     phase_id = sys.argv[1]
 
+    # Use file lock to prevent concurrent judge runs
+    from lib.file_lock import file_lock
+    lock_file = REPO_ROOT / ".repo/.judge.lock"
+
     try:
-        return judge_phase(phase_id)
+        with file_lock(lock_file, timeout=60):
+            return judge_phase(phase_id)
+    except TimeoutError as e:
+        print(f"❌ Could not acquire judge lock: {e}")
+        print("   Another judge process may be running. Wait and try again.")
+        return 2
     except Exception as e:
         print(f"❌ Judge error: {e}")
         import traceback

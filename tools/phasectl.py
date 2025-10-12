@@ -69,28 +69,62 @@ def run_tests(plan, phase=None):
         test_scope = test_gate.get("test_scope", "all")
 
         if test_scope == "scope":
-            # Filter test paths to match phase scope
+            # Filter test paths to match phase scope using pathspec
             scope_patterns = phase.get("scope", {}).get("include", [])
-            test_paths = []
+            exclude_patterns = phase.get("scope", {}).get("exclude", [])
 
-            for pattern in scope_patterns:
-                # Extract test paths from scope patterns
-                # E.g., "tests/mvp/**" -> "tests/mvp/"
-                if pattern.startswith("tests/"):
-                    # Remove wildcards and get base path
-                    base_path = pattern.split("*")[0].rstrip("/")
-                    if base_path not in test_paths:
-                        test_paths.append(base_path)
+            # Use pathspec to find matching test files/directories
+            try:
+                import pathspec
 
-            if test_paths:
-                print("  📍 Test scope: Running tests matching phase scope")
-                # Replace default test path with scoped paths
-                # pytest tests/ -v -> pytest tests/mvp/ tests/api/ -v
-                new_cmd = [test_cmd[0]]  # Keep pytest
-                new_cmd.extend(test_paths)
-                # Keep flags (e.g., -v)
-                new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-                test_cmd = new_cmd
+                # Create pathspec for include patterns
+                include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
+                exclude_spec = None
+                if exclude_patterns:
+                    exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
+
+                # Find all test files in tests/ directory
+                test_paths = set()
+                tests_dir = REPO_ROOT / "tests"
+                if tests_dir.exists():
+                    for test_file in tests_dir.rglob("test_*.py"):
+                        rel_path = str(test_file.relative_to(REPO_ROOT))
+                        # Check if matches include patterns
+                        if include_spec.match_file(rel_path):
+                            # Check if not excluded
+                            if not exclude_spec or not exclude_spec.match_file(rel_path):
+                                # Add parent directory for better pytest organization
+                                test_dir = str(test_file.parent.relative_to(REPO_ROOT))
+                                if test_dir.startswith("tests"):
+                                    test_paths.add(test_dir)
+
+                if test_paths:
+                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories")
+                    # Replace default test path with scoped paths
+                    new_cmd = [test_cmd[0]]  # Keep pytest
+                    new_cmd.extend(sorted(test_paths))
+                    # Keep flags (e.g., -v)
+                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+                    test_cmd = new_cmd
+                else:
+                    print("  ⚠️  No test files match scope patterns - running all tests")
+
+            except ImportError:
+                # Fallback to simple string matching if pathspec not available
+                print("  ⚠️  pathspec not available - using simple pattern matching")
+                test_paths = []
+                for pattern in scope_patterns:
+                    if pattern.startswith("tests/"):
+                        base_path = pattern.split("*")[0].rstrip("/")
+                        if base_path not in test_paths:
+                            test_paths.append(base_path)
+
+                if test_paths:
+                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories (fallback mode)")
+                    new_cmd = [test_cmd[0]]
+                    new_cmd.extend(test_paths)
+                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+                    test_cmd = new_cmd
 
         # Quarantine list: tests expected to fail
         quarantine = test_gate.get("quarantine", [])
@@ -227,7 +261,7 @@ def show_diff_summary(phase_id: str, plan: dict):
 
         if len(out_of_scope) > allowed:
             print("💡 Fix options:")
-            print(f"   1. Revert: git checkout HEAD {' '.join(out_of_scope[:3])}{'...' if len(out_of_scope) > 3 else ''}")
+            print(f"   1. Revert: git restore {' '.join(out_of_scope[:3])}{'...' if len(out_of_scope) > 3 else ''}")
             print(f"   2. Update scope in .repo/briefs/{phase_id}.md")
             print("   3. Split into separate phase")
             print()
@@ -242,7 +276,7 @@ def show_diff_summary(phase_id: str, plan: dict):
         for f in forbidden_files:
             print(f"  - {f}")
         print()
-        print(f"   These require a separate phase. Revert: git checkout HEAD {' '.join(forbidden_files)}")
+        print(f"   These require a separate phase. Revert: git restore {' '.join(forbidden_files)}")
         print()
 
 
@@ -253,6 +287,16 @@ def review_phase(phase_id: str):
 
     # Load plan
     plan = load_plan()
+
+    # Validate plan schema
+    from lib.plan_validator import validate_plan
+    validation_errors = validate_plan(plan)
+    if validation_errors:
+        print("❌ Plan validation failed:")
+        for error in validation_errors:
+            print(f"   - {error}")
+        print("\nFix errors in .repo/plan.yaml and try again.")
+        return 2
 
     # Get phase config for test scoping
     phases = plan.get("plan", {}).get("phases", [])
@@ -313,6 +357,17 @@ def next_phase():
 
     # Load plan
     plan = load_plan()
+
+    # Validate plan schema
+    from lib.plan_validator import validate_plan
+    validation_errors = validate_plan(plan)
+    if validation_errors:
+        print("❌ Plan validation failed:")
+        for error in validation_errors:
+            print(f"   - {error}")
+        print("\nFix errors in .repo/plan.yaml and try again.")
+        return 2
+
     phases = plan.get("plan", {}).get("phases", [])
 
     if not phases:

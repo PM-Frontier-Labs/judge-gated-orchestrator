@@ -197,7 +197,7 @@ Judge feedback when phase needs revision.
   - requirements.txt
 
 Options to fix:
-1. Revert: git checkout HEAD tools/judge.py README.md requirements.txt
+1. Revert: git restore tools/judge.py README.md requirements.txt
 2. Update phase scope in .repo/briefs/P01-scaffold.md
 3. Split into separate phase
 
@@ -591,7 +591,7 @@ Use this for files that require separate dedicated phases.
 
 **Option 1 - Revert:**
 ```bash
-git checkout HEAD file1.py file2.py
+git restore file1.py file2.py
 ./tools/phasectl.py review <phase-id>
 ```
 
@@ -609,7 +609,7 @@ Create a new phase for the out-of-scope work after current phase completes.
 
 **Recovery:**
 ```bash
-git checkout HEAD requirements.txt pyproject.toml
+git restore requirements.txt pyproject.toml
 ./tools/phasectl.py review <phase-id>
 ```
 
