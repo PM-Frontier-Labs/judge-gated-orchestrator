@@ -6,7 +6,6 @@ This bundles all documentation, code, tests, and configuration into
 single-file packages for easy sharing and review.
 """
 
-import os
 from pathlib import Path
 from datetime import date
 

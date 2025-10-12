@@ -64,7 +64,7 @@ def get_phase(plan: Dict[str, Any], phase_id: str) -> Dict[str, Any]:
 
 
 def check_artifacts(phase: Dict[str, Any]) -> List[str]:
-    """Check that required artifacts exist."""
+    """Check that required artifacts exist and are non-empty."""
     issues = []
     artifacts = phase.get("artifacts", {}).get("must_exist", [])
 
@@ -72,6 +72,8 @@ def check_artifacts(phase: Dict[str, Any]) -> List[str]:
         path = REPO_ROOT / artifact
         if not path.exists():
             issues.append(f"Missing required artifact: {artifact}")
+        elif path.stat().st_size == 0:
+            issues.append(f"Artifact is empty: {artifact}")
 
     return issues
 
@@ -255,6 +257,9 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
     import os
     import json
 
+    # Ensure critiques directory exists
+    CRITIQUES_DIR.mkdir(parents=True, exist_ok=True)
+
     # Markdown critique
     critique_content = f"""# Critique: {phase_id}
 
@@ -337,6 +342,9 @@ def write_approval(phase_id: str):
     import tempfile
     import os
     import json
+
+    # Ensure critiques directory exists
+    CRITIQUES_DIR.mkdir(parents=True, exist_ok=True)
 
     approval_timestamp = time.time()
     approval_content = f"Phase {phase_id} approved at {approval_timestamp}\n"
@@ -435,7 +443,7 @@ def judge_phase(phase_id: str):
             pass  # Tolerate missing or malformed CURRENT.json
 
     # Check protocol lock (judge/tools haven't been tampered with)
-    lock_issues = verify_protocol_lock(REPO_ROOT, plan, phase_id)
+    lock_issues = verify_protocol_lock(REPO_ROOT, plan, phase_id, baseline_sha)
     if lock_issues:
         write_critique(phase_id, lock_issues)
         return 1

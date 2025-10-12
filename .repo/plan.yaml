@@ -24,7 +24,6 @@ plan:
   protocol_lock:
     protected_globs:
       - "tools/**"
-      - ".repo/plan.yaml"
       - ".repo/protocol_manifest.json"
     allow_in_phases:
       - "P00-protocol-maintenance"

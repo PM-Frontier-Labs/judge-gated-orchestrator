@@ -49,10 +49,14 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
     max_tokens = llm_config.get("max_tokens", 2000)
     temperature = llm_config.get("temperature", 0)
     timeout_seconds = llm_config.get("timeout_seconds", 60)
-    # budget_usd = llm_config.get("budget_usd")  # Reserved for future cost tracking
+    budget_usd = llm_config.get("budget_usd")  # Cost limit (None = no limit)
     fail_on_error = llm_config.get("fail_on_transport_error", False)
     include_extensions = llm_config.get("include_extensions", [".py"])
     exclude_patterns = llm_config.get("exclude_patterns", [])
+
+    # File size limits (to prevent token overruns)
+    MAX_FILE_SIZE_BYTES = 50 * 1024  # 50KB per file
+    MAX_TOTAL_CONTEXT_BYTES = 200 * 1024  # 200KB total context
 
     # Get changed files (committed + uncommitted, same as other gates)
     changed_file_strs = get_changed_files_raw(
@@ -93,19 +97,49 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
         # No matching files changed - approve
         return []
 
-    # Build code context
+    # Build code context with size limits
     code_context = ""
+    total_size = 0
+    files_included = 0
+    files_skipped = 0
+
     for file_path in code_files:
         try:
+            file_size = file_path.stat().st_size
+
+            # Skip files that are too large
+            if file_size > MAX_FILE_SIZE_BYTES:
+                files_skipped += 1
+                code_context += f"\n{'='*60}\n"
+                code_context += f"# File: {file_path.relative_to(repo_root)} [SKIPPED - {file_size//1024}KB exceeds {MAX_FILE_SIZE_BYTES//1024}KB limit]\n"
+                code_context += f"# Consider using: git diff {baseline_sha or 'HEAD'} -- {file_path.relative_to(repo_root)}\n"
+                code_context += f"{'='*60}\n\n"
+                continue
+
+            # Check total context size
+            if total_size + file_size > MAX_TOTAL_CONTEXT_BYTES:
+                files_skipped += 1
+                code_context += f"\n[... {len(code_files) - files_included} more files skipped due to total context size limit ...]\n"
+                break
+
+            # Read file content
             code_context += f"\n{'='*60}\n"
-            code_context += f"# File: {file_path.relative_to(repo_root)}\n"
+            code_context += f"# File: {file_path.relative_to(repo_root)} ({file_size//1024}KB)\n"
             code_context += f"{'='*60}\n"
-            code_context += file_path.read_text()
+            file_content = file_path.read_text()
+            code_context += file_content
             code_context += "\n"
+
+            total_size += file_size
+            files_included += 1
+
         except Exception:
+            # Silently skip files that can't be read
             continue
 
-    if not code_context:
+    if not code_context or files_included == 0:
+        if files_skipped > 0:
+            return [f"LLM review skipped: All {files_skipped} changed files exceed size limits. Use manual review."]
         return []
 
     # Call Claude for review
@@ -141,6 +175,25 @@ Instructions:
         )
 
         review_text = response.content[0].text.strip()
+
+        # Budget enforcement (if configured)
+        if budget_usd is not None:
+            # Calculate cost based on usage
+            usage = response.usage
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+
+            # Pricing for claude-sonnet-4 (as of 2025-01)
+            # Update these rates if using different models
+            input_cost_per_1k = 0.003  # $3 per million = $0.003 per 1k
+            output_cost_per_1k = 0.015  # $15 per million = $0.015 per 1k
+
+            estimated_cost = (input_tokens / 1000 * input_cost_per_1k) + (output_tokens / 1000 * output_cost_per_1k)
+
+            print(f"💰 LLM review cost: ${estimated_cost:.4f} (input: {input_tokens} tokens, output: {output_tokens} tokens)")
+
+            if estimated_cost > budget_usd:
+                return [f"LLM review exceeded budget: ${estimated_cost:.4f} > ${budget_usd:.2f} limit"]
 
         # Parse response (look for APPROVED or LGTM)
         if "APPROVED" in review_text.upper() or "LGTM" in review_text.upper():

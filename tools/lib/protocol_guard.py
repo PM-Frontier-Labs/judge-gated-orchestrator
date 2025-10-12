@@ -14,10 +14,17 @@ def sha256(file_path: Path) -> str:
 def verify_protocol_lock(
     repo_root: Path,
     plan: Dict[str, Any],
-    phase_id: str
+    phase_id: str,
+    baseline_sha: str = None
 ) -> List[str]:
     """
     Verify protocol files haven't been tampered with.
+
+    Args:
+        repo_root: Repository root path
+        plan: Full plan configuration
+        phase_id: Current phase ID
+        baseline_sha: Optional baseline commit SHA for consistent diffs
 
     Returns list of issues (empty = all good).
     """
@@ -80,7 +87,8 @@ def verify_protocol_lock(
         changed_files = get_changed_files(
             repo_root,
             include_committed=True,
-            base_branch=base_branch
+            base_branch=base_branch,
+            baseline_sha=baseline_sha
         )
 
         for changed_file in changed_files:

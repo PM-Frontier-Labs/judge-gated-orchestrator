@@ -11,6 +11,7 @@ import sys
 import json
 import time
 import subprocess
+import shlex
 from pathlib import Path
 
 try:
@@ -54,9 +55,9 @@ def run_tests(plan, phase=None):
     # Get test command from plan
     test_config = plan.get("plan", {}).get("test_command", {})
     if isinstance(test_config, str):
-        test_cmd = test_config.split()
+        test_cmd = shlex.split(test_config)
     elif isinstance(test_config, dict):
-        test_cmd = test_config.get("command", "pytest tests/ -v").split()
+        test_cmd = shlex.split(test_config.get("command", "pytest tests/ -v"))
     else:
         test_cmd = ["pytest", "tests/", "-v"]
 
@@ -132,9 +133,9 @@ def run_lint(plan, phase_id):
     # Get lint command from plan
     lint_config = plan.get("plan", {}).get("lint_command", {})
     if isinstance(lint_config, str):
-        lint_cmd = lint_config.split()
+        lint_cmd = shlex.split(lint_config)
     elif isinstance(lint_config, dict):
-        lint_cmd = lint_config.get("command", "ruff check .").split()
+        lint_cmd = shlex.split(lint_config.get("command", "ruff check ."))
     else:
         lint_cmd = ["ruff", "check", "."]
 

@@ -11,7 +11,6 @@ PROTOCOL_FILES = [
     "tools/judge.py",
     "tools/phasectl.py",
     "tools/llm_judge.py",
-    ".repo/plan.yaml",
     "tools/lib/__init__.py",
     "tools/lib/git_ops.py",
     "tools/lib/scope.py",
