@@ -1,5 +1,5 @@
 # JUDGE-GATED ORCHESTRATOR - COMPLETE PACKAGE
-# Version: 2.5 (2752 LOC, includes Phase 1+2+2.5)
+# Version: 2.5 (2751 LOC, includes Phase 1+2+2.5)
 # Generated: 2025-10-12
 # Purpose: Autonomous AI execution protocol with quality gates
 
@@ -6089,7 +6089,6 @@ judge-gated-orchestrator/
 │   ├── mvp/
 │   ├── test_scope_matching.py   # Phase 1 tests
 │   └── test_test_scoping.py     # Phase 2.5 tests
-├── docs/mvp.md                  # Documentation
 ├── orient.sh                    # Status in 10 seconds
 ├── README.md                    # Human-readable overview
 ├── GETTING_STARTED.md           # Human setup and usage guide
@@ -6175,6 +6174,6 @@ Modification requires dedicated protocol maintenance phase.
 END OF PACKAGE
 ===============================================================================
 
-Total: 2752 lines of Python code across 19 files
+Total: 2751 lines of Python code across 19 files
 Generated: 2025-10-12
 Version: 2.5 (Phase 1 + Phase 2 + Phase 2.5)

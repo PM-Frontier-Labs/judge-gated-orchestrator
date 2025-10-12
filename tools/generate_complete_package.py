@@ -181,7 +181,6 @@ judge-gated-orchestrator/
 │   ├── mvp/
 │   ├── test_scope_matching.py   # Phase 1 tests
 │   └── test_test_scoping.py     # Phase 2.5 tests
-├── docs/mvp.md                  # Documentation
 ├── orient.sh                    # Status in 10 seconds
 ├── README.md                    # Human-readable overview
 ├── GETTING_STARTED.md           # Human setup and usage guide
