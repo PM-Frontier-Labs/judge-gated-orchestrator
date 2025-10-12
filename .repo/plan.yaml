@@ -6,6 +6,9 @@ plan:
   # Test command (optional, defaults to "pytest tests/ -v")
   test_command: "pytest tests/ -v"
 
+  # Lint command (optional, defaults to "ruff check .")
+  lint_command: "ruff check ."
+
   phases:
     - id: P01-scaffold
       description: "Create skeleton module + golden test + docs."
@@ -16,6 +19,7 @@ plan:
         must_exist: ["src/mvp/__init__.py", "tests/mvp/test_golden.py", "docs/mvp.md"]
       gates:
         tests: { must_pass: true }
+        lint:  { must_pass: true }
         docs:  { must_update: ["docs/mvp.md"] }
         drift:
           allowed_out_of_scope_changes: 0
@@ -30,6 +34,7 @@ plan:
         must_exist: ["src/mvp/feature.py", "tests/mvp/test_feature.py"]
       gates:
         tests: { must_pass: true }
+        lint:  { must_pass: true }
         docs:  { must_update: ["docs/mvp.md#feature"] }
         llm_review: { enabled: true }
         drift:

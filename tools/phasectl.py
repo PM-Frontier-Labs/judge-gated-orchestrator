@@ -63,7 +63,7 @@ def run_tests(plan):
                       check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         print(f"❌ Error: {test_cmd[0]} not installed")
-        print(f"   Install it or update test_command in .repo/plan.yaml")
+        print("   Install it or update test_command in .repo/plan.yaml")
         return None
 
     # Run tests and capture output
@@ -77,6 +77,63 @@ def run_tests(plan):
     # Save results to trace
     TRACES_DIR.mkdir(parents=True, exist_ok=True)
     trace_file = TRACES_DIR / "last_test.txt"
+    trace_file.write_text(
+        f"Exit code: {result.returncode}\n"
+        f"Timestamp: {time.time()}\n"
+        f"\n=== STDOUT ===\n{result.stdout}\n"
+        f"\n=== STDERR ===\n{result.stderr}\n"
+    )
+
+    return result.returncode
+
+
+def run_lint(plan, phase_id):
+    """Run linter and save results to trace file."""
+    # Check if lint gate is enabled for this phase
+    phases = plan.get("plan", {}).get("phases", [])
+    phase = next((p for p in phases if p["id"] == phase_id), None)
+
+    if not phase:
+        return None
+
+    lint_gate = phase.get("gates", {}).get("lint", {})
+    if not lint_gate.get("must_pass", False):
+        return None  # Lint not enabled for this phase
+
+    print("🔍 Running linter...")
+
+    # Get lint command from plan, default to ruff
+    lint_config = plan.get("plan", {}).get("lint_command", {})
+    if isinstance(lint_config, str):
+        lint_cmd = lint_config.split()
+    elif isinstance(lint_config, dict):
+        lint_cmd = lint_config.get("command", "ruff check .").split()
+    else:
+        lint_cmd = ["ruff", "check", "."]
+
+    # Check if linter exists
+    try:
+        # For ruff, use 'ruff --version' not 'ruff check --version'
+        version_cmd = [lint_cmd[0], "--version"] if lint_cmd[0] != "ruff" else ["ruff", "--version"]
+        subprocess.run(version_cmd,
+                      capture_output=True,
+                      check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print(f"❌ Error: {lint_cmd[0]} not installed")
+        print("   Install it or update lint_command in .repo/plan.yaml")
+        return None
+
+    # Run linter and capture output
+    result = subprocess.run(
+        lint_cmd,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True
+    )
+
+    # Save results to trace
+    TRACES_DIR.mkdir(parents=True, exist_ok=True)
+    trace_file = TRACES_DIR / "last_lint.txt"
     trace_file.write_text(
         f"Exit code: {result.returncode}\n"
         f"Timestamp: {time.time()}\n"
@@ -202,7 +259,7 @@ def show_diff_summary(phase_id: str, plan: dict):
             print("💡 Fix options:")
             print(f"   1. Revert: git checkout HEAD {' '.join(out_of_scope[:3])}{'...' if len(out_of_scope) > 3 else ''}")
             print(f"   2. Update scope in .repo/briefs/{phase_id}.md")
-            print(f"   3. Split into separate phase")
+            print("   3. Split into separate phase")
             print()
 
     # Check forbidden files
@@ -236,9 +293,13 @@ def review_phase(phase_id: str):
     if test_exit_code is None:
         return 2  # Test runner not available
 
+    # Run lint (if enabled for this phase)
+    run_lint(plan, phase_id)
+    # Note: Lint failures are checked by judge, not here
+
     # Trigger judge
     print("⚖️  Invoking judge...")
-    judge_result = subprocess.run(
+    subprocess.run(
         [sys.executable, REPO_ROOT / "tools" / "judge.py", phase_id],
         cwd=REPO_ROOT
     )

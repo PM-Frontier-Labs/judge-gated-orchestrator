@@ -86,12 +86,10 @@ pip install -r requirements.txt
 | Gate | What It Checks | Example |
 |------|----------------|---------|
 | **tests** | Test suite passes | `pytest` exit code must be 0 |
+| **lint** | Static analysis | `ruff check .` exit code must be 0 |
 | **docs** | Files updated | `README.md` must be modified |
 | **drift** | Scope boundaries | Only `src/mvp/**` can change |
 | **llm_review** | Semantic quality | Claude reviews architecture |
-
-**Coming soon:**
-- **lint** - Static analysis rules
 
 Gates are configurable per phase. Enforce what matters for your project.
 

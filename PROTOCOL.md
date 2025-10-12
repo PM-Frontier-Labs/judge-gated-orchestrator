@@ -72,6 +72,7 @@ plan:
   summary: "Short description of overall goal"
   base_branch: "main"
   test_command: "pytest tests/ -v"  # Optional, defaults to pytest
+  lint_command: "ruff check ."      # Optional, defaults to ruff
 
   phases:
     - id: P01-phase-name
@@ -86,6 +87,7 @@ plan:
 
       gates:
         tests: { must_pass: true }
+        lint:  { must_pass: true }
         docs: { must_update: ["docs/module.md"] }
         drift: { allowed_out_of_scope_changes: 0 }
         llm_review: { enabled: false }
@@ -305,7 +307,22 @@ gates:
 
 **See:** `.repo/traces/last_test.txt` for details
 
-### 3. Docs Gate
+### 3. Lint Gate (Optional)
+
+```yaml
+gates:
+  lint: { must_pass: true }
+```
+
+**Check:** Linter exit code == 0
+
+**Lint command:** From plan.yaml `lint_command`, defaults to `ruff check .`
+
+**Fails if:** Exit code != 0
+
+**See:** `.repo/traces/last_lint.txt` for details
+
+### 4. Docs Gate
 
 ```yaml
 gates:
@@ -318,7 +335,7 @@ gates:
 
 **Note:** Supports section anchors like `docs/module.md#feature` (checks base file)
 
-### 4. Drift Gate
+### 5. Drift Gate
 
 ```yaml
 gates:
@@ -331,7 +348,7 @@ gates:
 
 **See:** "Scope Rules" section above
 
-### 5. LLM Review Gate (Optional)
+### 6. LLM Review Gate (Optional)
 
 ```yaml
 gates:

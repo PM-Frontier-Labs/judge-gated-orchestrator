@@ -103,6 +103,37 @@ def check_tests() -> List[str]:
     return issues
 
 
+def check_lint() -> List[str]:
+    """Check that linting passed (read from trace file)."""
+    issues = []
+    trace_file = TRACES_DIR / "last_lint.txt"
+
+    if not trace_file.exists():
+        issues.append("No lint results found. Linter may not have run.")
+        return issues
+
+    # Read trace file
+    trace_content = trace_file.read_text()
+    lines = trace_content.split("\n")
+
+    # Parse exit code
+    exit_code = None
+    for line in lines:
+        if line.startswith("Exit code:"):
+            try:
+                exit_code = int(line.split(":")[1].strip())
+                break
+            except (ValueError, IndexError):
+                pass
+
+    if exit_code is None:
+        issues.append("Could not parse lint exit code from trace")
+    elif exit_code != 0:
+        issues.append(f"Linting failed with exit code {exit_code}. See .repo/traces/last_lint.txt for details.")
+
+    return issues
+
+
 def check_docs(phase: Dict[str, Any]) -> List[str]:
     """Check that documentation was updated."""
     issues = []
@@ -238,7 +269,7 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
         issues.append("Options to fix:")
         issues.append(f"1. Revert: git checkout HEAD {' '.join(out_of_scope)}")
         issues.append(f"2. Update phase scope in .repo/briefs/{phase['id']}.md")
-        issues.append(f"3. Split into separate phase for out-of-scope work")
+        issues.append("3. Split into separate phase for out-of-scope work")
 
     return issues
 
@@ -290,6 +321,12 @@ def judge_phase(phase_id: str):
 
     print("  🔍 Checking tests...")
     all_issues.extend(check_tests())
+
+    # Lint check (optional)
+    lint_gate = phase.get("gates", {}).get("lint", {})
+    if lint_gate.get("must_pass", False):
+        print("  🔍 Checking linting...")
+        all_issues.extend(check_lint())
 
     print("  🔍 Checking documentation...")
     all_issues.extend(check_docs(phase))
