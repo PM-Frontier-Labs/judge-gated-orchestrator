@@ -1,5 +1,5 @@
 # JUDGE-GATED ORCHESTRATOR - COMPLETE PACKAGE
-# Version: 2.5 (2193 LOC, includes Phase 1+2+2.5)
+# Version: 2.5 (2752 LOC, includes Phase 1+2+2.5)
 # Generated: 2025-10-12
 # Purpose: Autonomous AI execution protocol with quality gates
 
@@ -36,6 +36,8 @@ Any tool that follows these conventions can participate. This repo includes a re
 ✅ **Autonomous execution** - Agent works through phases without supervision
 ✅ **Quality enforcement** - Tests, docs, drift prevention, optional LLM review
 ✅ **Protocol integrity** - SHA256-based tamper detection prevents agents from modifying judge
+✅ **Schema validation** - Comprehensive plan.yaml validation catches configuration errors before execution
+✅ **Concurrent safety** - File locking prevents race conditions in CI/multi-agent scenarios
 ✅ **Context-window proof** - All state in files, `./orient.sh` recovers context in <10 seconds
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
@@ -115,9 +117,10 @@ Gates are configurable per phase. Enforce what matters for your project.
 1. Claude reads brief (.repo/briefs/P01-scaffold.md)
 2. Claude implements files within scope
 3. Claude runs: ./tools/phasectl.py review P01-scaffold
+   ├─> Validates plan.yaml schema
    ├─> Shows diff summary (in-scope vs out-of-scope)
-   ├─> Runs tests
-   ├─> Invokes judge
+   ├─> Runs tests (with optional scope filtering)
+   ├─> Invokes judge (with file locking)
    └─> Judge checks all gates
 4. Judge writes:
    ├─> .repo/critiques/P01-scaffold.md (if issues)
@@ -166,7 +169,13 @@ judge-gated-orchestrator/
 │   ├── judge.py          # Gate validator
 │   ├── llm_judge.py      # Optional LLM review
 │   ├── generate_manifest.py  # Update protocol hashes
-│   └── lib/              # Shared utilities + protocol guard
+│   └── lib/              # Shared utilities
+│       ├── protocol_guard.py  # SHA256 integrity verification
+│       ├── plan_validator.py  # Schema validation
+│       ├── file_lock.py       # Concurrent execution prevention
+│       ├── git_ops.py         # Git utilities
+│       ├── scope.py           # Scope matching
+│       └── traces.py          # Test output capture
 ├── orient.sh             # Status in 10 seconds
 └── README.md             # This file
 ```
@@ -678,6 +687,102 @@ All state is in files - you can always recover.
 ```
 
 **The protocol is context-window proof.** Everything needed is in `.repo/` files.
+
+---
+
+### Problem: Plan Validation Failed
+
+**Symptom:** "Plan validation failed" with list of errors before review starts
+
+**What this means:** plan.yaml has schema errors that must be fixed before execution
+
+**Common validation errors:**
+
+1. **Missing required fields:**
+   ```
+   Missing required field: plan.id
+   ```
+   Fix: Add `id: "my-project"` under `plan:` section
+
+2. **Invalid gate configuration:**
+   ```
+   plan.phases[0].gates.tests.must_pass must be a boolean
+   ```
+   Fix: Change `must_pass: yes` to `must_pass: true`
+
+3. **Duplicate phase IDs:**
+   ```
+   Duplicate phase ID: P01-scaffold
+   ```
+   Fix: Ensure each phase has a unique ID
+
+4. **Invalid patterns:**
+   ```
+   plan.phases[0].scope.include cannot contain empty strings
+   ```
+   Fix: Remove empty strings from scope patterns
+
+**How to fix:**
+```bash
+# Edit plan.yaml
+nano .repo/plan.yaml
+
+# Validate manually (optional - phasectl does this automatically)
+python3 -c "from tools.lib.plan_validator import validate_plan_file; from pathlib import Path; errors = validate_plan_file(Path('.repo/plan.yaml')); print('Valid!' if not errors else '\n'.join(errors))"
+
+# Try review again
+./tools/phasectl.py review <phase-id>
+```
+
+**Prevention:** Use LLM_PLANNING.md when creating plan.yaml - AI assistants will generate valid schemas.
+
+---
+
+### Problem: Could Not Acquire Judge Lock
+
+**Symptom:** "Could not acquire judge lock: Could not acquire lock on .repo/.judge.lock within 60s"
+
+**What this means:** Another judge process is already running (CI job, concurrent agent, or crashed process)
+
+**Common causes:**
+1. **Concurrent CI jobs** - Multiple GitHub Actions running simultaneously
+2. **Multi-agent scenario** - Two AI assistants trying to review at once
+3. **Stale lock** - Previous judge process crashed without cleanup
+
+**Fix:**
+
+**Option 1 - Wait for other process:**
+```bash
+# Wait a minute and try again
+sleep 60
+./tools/phasectl.py review <phase-id>
+```
+
+**Option 2 - Check for running processes:**
+```bash
+# See if judge is running
+ps aux | grep judge.py
+
+# If hung process, kill it
+kill <PID>
+
+# Try review again
+./tools/phasectl.py review <phase-id>
+```
+
+**Option 3 - Remove stale lock (last resort):**
+```bash
+# Only do this if you're CERTAIN no other judge is running
+rm .repo/.judge.lock
+
+# Try review again
+./tools/phasectl.py review <phase-id>
+```
+
+**Prevention:**
+- In CI: Use job concurrency limits
+- With multiple agents: Coordinate who runs reviews
+- File lock auto-expires stale locks after 60 seconds
 
 ---
 
@@ -2756,7 +2861,7 @@ Judge feedback when phase needs revision.
   - requirements.txt
 
 Options to fix:
-1. Revert: git checkout HEAD tools/judge.py README.md requirements.txt
+1. Revert: git restore tools/judge.py README.md requirements.txt
 2. Update phase scope in .repo/briefs/P01-scaffold.md
 3. Split into separate phase
 
@@ -3150,7 +3255,7 @@ Use this for files that require separate dedicated phases.
 
 **Option 1 - Revert:**
 ```bash
-git checkout HEAD file1.py file2.py
+git restore file1.py file2.py
 ./tools/phasectl.py review <phase-id>
 ```
 
@@ -3168,7 +3273,7 @@ Create a new phase for the out-of-scope work after current phase completes.
 
 **Recovery:**
 ```bash
-git checkout HEAD requirements.txt pyproject.toml
+git restore requirements.txt pyproject.toml
 ./tools/phasectl.py review <phase-id>
 ```
 
@@ -3349,6 +3454,7 @@ import sys
 import json
 import time
 import subprocess
+import shlex
 from pathlib import Path
 
 try:
@@ -3392,9 +3498,9 @@ def run_tests(plan, phase=None):
     # Get test command from plan
     test_config = plan.get("plan", {}).get("test_command", {})
     if isinstance(test_config, str):
-        test_cmd = test_config.split()
+        test_cmd = shlex.split(test_config)
     elif isinstance(test_config, dict):
-        test_cmd = test_config.get("command", "pytest tests/ -v").split()
+        test_cmd = shlex.split(test_config.get("command", "pytest tests/ -v"))
     else:
         test_cmd = ["pytest", "tests/", "-v"]
 
@@ -3406,28 +3512,62 @@ def run_tests(plan, phase=None):
         test_scope = test_gate.get("test_scope", "all")
 
         if test_scope == "scope":
-            # Filter test paths to match phase scope
+            # Filter test paths to match phase scope using pathspec
             scope_patterns = phase.get("scope", {}).get("include", [])
-            test_paths = []
+            exclude_patterns = phase.get("scope", {}).get("exclude", [])
 
-            for pattern in scope_patterns:
-                # Extract test paths from scope patterns
-                # E.g., "tests/mvp/**" -> "tests/mvp/"
-                if pattern.startswith("tests/"):
-                    # Remove wildcards and get base path
-                    base_path = pattern.split("*")[0].rstrip("/")
-                    if base_path not in test_paths:
-                        test_paths.append(base_path)
+            # Use pathspec to find matching test files/directories
+            try:
+                import pathspec
 
-            if test_paths:
-                print("  📍 Test scope: Running tests matching phase scope")
-                # Replace default test path with scoped paths
-                # pytest tests/ -v -> pytest tests/mvp/ tests/api/ -v
-                new_cmd = [test_cmd[0]]  # Keep pytest
-                new_cmd.extend(test_paths)
-                # Keep flags (e.g., -v)
-                new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-                test_cmd = new_cmd
+                # Create pathspec for include patterns
+                include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
+                exclude_spec = None
+                if exclude_patterns:
+                    exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
+
+                # Find all test files in tests/ directory
+                test_paths = set()
+                tests_dir = REPO_ROOT / "tests"
+                if tests_dir.exists():
+                    for test_file in tests_dir.rglob("test_*.py"):
+                        rel_path = str(test_file.relative_to(REPO_ROOT))
+                        # Check if matches include patterns
+                        if include_spec.match_file(rel_path):
+                            # Check if not excluded
+                            if not exclude_spec or not exclude_spec.match_file(rel_path):
+                                # Add parent directory for better pytest organization
+                                test_dir = str(test_file.parent.relative_to(REPO_ROOT))
+                                if test_dir.startswith("tests"):
+                                    test_paths.add(test_dir)
+
+                if test_paths:
+                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories")
+                    # Replace default test path with scoped paths
+                    new_cmd = [test_cmd[0]]  # Keep pytest
+                    new_cmd.extend(sorted(test_paths))
+                    # Keep flags (e.g., -v)
+                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+                    test_cmd = new_cmd
+                else:
+                    print("  ⚠️  No test files match scope patterns - running all tests")
+
+            except ImportError:
+                # Fallback to simple string matching if pathspec not available
+                print("  ⚠️  pathspec not available - using simple pattern matching")
+                test_paths = []
+                for pattern in scope_patterns:
+                    if pattern.startswith("tests/"):
+                        base_path = pattern.split("*")[0].rstrip("/")
+                        if base_path not in test_paths:
+                            test_paths.append(base_path)
+
+                if test_paths:
+                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories (fallback mode)")
+                    new_cmd = [test_cmd[0]]
+                    new_cmd.extend(test_paths)
+                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+                    test_cmd = new_cmd
 
         # Quarantine list: tests expected to fail
         quarantine = test_gate.get("quarantine", [])
@@ -3470,9 +3610,9 @@ def run_lint(plan, phase_id):
     # Get lint command from plan
     lint_config = plan.get("plan", {}).get("lint_command", {})
     if isinstance(lint_config, str):
-        lint_cmd = lint_config.split()
+        lint_cmd = shlex.split(lint_config)
     elif isinstance(lint_config, dict):
-        lint_cmd = lint_config.get("command", "ruff check .").split()
+        lint_cmd = shlex.split(lint_config.get("command", "ruff check ."))
     else:
         lint_cmd = ["ruff", "check", "."]
 
@@ -3564,7 +3704,7 @@ def show_diff_summary(phase_id: str, plan: dict):
 
         if len(out_of_scope) > allowed:
             print("💡 Fix options:")
-            print(f"   1. Revert: git checkout HEAD {' '.join(out_of_scope[:3])}{'...' if len(out_of_scope) > 3 else ''}")
+            print(f"   1. Revert: git restore {' '.join(out_of_scope[:3])}{'...' if len(out_of_scope) > 3 else ''}")
             print(f"   2. Update scope in .repo/briefs/{phase_id}.md")
             print("   3. Split into separate phase")
             print()
@@ -3579,7 +3719,7 @@ def show_diff_summary(phase_id: str, plan: dict):
         for f in forbidden_files:
             print(f"  - {f}")
         print()
-        print(f"   These require a separate phase. Revert: git checkout HEAD {' '.join(forbidden_files)}")
+        print(f"   These require a separate phase. Revert: git restore {' '.join(forbidden_files)}")
         print()
 
 
@@ -3590,6 +3730,16 @@ def review_phase(phase_id: str):
 
     # Load plan
     plan = load_plan()
+
+    # Validate plan schema
+    from lib.plan_validator import validate_plan
+    validation_errors = validate_plan(plan)
+    if validation_errors:
+        print("❌ Plan validation failed:")
+        for error in validation_errors:
+            print(f"   - {error}")
+        print("\nFix errors in .repo/plan.yaml and try again.")
+        return 2
 
     # Get phase config for test scoping
     phases = plan.get("plan", {}).get("phases", [])
@@ -3650,6 +3800,17 @@ def next_phase():
 
     # Load plan
     plan = load_plan()
+
+    # Validate plan schema
+    from lib.plan_validator import validate_plan
+    validation_errors = validate_plan(plan)
+    if validation_errors:
+        print("❌ Plan validation failed:")
+        for error in validation_errors:
+            print(f"   - {error}")
+        print("\nFix errors in .repo/plan.yaml and try again.")
+        return 2
+
     phases = plan.get("plan", {}).get("phases", [])
 
     if not phases:
@@ -3820,7 +3981,7 @@ def get_phase(plan: Dict[str, Any], phase_id: str) -> Dict[str, Any]:
 
 
 def check_artifacts(phase: Dict[str, Any]) -> List[str]:
-    """Check that required artifacts exist."""
+    """Check that required artifacts exist and are non-empty."""
     issues = []
     artifacts = phase.get("artifacts", {}).get("must_exist", [])
 
@@ -3828,6 +3989,8 @@ def check_artifacts(phase: Dict[str, Any]) -> List[str]:
         path = REPO_ROOT / artifact
         if not path.exists():
             issues.append(f"Missing required artifact: {artifact}")
+        elif path.stat().st_size == 0:
+            issues.append(f"Artifact is empty: {artifact}")
 
     return issues
 
@@ -4011,6 +4174,9 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
     import os
     import json
 
+    # Ensure critiques directory exists
+    CRITIQUES_DIR.mkdir(parents=True, exist_ok=True)
+
     # Markdown critique
     critique_content = f"""# Critique: {phase_id}
 
@@ -4094,6 +4260,9 @@ def write_approval(phase_id: str):
     import os
     import json
 
+    # Ensure critiques directory exists
+    CRITIQUES_DIR.mkdir(parents=True, exist_ok=True)
+
     approval_timestamp = time.time()
     approval_content = f"Phase {phase_id} approved at {approval_timestamp}\n"
     ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
@@ -4155,6 +4324,16 @@ def judge_phase(phase_id: str):
     # Load plan
     plan = load_plan()
 
+    # Validate plan schema
+    from lib.plan_validator import validate_plan
+    validation_errors = validate_plan(plan)
+    if validation_errors:
+        print("❌ Plan validation failed:")
+        for error in validation_errors:
+            print(f"   - {error}")
+        print("\nFix errors in .repo/plan.yaml and try again.")
+        return 2
+
     try:
         phase = get_phase(plan, phase_id)
     except ValueError as e:
@@ -4191,7 +4370,7 @@ def judge_phase(phase_id: str):
             pass  # Tolerate missing or malformed CURRENT.json
 
     # Check protocol lock (judge/tools haven't been tampered with)
-    lock_issues = verify_protocol_lock(REPO_ROOT, plan, phase_id)
+    lock_issues = verify_protocol_lock(REPO_ROOT, plan, phase_id, baseline_sha)
     if lock_issues:
         write_critique(phase_id, lock_issues)
         return 1
@@ -4262,8 +4441,17 @@ def main():
 
     phase_id = sys.argv[1]
 
+    # Use file lock to prevent concurrent judge runs
+    from lib.file_lock import file_lock
+    lock_file = REPO_ROOT / ".repo/.judge.lock"
+
     try:
-        return judge_phase(phase_id)
+        with file_lock(lock_file, timeout=60):
+            return judge_phase(phase_id)
+    except TimeoutError as e:
+        print(f"❌ Could not acquire judge lock: {e}")
+        print("   Another judge process may be running. Wait and try again.")
+        return 2
     except Exception as e:
         print(f"❌ Judge error: {e}")
         import traceback
@@ -4327,10 +4515,14 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
     max_tokens = llm_config.get("max_tokens", 2000)
     temperature = llm_config.get("temperature", 0)
     timeout_seconds = llm_config.get("timeout_seconds", 60)
-    # budget_usd = llm_config.get("budget_usd")  # Reserved for future cost tracking
+    budget_usd = llm_config.get("budget_usd")  # Cost limit (None = no limit)
     fail_on_error = llm_config.get("fail_on_transport_error", False)
     include_extensions = llm_config.get("include_extensions", [".py"])
     exclude_patterns = llm_config.get("exclude_patterns", [])
+
+    # File size limits (to prevent token overruns)
+    MAX_FILE_SIZE_BYTES = 50 * 1024  # 50KB per file
+    MAX_TOTAL_CONTEXT_BYTES = 200 * 1024  # 200KB total context
 
     # Get changed files (committed + uncommitted, same as other gates)
     changed_file_strs = get_changed_files_raw(
@@ -4371,19 +4563,49 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
         # No matching files changed - approve
         return []
 
-    # Build code context
+    # Build code context with size limits
     code_context = ""
+    total_size = 0
+    files_included = 0
+    files_skipped = 0
+
     for file_path in code_files:
         try:
+            file_size = file_path.stat().st_size
+
+            # Skip files that are too large
+            if file_size > MAX_FILE_SIZE_BYTES:
+                files_skipped += 1
+                code_context += f"\n{'='*60}\n"
+                code_context += f"# File: {file_path.relative_to(repo_root)} [SKIPPED - {file_size//1024}KB exceeds {MAX_FILE_SIZE_BYTES//1024}KB limit]\n"
+                code_context += f"# Consider using: git diff {baseline_sha or 'HEAD'} -- {file_path.relative_to(repo_root)}\n"
+                code_context += f"{'='*60}\n\n"
+                continue
+
+            # Check total context size
+            if total_size + file_size > MAX_TOTAL_CONTEXT_BYTES:
+                files_skipped += 1
+                code_context += f"\n[... {len(code_files) - files_included} more files skipped due to total context size limit ...]\n"
+                break
+
+            # Read file content
             code_context += f"\n{'='*60}\n"
-            code_context += f"# File: {file_path.relative_to(repo_root)}\n"
+            code_context += f"# File: {file_path.relative_to(repo_root)} ({file_size//1024}KB)\n"
             code_context += f"{'='*60}\n"
-            code_context += file_path.read_text()
+            file_content = file_path.read_text()
+            code_context += file_content
             code_context += "\n"
+
+            total_size += file_size
+            files_included += 1
+
         except Exception:
+            # Silently skip files that can't be read
             continue
 
-    if not code_context:
+    if not code_context or files_included == 0:
+        if files_skipped > 0:
+            return [f"LLM review skipped: All {files_skipped} changed files exceed size limits. Use manual review."]
         return []
 
     # Call Claude for review
@@ -4419,6 +4641,25 @@ Instructions:
         )
 
         review_text = response.content[0].text.strip()
+
+        # Budget enforcement (if configured)
+        if budget_usd is not None:
+            # Calculate cost based on usage
+            usage = response.usage
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+
+            # Pricing for claude-sonnet-4 (as of 2025-01)
+            # Update these rates if using different models
+            input_cost_per_1k = 0.003  # $3 per million = $0.003 per 1k
+            output_cost_per_1k = 0.015  # $15 per million = $0.015 per 1k
+
+            estimated_cost = (input_tokens / 1000 * input_cost_per_1k) + (output_tokens / 1000 * output_cost_per_1k)
+
+            print(f"💰 LLM review cost: ${estimated_cost:.4f} (input: {input_tokens} tokens, output: {output_tokens} tokens)")
+
+            if estimated_cost > budget_usd:
+                return [f"LLM review exceeded budget: ${estimated_cost:.4f} > ${budget_usd:.2f} limit"]
 
         # Parse response (look for APPROVED or LGTM)
         if "APPROVED" in review_text.upper() or "LGTM" in review_text.upper():
@@ -4461,7 +4702,6 @@ PROTOCOL_FILES = [
     "tools/judge.py",
     "tools/phasectl.py",
     "tools/llm_judge.py",
-    ".repo/plan.yaml",
     "tools/lib/__init__.py",
     "tools/lib/git_ops.py",
     "tools/lib/scope.py",
@@ -4762,10 +5002,17 @@ def sha256(file_path: Path) -> str:
 def verify_protocol_lock(
     repo_root: Path,
     plan: Dict[str, Any],
-    phase_id: str
+    phase_id: str,
+    baseline_sha: str = None
 ) -> List[str]:
     """
     Verify protocol files haven't been tampered with.
+
+    Args:
+        repo_root: Repository root path
+        plan: Full plan configuration
+        phase_id: Current phase ID
+        baseline_sha: Optional baseline commit SHA for consistent diffs
 
     Returns list of issues (empty = all good).
     """
@@ -4828,7 +5075,8 @@ def verify_protocol_lock(
         changed_files = get_changed_files(
             repo_root,
             include_committed=True,
-            base_branch=base_branch
+            base_branch=base_branch,
+            baseline_sha=baseline_sha
         )
 
         for changed_file in changed_files:
@@ -4888,6 +5136,421 @@ def verify_phase_binding(
                 )
 
     return issues
+
+
+--- tools/lib/plan_validator.py ---
+"""Plan.yaml schema validation."""
+from typing import Dict, Any, List
+from pathlib import Path
+
+
+def validate_plan(plan: Dict[str, Any]) -> List[str]:
+    """
+    Validate plan.yaml structure and contents.
+
+    Returns list of validation errors (empty = valid).
+    """
+    errors = []
+
+    # Check top-level structure
+    if "plan" not in plan:
+        errors.append("Missing required top-level key: 'plan'")
+        return errors  # Can't continue without plan key
+
+    plan_config = plan["plan"]
+
+    # Validate required fields
+    if "id" not in plan_config:
+        errors.append("Missing required field: plan.id")
+    elif not isinstance(plan_config["id"], str) or not plan_config["id"].strip():
+        errors.append("plan.id must be a non-empty string")
+
+    if "summary" not in plan_config:
+        errors.append("Missing required field: plan.summary")
+    elif not isinstance(plan_config["summary"], str):
+        errors.append("plan.summary must be a string")
+
+    if "phases" not in plan_config:
+        errors.append("Missing required field: plan.phases")
+        return errors  # Can't continue without phases
+
+    if not isinstance(plan_config["phases"], list):
+        errors.append("plan.phases must be a list")
+        return errors
+
+    if len(plan_config["phases"]) == 0:
+        errors.append("plan.phases must contain at least one phase")
+        return errors
+
+    # Validate optional fields
+    if "base_branch" in plan_config and not isinstance(plan_config["base_branch"], str):
+        errors.append("plan.base_branch must be a string")
+
+    if "test_command" in plan_config:
+        tc = plan_config["test_command"]
+        if not isinstance(tc, (str, dict)):
+            errors.append("plan.test_command must be a string or dict")
+        elif isinstance(tc, dict) and "command" not in tc:
+            errors.append("plan.test_command dict must have 'command' key")
+
+    if "lint_command" in plan_config:
+        lc = plan_config["lint_command"]
+        if not isinstance(lc, (str, dict)):
+            errors.append("plan.lint_command must be a string or dict")
+        elif isinstance(lc, dict) and "command" not in lc:
+            errors.append("plan.lint_command dict must have 'command' key")
+
+    # Validate LLM review config
+    if "llm_review_config" in plan_config:
+        llm_config = plan_config["llm_review_config"]
+        if not isinstance(llm_config, dict):
+            errors.append("plan.llm_review_config must be a dict")
+        else:
+            # Check known fields
+            if "model" in llm_config and not isinstance(llm_config["model"], str):
+                errors.append("plan.llm_review_config.model must be a string")
+
+            if "max_tokens" in llm_config and not isinstance(llm_config["max_tokens"], int):
+                errors.append("plan.llm_review_config.max_tokens must be an integer")
+
+            if "temperature" in llm_config:
+                if not isinstance(llm_config["temperature"], (int, float)):
+                    errors.append("plan.llm_review_config.temperature must be a number")
+                elif not 0 <= llm_config["temperature"] <= 1:
+                    errors.append("plan.llm_review_config.temperature must be between 0 and 1")
+
+            if "timeout_seconds" in llm_config and not isinstance(llm_config["timeout_seconds"], int):
+                errors.append("plan.llm_review_config.timeout_seconds must be an integer")
+
+            if "budget_usd" in llm_config:
+                if llm_config["budget_usd"] is not None and not isinstance(llm_config["budget_usd"], (int, float)):
+                    errors.append("plan.llm_review_config.budget_usd must be a number or null")
+
+            if "fail_on_transport_error" in llm_config and not isinstance(llm_config["fail_on_transport_error"], bool):
+                errors.append("plan.llm_review_config.fail_on_transport_error must be a boolean")
+
+            if "include_extensions" in llm_config:
+                if not isinstance(llm_config["include_extensions"], list):
+                    errors.append("plan.llm_review_config.include_extensions must be a list")
+                elif not all(isinstance(x, str) for x in llm_config["include_extensions"]):
+                    errors.append("plan.llm_review_config.include_extensions must contain only strings")
+
+            if "exclude_patterns" in llm_config:
+                if not isinstance(llm_config["exclude_patterns"], list):
+                    errors.append("plan.llm_review_config.exclude_patterns must be a list")
+                elif not all(isinstance(x, str) for x in llm_config["exclude_patterns"]):
+                    errors.append("plan.llm_review_config.exclude_patterns must contain only strings")
+
+    # Validate protocol_lock
+    if "protocol_lock" in plan_config:
+        lock = plan_config["protocol_lock"]
+        if not isinstance(lock, dict):
+            errors.append("plan.protocol_lock must be a dict")
+        else:
+            if "protected_globs" in lock:
+                if not isinstance(lock["protected_globs"], list):
+                    errors.append("plan.protocol_lock.protected_globs must be a list")
+                elif not all(isinstance(x, str) for x in lock["protected_globs"]):
+                    errors.append("plan.protocol_lock.protected_globs must contain only strings")
+                elif any(not x.strip() for x in lock["protected_globs"]):
+                    errors.append("plan.protocol_lock.protected_globs cannot contain empty strings")
+
+            if "allow_in_phases" in lock:
+                if not isinstance(lock["allow_in_phases"], list):
+                    errors.append("plan.protocol_lock.allow_in_phases must be a list")
+                elif not all(isinstance(x, str) for x in lock["allow_in_phases"]):
+                    errors.append("plan.protocol_lock.allow_in_phases must contain only strings")
+
+    # Validate each phase
+    phase_ids = set()
+    for i, phase in enumerate(plan_config["phases"]):
+        phase_prefix = f"plan.phases[{i}]"
+
+        if not isinstance(phase, dict):
+            errors.append(f"{phase_prefix} must be a dict")
+            continue
+
+        # Required phase fields
+        if "id" not in phase:
+            errors.append(f"{phase_prefix}.id is required")
+        elif not isinstance(phase["id"], str) or not phase["id"].strip():
+            errors.append(f"{phase_prefix}.id must be a non-empty string")
+        else:
+            # Check for duplicate phase IDs
+            if phase["id"] in phase_ids:
+                errors.append(f"Duplicate phase ID: {phase['id']}")
+            phase_ids.add(phase["id"])
+
+        if "description" not in phase:
+            errors.append(f"{phase_prefix}.description is required")
+        elif not isinstance(phase["description"], str):
+            errors.append(f"{phase_prefix}.description must be a string")
+
+        # Validate scope
+        if "scope" in phase:
+            scope = phase["scope"]
+            if not isinstance(scope, dict):
+                errors.append(f"{phase_prefix}.scope must be a dict")
+            else:
+                if "include" in scope:
+                    if not isinstance(scope["include"], list):
+                        errors.append(f"{phase_prefix}.scope.include must be a list")
+                    elif not all(isinstance(x, str) for x in scope["include"]):
+                        errors.append(f"{phase_prefix}.scope.include must contain only strings")
+                    elif any(not x.strip() for x in scope["include"]):
+                        errors.append(f"{phase_prefix}.scope.include cannot contain empty strings")
+
+                if "exclude" in scope:
+                    if not isinstance(scope["exclude"], list):
+                        errors.append(f"{phase_prefix}.scope.exclude must be a list")
+                    elif not all(isinstance(x, str) for x in scope["exclude"]):
+                        errors.append(f"{phase_prefix}.scope.exclude must contain only strings")
+
+        # Validate artifacts
+        if "artifacts" in phase:
+            artifacts = phase["artifacts"]
+            if not isinstance(artifacts, dict):
+                errors.append(f"{phase_prefix}.artifacts must be a dict")
+            else:
+                if "must_exist" in artifacts:
+                    if not isinstance(artifacts["must_exist"], list):
+                        errors.append(f"{phase_prefix}.artifacts.must_exist must be a list")
+                    elif not all(isinstance(x, str) for x in artifacts["must_exist"]):
+                        errors.append(f"{phase_prefix}.artifacts.must_exist must contain only strings")
+                    elif any(not x.strip() for x in artifacts["must_exist"]):
+                        errors.append(f"{phase_prefix}.artifacts.must_exist cannot contain empty strings")
+
+        # Validate gates
+        if "gates" in phase:
+            gates = phase["gates"]
+            if not isinstance(gates, dict):
+                errors.append(f"{phase_prefix}.gates must be a dict")
+            else:
+                # Define valid gate names
+                valid_gates = {"tests", "lint", "docs", "drift", "llm_review"}
+                unknown_gates = set(gates.keys()) - valid_gates
+                if unknown_gates:
+                    errors.append(f"{phase_prefix}.gates contains unknown gates: {', '.join(sorted(unknown_gates))}")
+
+                # Validate tests gate
+                if "tests" in gates:
+                    tests_gate = gates["tests"]
+                    if not isinstance(tests_gate, dict):
+                        errors.append(f"{phase_prefix}.gates.tests must be a dict")
+                    else:
+                        if "must_pass" in tests_gate and not isinstance(tests_gate["must_pass"], bool):
+                            errors.append(f"{phase_prefix}.gates.tests.must_pass must be a boolean")
+
+                        if "test_scope" in tests_gate:
+                            if tests_gate["test_scope"] not in ["scope", "all"]:
+                                errors.append(f"{phase_prefix}.gates.tests.test_scope must be 'scope' or 'all'")
+
+                        if "quarantine" in tests_gate:
+                            if not isinstance(tests_gate["quarantine"], list):
+                                errors.append(f"{phase_prefix}.gates.tests.quarantine must be a list")
+                            else:
+                                for j, q in enumerate(tests_gate["quarantine"]):
+                                    if not isinstance(q, dict):
+                                        errors.append(f"{phase_prefix}.gates.tests.quarantine[{j}] must be a dict")
+                                    else:
+                                        if "path" not in q:
+                                            errors.append(f"{phase_prefix}.gates.tests.quarantine[{j}].path is required")
+                                        elif not isinstance(q["path"], str):
+                                            errors.append(f"{phase_prefix}.gates.tests.quarantine[{j}].path must be a string")
+
+                                        if "reason" not in q:
+                                            errors.append(f"{phase_prefix}.gates.tests.quarantine[{j}].reason is required")
+                                        elif not isinstance(q["reason"], str):
+                                            errors.append(f"{phase_prefix}.gates.tests.quarantine[{j}].reason must be a string")
+
+                # Validate lint gate
+                if "lint" in gates:
+                    lint_gate = gates["lint"]
+                    if not isinstance(lint_gate, dict):
+                        errors.append(f"{phase_prefix}.gates.lint must be a dict")
+                    elif "must_pass" in lint_gate and not isinstance(lint_gate["must_pass"], bool):
+                        errors.append(f"{phase_prefix}.gates.lint.must_pass must be a boolean")
+
+                # Validate docs gate
+                if "docs" in gates:
+                    docs_gate = gates["docs"]
+                    if not isinstance(docs_gate, dict):
+                        errors.append(f"{phase_prefix}.gates.docs must be a dict")
+                    else:
+                        if "must_update" in docs_gate:
+                            if not isinstance(docs_gate["must_update"], list):
+                                errors.append(f"{phase_prefix}.gates.docs.must_update must be a list")
+                            elif not all(isinstance(x, str) for x in docs_gate["must_update"]):
+                                errors.append(f"{phase_prefix}.gates.docs.must_update must contain only strings")
+
+                # Validate drift gate
+                if "drift" in gates:
+                    drift_gate = gates["drift"]
+                    if not isinstance(drift_gate, dict):
+                        errors.append(f"{phase_prefix}.gates.drift must be a dict")
+                    else:
+                        if "allowed_out_of_scope_changes" in drift_gate:
+                            if not isinstance(drift_gate["allowed_out_of_scope_changes"], int):
+                                errors.append(f"{phase_prefix}.gates.drift.allowed_out_of_scope_changes must be an integer")
+                            elif drift_gate["allowed_out_of_scope_changes"] < 0:
+                                errors.append(f"{phase_prefix}.gates.drift.allowed_out_of_scope_changes must be non-negative")
+
+                # Validate llm_review gate
+                if "llm_review" in gates:
+                    llm_gate = gates["llm_review"]
+                    if not isinstance(llm_gate, dict):
+                        errors.append(f"{phase_prefix}.gates.llm_review must be a dict")
+                    elif "enabled" in llm_gate and not isinstance(llm_gate["enabled"], bool):
+                        errors.append(f"{phase_prefix}.gates.llm_review.enabled must be a boolean")
+
+        # Validate drift_rules
+        if "drift_rules" in phase:
+            drift_rules = phase["drift_rules"]
+            if not isinstance(drift_rules, dict):
+                errors.append(f"{phase_prefix}.drift_rules must be a dict")
+            else:
+                if "forbid_changes" in drift_rules:
+                    if not isinstance(drift_rules["forbid_changes"], list):
+                        errors.append(f"{phase_prefix}.drift_rules.forbid_changes must be a list")
+                    elif not all(isinstance(x, str) for x in drift_rules["forbid_changes"]):
+                        errors.append(f"{phase_prefix}.drift_rules.forbid_changes must contain only strings")
+                    elif any(not x.strip() for x in drift_rules["forbid_changes"]):
+                        errors.append(f"{phase_prefix}.drift_rules.forbid_changes cannot contain empty strings")
+
+    return errors
+
+
+def validate_plan_file(plan_path: Path) -> List[str]:
+    """
+    Validate plan.yaml file.
+
+    Returns list of validation errors (empty = valid).
+    """
+    if not plan_path.exists():
+        return [f"Plan file not found: {plan_path}"]
+
+    try:
+        import yaml
+        plan = yaml.safe_load(plan_path.read_text())
+    except Exception as e:
+        return [f"Failed to parse plan.yaml: {e}"]
+
+    if not isinstance(plan, dict):
+        return ["plan.yaml must contain a dict at top level"]
+
+    return validate_plan(plan)
+
+
+--- tools/lib/file_lock.py ---
+"""File locking utilities for concurrent execution."""
+import time
+from pathlib import Path
+from contextlib import contextmanager
+
+
+@contextmanager
+def file_lock(lock_file: Path, timeout: int = 30):
+    """
+    Acquire an exclusive file lock.
+
+    Args:
+        lock_file: Path to lock file
+        timeout: Maximum seconds to wait for lock
+
+    Raises:
+        TimeoutError: If lock cannot be acquired within timeout
+    """
+    import sys
+
+    # Create lock file directory if needed
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Try fcntl first (Unix/Linux/Mac)
+    try:
+        import fcntl
+        lock_fd = None
+        lock_acquired = False
+
+        try:
+            # Open/create lock file
+            lock_fd = open(lock_file, 'w')
+
+            # Try to acquire lock with timeout
+            start_time = time.time()
+            while True:
+                try:
+                    fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    lock_acquired = True
+                    break
+                except (IOError, OSError):
+                    # Lock held by another process
+                    if time.time() - start_time > timeout:
+                        raise TimeoutError(f"Could not acquire lock on {lock_file} within {timeout}s")
+                    time.sleep(0.1)
+
+            # Write PID to lock file for debugging
+            lock_fd.write(f"{sys.platform}:{time.time()}\n")
+            lock_fd.flush()
+
+            yield
+
+        finally:
+            if lock_acquired and lock_fd:
+                try:
+                    fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
+            if lock_fd:
+                try:
+                    lock_fd.close()
+                except Exception:
+                    pass
+            # Clean up lock file
+            try:
+                if lock_file.exists():
+                    lock_file.unlink()
+            except Exception:
+                pass
+
+    except ImportError:
+        # fcntl not available (Windows) - fall back to file-based locking
+        lock_acquired = False
+        start_time = time.time()
+
+        try:
+            while True:
+                try:
+                    # Try to create lock file exclusively
+                    lock_fd = lock_file.open('x')
+                    lock_fd.write(f"{sys.platform}:{time.time()}\n")
+                    lock_fd.close()
+                    lock_acquired = True
+                    break
+                except FileExistsError:
+                    # Lock held by another process
+                    if time.time() - start_time > timeout:
+                        raise TimeoutError(f"Could not acquire lock on {lock_file} within {timeout}s")
+
+                    # Check if lock file is stale (>60s old)
+                    try:
+                        age = time.time() - lock_file.stat().st_mtime
+                        if age > 60:
+                            # Stale lock, remove it
+                            lock_file.unlink()
+                    except Exception:
+                        pass
+
+                    time.sleep(0.1)
+
+            yield
+
+        finally:
+            if lock_acquired:
+                try:
+                    if lock_file.exists():
+                        lock_file.unlink()
+                except Exception:
+                    pass
 
 
 ===============================================================================
@@ -5270,7 +5933,6 @@ plan:
   protocol_lock:
     protected_globs:
       - "tools/**"
-      - ".repo/plan.yaml"
       - ".repo/protocol_manifest.json"
     allow_in_phases:
       - "P00-protocol-maintenance"
@@ -5323,15 +5985,14 @@ plan:
 {
   "version": 1,
   "files": {
-    "tools/judge.py": "44f891e842ed782a84b2c5840fd6e0bf026403f464c105e97a99e80403947ea7",
-    "tools/phasectl.py": "db32faf7a2723727458b5a982e104c5a78871290f1e3195cad8c8c5c104fac9c",
-    "tools/llm_judge.py": "8bdd77d33f857b32c2c64e21b90c6596a23a4fcbc9b00343e705833ff10664f7",
-    ".repo/plan.yaml": "76f0af41a314154506d98b7c30a3285d40b4f1a9473c2ed2b4fadd675308198e",
+    "tools/judge.py": "80fc801653ca00495e23732249b9b090d53645865bc30008c4e574c321612120",
+    "tools/phasectl.py": "fbf275ad68b2462ecd4d0da6c2234dbe0e98ae511881b6d60ab2505e80a351ac",
+    "tools/llm_judge.py": "f45588a088e32a1f8d76373f1be9fe92db7b795baa600203651dc1385e62fb0b",
     "tools/lib/__init__.py": "7587d01c70810521dbaa04f36d26bc7ab4164890893073d2a6562bd29ceac9a5",
     "tools/lib/git_ops.py": "48dcfd8a50721858a9ade86784469680ff8244805632b9d29e6d0e503a8dd1d6",
     "tools/lib/scope.py": "76473a354866e739499faf6bfdbc078aa5e6e0094a3973d7cbf513e7cd135df7",
     "tools/lib/traces.py": "14fe079e698e1db6e5144c5093a59765a04058305542ca0d0b8d463e3f5fb020",
-    "tools/lib/protocol_guard.py": "5f669aed06b199cbc0693209326d63c2f5c16303dcaab5896bf55edd757e26ac"
+    "tools/lib/protocol_guard.py": "4d460c3f2f4b2f36cb44af365ebc93fd2e84295e6a259f79fa332683d8badc09"
   }
 }
 
@@ -5420,7 +6081,9 @@ judge-gated-orchestrator/
 │       ├── git_ops.py           # Git operations
 │       ├── scope.py             # Pattern matching (Phase 1: pathspec)
 │       ├── traces.py            # Trace file handling
-│       └── protocol_guard.py    # Integrity checks
+│       ├── protocol_guard.py    # Integrity checks
+│       ├── plan_validator.py    # Schema validation
+│       └── file_lock.py         # Concurrent execution prevention
 ├── src/mvp/                     # Example code
 ├── tests/                       # Test suite
 │   ├── mvp/
@@ -5512,6 +6175,6 @@ Modification requires dedicated protocol maintenance phase.
 END OF PACKAGE
 ===============================================================================
 
-Total: 2193 lines of Python code across 17 files
+Total: 2752 lines of Python code across 19 files
 Generated: 2025-10-12
 Version: 2.5 (Phase 1 + Phase 2 + Phase 2.5)

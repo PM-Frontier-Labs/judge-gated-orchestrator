@@ -26,6 +26,8 @@ Any tool that follows these conventions can participate. This repo includes a re
 ✅ **Autonomous execution** - Agent works through phases without supervision
 ✅ **Quality enforcement** - Tests, docs, drift prevention, optional LLM review
 ✅ **Protocol integrity** - SHA256-based tamper detection prevents agents from modifying judge
+✅ **Schema validation** - Comprehensive plan.yaml validation catches configuration errors before execution
+✅ **Concurrent safety** - File locking prevents race conditions in CI/multi-agent scenarios
 ✅ **Context-window proof** - All state in files, `./orient.sh` recovers context in <10 seconds
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
@@ -105,9 +107,10 @@ Gates are configurable per phase. Enforce what matters for your project.
 1. Claude reads brief (.repo/briefs/P01-scaffold.md)
 2. Claude implements files within scope
 3. Claude runs: ./tools/phasectl.py review P01-scaffold
+   ├─> Validates plan.yaml schema
    ├─> Shows diff summary (in-scope vs out-of-scope)
-   ├─> Runs tests
-   ├─> Invokes judge
+   ├─> Runs tests (with optional scope filtering)
+   ├─> Invokes judge (with file locking)
    └─> Judge checks all gates
 4. Judge writes:
    ├─> .repo/critiques/P01-scaffold.md (if issues)
@@ -156,7 +159,13 @@ judge-gated-orchestrator/
 │   ├── judge.py          # Gate validator
 │   ├── llm_judge.py      # Optional LLM review
 │   ├── generate_manifest.py  # Update protocol hashes
-│   └── lib/              # Shared utilities + protocol guard
+│   └── lib/              # Shared utilities
+│       ├── protocol_guard.py  # SHA256 integrity verification
+│       ├── plan_validator.py  # Schema validation
+│       ├── file_lock.py       # Concurrent execution prevention
+│       ├── git_ops.py         # Git utilities
+│       ├── scope.py           # Scope matching
+│       └── traces.py          # Test output capture
 ├── orient.sh             # Status in 10 seconds
 └── README.md             # This file
 ```

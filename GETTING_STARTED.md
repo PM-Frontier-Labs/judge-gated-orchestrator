@@ -426,6 +426,102 @@ All state is in files - you can always recover.
 
 ---
 
+### Problem: Plan Validation Failed
+
+**Symptom:** "Plan validation failed" with list of errors before review starts
+
+**What this means:** plan.yaml has schema errors that must be fixed before execution
+
+**Common validation errors:**
+
+1. **Missing required fields:**
+   ```
+   Missing required field: plan.id
+   ```
+   Fix: Add `id: "my-project"` under `plan:` section
+
+2. **Invalid gate configuration:**
+   ```
+   plan.phases[0].gates.tests.must_pass must be a boolean
+   ```
+   Fix: Change `must_pass: yes` to `must_pass: true`
+
+3. **Duplicate phase IDs:**
+   ```
+   Duplicate phase ID: P01-scaffold
+   ```
+   Fix: Ensure each phase has a unique ID
+
+4. **Invalid patterns:**
+   ```
+   plan.phases[0].scope.include cannot contain empty strings
+   ```
+   Fix: Remove empty strings from scope patterns
+
+**How to fix:**
+```bash
+# Edit plan.yaml
+nano .repo/plan.yaml
+
+# Validate manually (optional - phasectl does this automatically)
+python3 -c "from tools.lib.plan_validator import validate_plan_file; from pathlib import Path; errors = validate_plan_file(Path('.repo/plan.yaml')); print('Valid!' if not errors else '\n'.join(errors))"
+
+# Try review again
+./tools/phasectl.py review <phase-id>
+```
+
+**Prevention:** Use LLM_PLANNING.md when creating plan.yaml - AI assistants will generate valid schemas.
+
+---
+
+### Problem: Could Not Acquire Judge Lock
+
+**Symptom:** "Could not acquire judge lock: Could not acquire lock on .repo/.judge.lock within 60s"
+
+**What this means:** Another judge process is already running (CI job, concurrent agent, or crashed process)
+
+**Common causes:**
+1. **Concurrent CI jobs** - Multiple GitHub Actions running simultaneously
+2. **Multi-agent scenario** - Two AI assistants trying to review at once
+3. **Stale lock** - Previous judge process crashed without cleanup
+
+**Fix:**
+
+**Option 1 - Wait for other process:**
+```bash
+# Wait a minute and try again
+sleep 60
+./tools/phasectl.py review <phase-id>
+```
+
+**Option 2 - Check for running processes:**
+```bash
+# See if judge is running
+ps aux | grep judge.py
+
+# If hung process, kill it
+kill <PID>
+
+# Try review again
+./tools/phasectl.py review <phase-id>
+```
+
+**Option 3 - Remove stale lock (last resort):**
+```bash
+# Only do this if you're CERTAIN no other judge is running
+rm .repo/.judge.lock
+
+# Try review again
+./tools/phasectl.py review <phase-id>
+```
+
+**Prevention:**
+- In CI: Use job concurrency limits
+- With multiple agents: Coordinate who runs reviews
+- File lock auto-expires stale locks after 60 seconds
+
+---
+
 ### Problem: Need to Modify Protocol Files
 
 **Symptom:** "Protocol file modified: tools/judge.py"

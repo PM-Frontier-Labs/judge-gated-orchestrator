@@ -97,6 +97,12 @@ SECTION 4: SHARED LIBRARIES
 --- tools/lib/protocol_guard.py ---
 {read_file('tools/lib/protocol_guard.py')}
 
+--- tools/lib/plan_validator.py ---
+{read_file('tools/lib/plan_validator.py')}
+
+--- tools/lib/file_lock.py ---
+{read_file('tools/lib/file_lock.py')}
+
 ===============================================================================
 SECTION 5: TESTS
 ===============================================================================
@@ -167,7 +173,9 @@ judge-gated-orchestrator/
 │       ├── git_ops.py           # Git operations
 │       ├── scope.py             # Pattern matching (Phase 1: pathspec)
 │       ├── traces.py            # Trace file handling
-│       └── protocol_guard.py    # Integrity checks
+│       ├── protocol_guard.py    # Integrity checks
+│       ├── plan_validator.py    # Schema validation
+│       └── file_lock.py         # Concurrent execution prevention
 ├── src/mvp/                     # Example code
 ├── tests/                       # Test suite
 │   ├── mvp/
