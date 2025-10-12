@@ -36,10 +36,23 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
     except ImportError:
         return ["LLM review enabled but anthropic package not installed. Run: pip install anthropic"]
 
-    # Get base branch (fallback only)
-    base_branch = "main"
+    # Get LLM configuration from plan (with defaults)
+    llm_config = {}
     if plan:
+        llm_config = plan.get("plan", {}).get("llm_review_config", {})
         base_branch = plan.get("plan", {}).get("base_branch", "main")
+    else:
+        base_branch = "main"
+
+    # Extract config with defaults
+    model = llm_config.get("model", "claude-sonnet-4-20250514")
+    max_tokens = llm_config.get("max_tokens", 2000)
+    temperature = llm_config.get("temperature", 0)
+    timeout_seconds = llm_config.get("timeout_seconds", 60)
+    # budget_usd = llm_config.get("budget_usd")  # Reserved for future cost tracking
+    fail_on_error = llm_config.get("fail_on_transport_error", False)
+    include_extensions = llm_config.get("include_extensions", [".py"])
+    exclude_patterns = llm_config.get("exclude_patterns", [])
 
     # Get changed files (committed + uncommitted, same as other gates)
     changed_file_strs = get_changed_files_raw(
@@ -60,11 +73,24 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
         # No changes detected - approve
         return []
 
-    # Filter to only review code files (Python for now)
-    code_files = [f for f in changed_files if f.suffix == ".py"]
+    # Filter files by configured extensions
+    code_files = []
+    for f in changed_files:
+        # Check if extension matches
+        if f.suffix in include_extensions:
+            # Check if not excluded by patterns
+            relative_path = str(f.relative_to(repo_root))
+            excluded = False
+            for pattern in exclude_patterns:
+                import fnmatch
+                if fnmatch.fnmatch(relative_path, pattern):
+                    excluded = True
+                    break
+            if not excluded:
+                code_files.append(f)
 
     if not code_files:
-        # No code files changed - approve
+        # No matching files changed - approve
         return []
 
     # Build code context
@@ -105,17 +131,19 @@ Instructions:
 """
 
     try:
+        # Use configured model and parameters
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            temperature=0,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=timeout_seconds,
             messages=[{"role": "user", "content": prompt}]
         )
 
         review_text = response.content[0].text.strip()
 
-        # Parse response
-        if "APPROVED" in review_text.upper():
+        # Parse response (look for APPROVED or LGTM)
+        if "APPROVED" in review_text.upper() or "LGTM" in review_text.upper():
             return []
 
         # Extract issues
@@ -134,4 +162,8 @@ Instructions:
         return issues
 
     except Exception as e:
-        return [f"LLM review failed: {str(e)}"]
+        if fail_on_error:
+            return [f"LLM review failed: {str(e)}"]
+        else:
+            print(f"⚠️  LLM review skipped due to error: {e}")
+            return []  # Don't block on transport errors if configured

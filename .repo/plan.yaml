@@ -9,6 +9,17 @@ plan:
   # Lint command (optional, defaults to "ruff check .")
   lint_command: "ruff check ."
 
+  # LLM review configuration (optional, applies when llm_review gate is enabled)
+  llm_review_config:
+    model: "claude-sonnet-4-20250514"
+    max_tokens: 2000
+    temperature: 0
+    timeout_seconds: 60
+    budget_usd: null  # Set to limit costs (e.g., 0.50)
+    fail_on_transport_error: false  # Set true for strict validation
+    include_extensions: [".py"]  # File extensions to review
+    exclude_patterns: []  # Patterns to skip (e.g., "**/test_*.py")
+
   # Protocol integrity enforcement
   protocol_lock:
     protected_globs:

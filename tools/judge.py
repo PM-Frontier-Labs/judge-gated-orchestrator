@@ -179,7 +179,28 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
         issues.append("Forbidden files changed (these require a separate phase):")
         for f in forbidden_files:
             issues.append(f"  - {f}")
-        issues.append(f"Fix: git checkout HEAD {' '.join(forbidden_files)}")
+
+        # Get uncommitted changes to provide correct remediation
+        import subprocess
+        uncommitted_result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True
+        )
+        uncommitted_set = set(uncommitted_result.stdout.strip().split("\n")) if uncommitted_result.returncode == 0 else set()
+
+        uncommitted_forbidden = [f for f in forbidden_files if f in uncommitted_set]
+        committed_forbidden = [f for f in forbidden_files if f not in uncommitted_set]
+
+        if uncommitted_forbidden:
+            issues.append(f"Fix uncommitted: git restore --worktree --staged -- {' '.join(uncommitted_forbidden)}")
+        if committed_forbidden:
+            if baseline_sha:
+                issues.append(f"Fix committed: git restore --source={baseline_sha} -- {' '.join(committed_forbidden)}")
+            else:
+                issues.append(f"Fix committed: git revert <commits> (or restore: git restore --source=<baseline> -- {' '.join(committed_forbidden[:2])})")
+
         issues.append("")
 
     # Check out-of-scope changes
@@ -190,18 +211,52 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
         for f in out_of_scope:
             issues.append(f"  - {f}")
         issues.append("")
+
+        # Determine which files are committed vs uncommitted for better remediation
+        import subprocess
+
+        # Get uncommitted changes
+        uncommitted_result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True
+        )
+        uncommitted_set = set(uncommitted_result.stdout.strip().split("\n")) if uncommitted_result.returncode == 0 else set()
+
+        # Classify out-of-scope files
+        uncommitted_out = [f for f in out_of_scope if f in uncommitted_set]
+        committed_out = [f for f in out_of_scope if f not in uncommitted_set]
+
         issues.append("Options to fix:")
-        issues.append(f"1. Revert: git checkout HEAD {' '.join(out_of_scope)}")
-        issues.append(f"2. Update phase scope in .repo/briefs/{phase['id']}.md")
-        issues.append("3. Split into separate phase for out-of-scope work")
+
+        if uncommitted_out:
+            issues.append(f"1. Revert uncommitted changes: git restore --worktree --staged -- {' '.join(uncommitted_out[:3])}")
+            if len(uncommitted_out) > 3:
+                issues.append(f"   (and {len(uncommitted_out) - 3} more)")
+
+        if committed_out:
+            if baseline_sha:
+                issues.append(f"2. Restore committed files to baseline: git restore --source={baseline_sha} -- {' '.join(committed_out[:3])}")
+            else:
+                issues.append("2. Revert committed changes: git revert <commit-range> (or restore specific files)")
+            if len(committed_out) > 3:
+                issues.append(f"   (and {len(committed_out) - 3} more)")
+
+        issues.append(f"3. Update phase scope in .repo/briefs/{phase['id']}.md")
+        issues.append("4. Split into separate phase for out-of-scope work")
 
     return issues
 
 
-def write_critique(phase_id: str, issues: List[str]):
-    """Write a critique file."""
-    critique_file = CRITIQUES_DIR / f"{phase_id}.md"
-    critique_file.write_text(f"""# Critique: {phase_id}
+def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, List[str]] = None):
+    """Write critique files atomically (both .md and .json)."""
+    import tempfile
+    import os
+    import json
+
+    # Markdown critique
+    critique_content = f"""# Critique: {phase_id}
 
 ## Issues Found
 
@@ -213,15 +268,128 @@ Please address the issues above and re-run:
 ```
 ./tools/phasectl.py review {phase_id}
 ```
-""")
+"""
+
+    critique_file = CRITIQUES_DIR / f"{phase_id}.md"
+
+    # Write MD to temp file first (atomic operation)
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        dir=CRITIQUES_DIR,
+        delete=False,
+        prefix=f".{phase_id}_",
+        suffix=".tmp"
+    ) as tmp:
+        tmp.write(critique_content)
+        tmp_path = tmp.name
+
+    # Atomic replace MD
+    os.replace(tmp_path, critique_file)
+
+    # JSON critique (machine-readable)
+    if gate_results is None:
+        gate_results = {}
+
+    critique_json = {
+        "phase": phase_id,
+        "timestamp": time.time(),
+        "passed": False,
+        "issues": [
+            {
+                "gate": gate,
+                "messages": msgs
+            }
+            for gate, msgs in gate_results.items() if msgs
+        ],
+        "total_issue_count": len(issues)
+    }
+
+    json_file = CRITIQUES_DIR / f"{phase_id}.json"
+
+    # Write JSON to temp file
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        dir=CRITIQUES_DIR,
+        delete=False,
+        prefix=f".{phase_id}_json_",
+        suffix=".tmp"
+    ) as tmp:
+        json.dump(critique_json, tmp, indent=2)
+        tmp_path = tmp.name
+
+    # Atomic replace JSON
+    os.replace(tmp_path, json_file)
+
+    # Clean up old approval files AFTER successful write
+    ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
+    ok_json_file = CRITIQUES_DIR / f"{phase_id}.OK.json"
+    if ok_file.exists():
+        ok_file.unlink()
+    if ok_json_file.exists():
+        ok_json_file.unlink()
+
     print(f"📝 Critique written to {critique_file.relative_to(REPO_ROOT)}")
+    print(f"📊 JSON critique: {json_file.relative_to(REPO_ROOT)}")
 
 
 def write_approval(phase_id: str):
-    """Write an approval marker."""
+    """Write approval markers atomically (both .OK and .OK.json)."""
+    import tempfile
+    import os
+    import json
+
+    approval_timestamp = time.time()
+    approval_content = f"Phase {phase_id} approved at {approval_timestamp}\n"
     ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
-    ok_file.write_text(f"Phase {phase_id} approved at {time.time()}\n")
+
+    # Write .OK to temp file first (atomic operation)
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        dir=CRITIQUES_DIR,
+        delete=False,
+        prefix=f".{phase_id}_",
+        suffix=".tmp"
+    ) as tmp:
+        tmp.write(approval_content)
+        tmp_path = tmp.name
+
+    # Atomic replace .OK
+    os.replace(tmp_path, ok_file)
+
+    # JSON approval (machine-readable)
+    approval_json = {
+        "phase": phase_id,
+        "timestamp": approval_timestamp,
+        "passed": True,
+        "approved_at": approval_timestamp
+    }
+
+    ok_json_file = CRITIQUES_DIR / f"{phase_id}.OK.json"
+
+    # Write JSON to temp file
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        dir=CRITIQUES_DIR,
+        delete=False,
+        prefix=f".{phase_id}_ok_json_",
+        suffix=".tmp"
+    ) as tmp:
+        json.dump(approval_json, tmp, indent=2)
+        tmp_path = tmp.name
+
+    # Atomic replace JSON
+    os.replace(tmp_path, ok_json_file)
+
+    # Clean up old critique files AFTER successful write
+    critique_file = CRITIQUES_DIR / f"{phase_id}.md"
+    critique_json_file = CRITIQUES_DIR / f"{phase_id}.json"
+    if critique_file.exists():
+        critique_file.unlink()
+    if critique_json_file.exists():
+        critique_json_file.unlink()
+
     print(f"✅ Approval written to {ok_file.relative_to(REPO_ROOT)}")
+    print(f"📊 JSON approval: {ok_json_file.relative_to(REPO_ROOT)}")
 
 
 def judge_phase(phase_id: str):
@@ -261,9 +429,6 @@ def judge_phase(phase_id: str):
             current = json.loads(current_file.read_text())
             binding_issues = verify_phase_binding(REPO_ROOT, current)
             if binding_issues:
-                # Clean up old critiques/approvals
-                for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):
-                    old_file.unlink()
                 write_critique(phase_id, binding_issues)
                 return 1
         except (json.JSONDecodeError, KeyError):
@@ -272,26 +437,30 @@ def judge_phase(phase_id: str):
     # Check protocol lock (judge/tools haven't been tampered with)
     lock_issues = verify_protocol_lock(REPO_ROOT, plan, phase_id)
     if lock_issues:
-        # Clean up old critiques/approvals
-        for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):
-            old_file.unlink()
         write_critique(phase_id, lock_issues)
         return 1
 
     # Run all checks - Phase → Gates → Verdict
     all_issues = []
+    gate_results = {}  # Track results per gate for JSON output
 
     print("  🔍 Checking artifacts...")
-    all_issues.extend(check_artifacts(phase))
+    artifacts_issues = check_artifacts(phase)
+    gate_results["artifacts"] = artifacts_issues
+    all_issues.extend(artifacts_issues)
 
     print("  🔍 Checking tests...")
-    all_issues.extend(check_gate_trace("tests", TRACES_DIR, "Tests"))
+    tests_issues = check_gate_trace("tests", TRACES_DIR, "Tests")
+    gate_results["tests"] = tests_issues
+    all_issues.extend(tests_issues)
 
     # Lint check (optional)
     lint_gate = phase.get("gates", {}).get("lint", {})
     if lint_gate.get("must_pass", False):
         print("  🔍 Checking linting...")
-        all_issues.extend(check_gate_trace("lint", TRACES_DIR, "Linting"))
+        lint_issues = check_gate_trace("lint", TRACES_DIR, "Linting")
+        gate_results["lint"] = lint_issues
+        all_issues.extend(lint_issues)
 
     # Get changed files for docs and drift gates
     base_branch = plan.get("plan", {}).get("base_branch", "main")
@@ -303,25 +472,27 @@ def judge_phase(phase_id: str):
     )
 
     print("  🔍 Checking documentation...")
-    all_issues.extend(check_docs(phase, changed_files))
+    docs_issues = check_docs(phase, changed_files)
+    gate_results["docs"] = docs_issues
+    all_issues.extend(docs_issues)
 
     print("  🔍 Checking for plan drift...")
-    all_issues.extend(check_drift(phase, plan, baseline_sha))
+    drift_issues = check_drift(phase, plan, baseline_sha)
+    gate_results["drift"] = drift_issues
+    all_issues.extend(drift_issues)
 
     # LLM code review (optional)
     if LLM_JUDGE_AVAILABLE:
         llm_gate = phase.get("gates", {}).get("llm_review", {})
         if llm_gate.get("enabled", False):
             print("  🤖 Running LLM code review...")
-            all_issues.extend(llm_code_review(phase, REPO_ROOT, plan, baseline_sha))
+            llm_issues = llm_code_review(phase, REPO_ROOT, plan, baseline_sha)
+            gate_results["llm_review"] = llm_issues
+            all_issues.extend(llm_issues)
 
-    # Clean up old critiques/approvals
-    for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):
-        old_file.unlink()
-
-    # Verdict
+    # Verdict (write functions handle cleanup atomically)
     if all_issues:
-        write_critique(phase_id, all_issues)
+        write_critique(phase_id, all_issues, gate_results)
         return 1
     else:
         write_approval(phase_id)
