@@ -2,15 +2,15 @@
 
 ## Overview
 
-The MVP module demonstrates a judge-gated autonomous orchestration system for Claude Code.
+The MVP module demonstrates the **Gated Phase Protocol** - a file-based protocol for autonomous AI execution with quality gates.
 
 ## Purpose
 
-This module serves as a proof of concept for:
-- Judge-enforced quality gates
-- Plan-adherence validation
-- Autonomous multi-phase execution
-- Test-driven development flow
+This module serves as a working demo for:
+- **Quality gates enforcement** - Tests, docs, drift prevention
+- **Scope boundaries** - Changes limited to defined file patterns
+- **Autonomous phase execution** - Agent works through P01 → P02 without supervision
+- **Judge validation** - No progression until all gates pass
 
 ## API
 
