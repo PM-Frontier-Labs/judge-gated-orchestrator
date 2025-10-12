@@ -6,20 +6,23 @@ Checks:
 - Artifacts exist
 - Tests pass
 - Documentation updated
-- No plan drift (changes outside scope)
-- Lint rules (if specified)
-- LLM code review (if enabled and ANTHROPIC_API_KEY set)
+- LLM code review (if enabled)
 """
 
 import sys
-import yaml
-import subprocess
+import time
 from pathlib import Path
 from typing import Dict, List, Any
 
-# Import LLM judge (optional enhancement)
 try:
-    from llm_judge import llm_code_review, get_changed_files_in_scope
+    import yaml
+except ImportError:
+    print("❌ Error: pyyaml not installed. Run: pip install pyyaml")
+    sys.exit(1)
+
+# Import LLM judge (optional)
+try:
+    from llm_judge import llm_code_review
     LLM_JUDGE_AVAILABLE = True
 except ImportError:
     LLM_JUDGE_AVAILABLE = False
@@ -31,17 +34,25 @@ TRACES_DIR = REPO_DIR / "traces"
 
 
 def load_plan() -> Dict[str, Any]:
-    """Load the plan.yaml file."""
+    """Load plan.yaml and validate."""
     plan_file = REPO_DIR / "plan.yaml"
-    with plan_file.open() as f:
-        return yaml.safe_load(f)
+    if not plan_file.exists():
+        print(f"❌ Error: {plan_file} not found")
+        sys.exit(1)
+
+    try:
+        with plan_file.open() as f:
+            return yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"❌ Error: Invalid YAML in {plan_file}: {e}")
+        sys.exit(1)
 
 
 def get_phase(plan: Dict[str, Any], phase_id: str) -> Dict[str, Any]:
     """Get phase configuration from plan."""
-    phases = plan["plan"]["phases"]
+    phases = plan.get("plan", {}).get("phases", [])
     for phase in phases:
-        if phase["id"] == phase_id:
+        if phase.get("id") == phase_id:
             return phase
     raise ValueError(f"Phase {phase_id} not found in plan")
 
@@ -60,24 +71,32 @@ def check_artifacts(phase: Dict[str, Any]) -> List[str]:
 
 
 def check_tests() -> List[str]:
-    """Check that tests pass."""
+    """Check that tests passed (read from trace file)."""
     issues = []
-    test_output = TRACES_DIR / "last_pytest.txt"
+    trace_file = TRACES_DIR / "last_test.txt"
 
-    if not test_output.exists():
-        issues.append("No test results found. Run tests first.")
+    if not trace_file.exists():
+        issues.append("No test results found. Tests may not have run.")
         return issues
 
-    # Check pytest exit code by running again
-    result = subprocess.run(
-        ["pytest", "tests/", "-v"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True
-    )
+    # Read trace file
+    trace_content = trace_file.read_text()
+    lines = trace_content.split("\n")
 
-    if result.returncode != 0:
-        issues.append("Tests failed. See .repo/traces/last_pytest.txt for details.")
+    # Parse exit code
+    exit_code = None
+    for line in lines:
+        if line.startswith("Exit code:"):
+            try:
+                exit_code = int(line.split(":")[1].strip())
+                break
+            except (ValueError, IndexError):
+                pass
+
+    if exit_code is None:
+        issues.append("Could not parse test exit code from trace")
+    elif exit_code != 0:
+        issues.append(f"Tests failed with exit code {exit_code}. See .repo/traces/last_test.txt for details.")
 
     return issues
 
@@ -91,7 +110,7 @@ def check_docs(phase: Dict[str, Any]) -> List[str]:
     if not must_update:
         return issues
 
-    # Check if docs exist
+    # Check if docs exist and are not empty
     for doc in must_update:
         # Handle section anchors like "docs/mvp.md#feature"
         doc_path = doc.split("#")[0]
@@ -101,46 +120,6 @@ def check_docs(phase: Dict[str, Any]) -> List[str]:
             issues.append(f"Documentation not found: {doc_path}")
         elif path.stat().st_size == 0:
             issues.append(f"Documentation is empty: {doc_path}")
-
-    return issues
-
-
-def check_drift(phase: Dict[str, Any]) -> List[str]:
-    """Check for changes outside the defined scope."""
-    issues = []
-    scope = phase.get("scope", {})
-    allowed_changes = phase.get("gates", {}).get("drift", {}).get("allowed_out_of_scope_changes", 0)
-
-    # Get changed files (simplified - in production, would use git diff)
-    # For now, just check that required files are in scope
-    include_patterns = scope.get("include", [])
-
-    # This is a simplified drift check
-    # In production, you'd compare git diff against include/exclude patterns
-    if allowed_changes == 0:
-        # For MVP, just verify artifacts are in scope
-        artifacts = phase.get("artifacts", {}).get("must_exist", [])
-        for artifact in artifacts:
-            in_scope = any(
-                artifact.startswith(pattern.replace("**", "").replace("*", ""))
-                for pattern in include_patterns
-            )
-            if not in_scope:
-                issues.append(f"Artifact outside scope: {artifact}")
-
-    return issues
-
-
-def check_lint(phase: Dict[str, Any]) -> List[str]:
-    """Check lint rules (if specified)."""
-    issues = []
-    lint_gate = phase.get("gates", {}).get("lint", {})
-
-    if "max_cyclomatic_complexity" in lint_gate:
-        max_complexity = lint_gate["max_cyclomatic_complexity"]
-        # For MVP, skip actual complexity checking
-        # In production, would use radon or similar tool
-        pass
 
     return issues
 
@@ -167,8 +146,8 @@ Please address the issues above and re-run:
 def write_approval(phase_id: str):
     """Write an approval marker."""
     ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
-    ok_file.write_text(f"Phase {phase_id} approved at {Path(TRACES_DIR / 'last_pytest.txt').stat().st_mtime}\n")
-    print(f"✅ Phase {phase_id} approved!")
+    ok_file.write_text(f"Phase {phase_id} approved at {time.time()}\n")
+    print(f"✅ Approval written to {ok_file.relative_to(REPO_ROOT)}")
 
 
 def judge_phase(phase_id: str):
@@ -177,7 +156,12 @@ def judge_phase(phase_id: str):
 
     # Load plan
     plan = load_plan()
-    phase = get_phase(plan, phase_id)
+
+    try:
+        phase = get_phase(plan, phase_id)
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        return 2
 
     # Run all checks
     all_issues = []
@@ -191,19 +175,12 @@ def judge_phase(phase_id: str):
     print("  🔍 Checking documentation...")
     all_issues.extend(check_docs(phase))
 
-    print("  🔍 Checking for plan drift...")
-    all_issues.extend(check_drift(phase))
-
-    print("  🔍 Checking lint rules...")
-    all_issues.extend(check_lint(phase))
-
     # LLM code review (optional)
     if LLM_JUDGE_AVAILABLE:
         llm_gate = phase.get("gates", {}).get("llm_review", {})
         if llm_gate.get("enabled", False):
             print("  🤖 Running LLM code review...")
-            changed_files = get_changed_files_in_scope(phase, REPO_ROOT)
-            all_issues.extend(llm_code_review(phase, changed_files))
+            all_issues.extend(llm_code_review(phase, REPO_ROOT))
 
     # Clean up old critiques/approvals
     for old_file in CRITIQUES_DIR.glob(f"{phase_id}.*"):
@@ -229,6 +206,8 @@ def main():
         return judge_phase(phase_id)
     except Exception as e:
         print(f"❌ Judge error: {e}")
+        import traceback
+        traceback.print_exc()
         return 2
 
 

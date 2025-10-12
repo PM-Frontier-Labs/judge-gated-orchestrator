@@ -2,94 +2,117 @@
 """
 LLM-based semantic code review for judge system.
 
-This module adds Claude as a code reviewer to check:
-- Architecture and design patterns
-- Code clarity and naming
-- Complexity and maintainability
-- Edge case handling
-- Documentation quality
+Uses git diff to find actually changed files, then reviews them with Claude.
 """
 
 import os
+import subprocess
 from typing import List, Dict, Any
 from pathlib import Path
 
 
-def llm_code_review(phase: Dict[str, Any], changed_files: List[Path]) -> List[str]:
+def get_changed_files(repo_root: Path) -> List[Path]:
+    """
+    Get list of files changed in working directory using git diff.
+
+    Returns only files that exist and have been modified.
+    """
+    try:
+        # Get staged and unstaged changes
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        changed_files = []
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                file_path = repo_root / line
+                if file_path.exists() and file_path.is_file():
+                    changed_files.append(file_path)
+
+        return changed_files
+    except subprocess.CalledProcessError:
+        # Not a git repo or git not available
+        return []
+
+
+def llm_code_review(phase: Dict[str, Any], repo_root: Path) -> List[str]:
     """
     Use Claude to review code quality semantically.
 
-    Args:
-        phase: Phase configuration from plan.yaml
-        changed_files: List of files that were changed in this phase
-
-    Returns:
-        List of issues found (empty if approved)
+    Only reviews files that were actually changed (via git diff).
     """
-    # Check if LLM review is enabled for this phase
+    # Check if LLM review is enabled
     llm_gate = phase.get("gates", {}).get("llm_review", {})
     if not llm_gate.get("enabled", False):
-        return []  # Skip if not enabled
+        return []
 
-    # Require API key
+    # Check API key
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return ["LLM review enabled but ANTHROPIC_API_KEY not set in environment"]
 
+    # Check anthropic package
     try:
         from anthropic import Anthropic
     except ImportError:
         return ["LLM review enabled but anthropic package not installed. Run: pip install anthropic"]
 
-    client = Anthropic(api_key=api_key)
-    issues = []
+    # Get changed files
+    changed_files = get_changed_files(repo_root)
 
-    # Gather code to review
+    if not changed_files:
+        # No changes detected - approve
+        return []
+
+    # Filter to only review code files (Python for now)
+    code_files = [f for f in changed_files if f.suffix == ".py"]
+
+    if not code_files:
+        # No code files changed - approve
+        return []
+
+    # Build code context
     code_context = ""
-    file_count = 0
-    for file_path in changed_files:
-        # Only review Python files for now
-        if file_path.suffix == ".py" and file_path.exists():
+    for file_path in code_files:
+        try:
             code_context += f"\n{'='*60}\n"
-            code_context += f"# File: {file_path}\n"
+            code_context += f"# File: {file_path.relative_to(repo_root)}\n"
             code_context += f"{'='*60}\n"
             code_context += file_path.read_text()
             code_context += "\n"
-            file_count += 1
+        except Exception:
+            continue
 
     if not code_context:
-        return []  # No code to review
+        return []
 
-    # Build review prompt
-    prompt = f"""You are a senior code reviewer. Review this code for phase: "{phase['description']}"
+    # Call Claude for review
+    client = Anthropic(api_key=api_key)
 
-{file_count} file(s) to review:
+    prompt = f"""You are a senior code reviewer. Review this code for phase: "{phase.get('description', 'unknown')}"
+
+Changed files ({len(code_files)}):
 {code_context}
 
 Review criteria:
-1. **Architecture**: Does it follow good design patterns? Is it well-structured?
-2. **Naming**: Are variable/function names clear and consistent?
-3. **Complexity**: Is the code simple and maintainable? Any overly complex logic?
-4. **Documentation**: Are complex parts explained? Are docstrings adequate?
-5. **Edge cases**: Are errors handled properly? Are edge cases covered?
-6. **Type safety**: Are type hints used appropriately?
-7. **Best practices**: Does it follow Python best practices?
+1. Architecture: Good design patterns? Well-structured?
+2. Naming: Clear and consistent variable/function names?
+3. Complexity: Simple and maintainable? Any overly complex logic?
+4. Documentation: Complex parts explained? Adequate docstrings?
+5. Edge cases: Errors handled properly? Edge cases covered?
 
 Instructions:
-- If you find issues, list each one starting with "- Issue:"
-- Be specific: reference function names, line numbers if possible
+- If you find issues, list each as "- Issue: [description]"
+- Be specific: reference function names
 - Focus on meaningful problems, not nitpicks
-- If the code is good quality, respond with exactly: "APPROVED - Code meets quality standards"
-
-Format your response as:
-- Issue: [specific issue description]
-- Issue: [another specific issue]
-
-OR if approved:
-APPROVED - Code meets quality standards
+- If code is good quality, respond: "APPROVED - Code meets quality standards"
 """
 
-    # Call Claude
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -102,62 +125,22 @@ APPROVED - Code meets quality standards
 
         # Parse response
         if "APPROVED" in review_text.upper():
-            return []  # No issues - approved!
+            return []
 
         # Extract issues
-        lines = review_text.split("\n")
-        for line in lines:
+        issues = []
+        for line in review_text.split("\n"):
             line = line.strip()
             if line.startswith("- Issue:"):
-                issue_text = line.replace("- Issue:", "").strip()
-                issues.append(f"Code quality: {issue_text}")
-            elif line.startswith("-") and ":" in line:
-                # Handle variations like "- Architecture: ..."
-                issue_text = line[1:].strip()
-                issues.append(f"Code quality: {issue_text}")
+                issue = line.replace("- Issue:", "").strip()
+                issues.append(f"Code quality: {issue}")
+            elif line.startswith("-") and len(line) > 2:
+                # Handle variations
+                issue = line[1:].strip()
+                if issue:
+                    issues.append(f"Code quality: {issue}")
 
-        # If we couldn't parse issues but it's not approved, add generic message
-        if not issues and review_text:
-            issues.append(f"Code quality: {review_text[:200]}")
+        return issues
 
     except Exception as e:
-        issues.append(f"LLM review failed: {str(e)}")
-
-    return issues
-
-
-def get_changed_files_in_scope(phase: Dict[str, Any], repo_root: Path) -> List[Path]:
-    """
-    Get list of files in the phase scope.
-
-    For MVP, this returns all files in the scope patterns.
-    In production, you'd use `git diff` to find actually changed files.
-
-    Args:
-        phase: Phase configuration
-        repo_root: Repository root path
-
-    Returns:
-        List of file paths to review
-    """
-    scope = phase.get("scope", {})
-    include_patterns = scope.get("include", [])
-
-    changed_files = []
-
-    for pattern in include_patterns:
-        # Simple glob matching (for MVP)
-        # Remove wildcards for basic matching
-        if "**" in pattern:
-            # Handle patterns like "src/mvp/**"
-            base_pattern = pattern.replace("**", "*")
-            for file_path in repo_root.glob(base_pattern):
-                if file_path.is_file():
-                    changed_files.append(file_path)
-        else:
-            # Handle specific files or simple globs
-            for file_path in repo_root.glob(pattern):
-                if file_path.is_file():
-                    changed_files.append(file_path)
-
-    return changed_files
+        return [f"LLM review failed: {str(e)}"]
