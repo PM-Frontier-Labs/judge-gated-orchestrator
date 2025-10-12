@@ -406,7 +406,10 @@ artifacts:
 
 ```yaml
 gates:
-  tests: { must_pass: true }
+  tests:
+    must_pass: true
+    test_scope: "scope"  # "scope" | "all" (default: "all")
+    quarantine: []       # Tests expected to fail (optional)
 ```
 
 **Check:** Test runner exit code == 0
@@ -416,6 +419,80 @@ gates:
 **Fails if:** Exit code != 0
 
 **See:** `.repo/traces/last_test.txt` for details
+
+#### Test Scoping (Phase 2.5)
+
+Control which tests run based on phase scope:
+
+**`test_scope: "scope"`** - Only run tests matching `scope.include` patterns
+```yaml
+scope:
+  include: ["src/mvp/**", "tests/mvp/**"]
+gates:
+  tests:
+    must_pass: true
+    test_scope: "scope"  # Runs only tests/mvp/** tests
+```
+
+**Benefits:**
+- Fast: Doesn't run 1000 unrelated legacy tests
+- Focused: Only tests what you're changing
+- Prevents irrelevant failures from blocking progress
+- Aligns with scope philosophy
+
+**`test_scope: "all"`** - Run entire test suite (default behavior)
+
+**Example output:**
+```
+🧪 Running tests...
+  📍 Test scope: Running tests matching phase scope
+  Running: pytest tests/mvp/ -v
+```
+
+#### Test Quarantine (Phase 2.5)
+
+Skip specific tests that are expected to fail:
+
+```yaml
+gates:
+  tests:
+    must_pass: true
+    quarantine:
+      - path: "tests/mvp/test_legacy.py::test_deprecated_endpoint"
+        reason: "Removing this endpoint in P02, tests updated in P03"
+      - path: "tests/integration/test_external_api.py::test_timeout"
+        reason: "External API occasionally times out, non-blocking"
+```
+
+**Use cases:**
+- Breaking API deliberately, fixing tests in next phase
+- Flaky external service tests (timeouts, rate limits)
+- Tests dependent on infrastructure not yet built
+- Legacy tests unrelated to current work
+
+**Benefits:**
+- Documents WHY test is skipped (version controlled)
+- Temporary escape hatch (visible in plan.yaml)
+- Agent-friendly (clear signal "this failure is expected")
+- Uses pytest `--deselect` (standard mechanism)
+
+**Example output:**
+```
+🧪 Running tests...
+  ⚠️  Quarantined tests (2 tests will be skipped):
+     - tests/mvp/test_legacy.py::test_deprecated_endpoint
+       Reason: Removing this endpoint in P02, tests updated in P03
+     - tests/integration/test_external_api.py::test_timeout
+       Reason: External API occasionally times out, non-blocking
+
+  Running: pytest tests/ --deselect tests/mvp/test_legacy.py::test_deprecated_endpoint --deselect tests/integration/test_external_api.py::test_timeout -v
+```
+
+**Best practices:**
+- Use `test_scope: "scope"` as primary mechanism (most common)
+- Use `quarantine` sparingly for specific exceptions
+- Document reason clearly (future maintainers need context)
+- Remove from quarantine list once fixed
 
 ### 3. Lint Gate (Optional)
 

@@ -47,7 +47,7 @@ def load_plan():
         sys.exit(1)
 
 
-def run_tests(plan):
+def run_tests(plan, phase=None):
     """Run tests and save results to trace file."""
     print("🧪 Running tests...")
 
@@ -59,6 +59,50 @@ def run_tests(plan):
         test_cmd = test_config.get("command", "pytest tests/ -v").split()
     else:
         test_cmd = ["pytest", "tests/", "-v"]
+
+    # Apply test scoping and quarantine if phase provided
+    if phase:
+        test_gate = phase.get("gates", {}).get("tests", {})
+
+        # Test scoping: "scope" | "all" | custom path
+        test_scope = test_gate.get("test_scope", "all")
+
+        if test_scope == "scope":
+            # Filter test paths to match phase scope
+            scope_patterns = phase.get("scope", {}).get("include", [])
+            test_paths = []
+
+            for pattern in scope_patterns:
+                # Extract test paths from scope patterns
+                # E.g., "tests/mvp/**" -> "tests/mvp/"
+                if pattern.startswith("tests/"):
+                    # Remove wildcards and get base path
+                    base_path = pattern.split("*")[0].rstrip("/")
+                    if base_path not in test_paths:
+                        test_paths.append(base_path)
+
+            if test_paths:
+                print("  📍 Test scope: Running tests matching phase scope")
+                # Replace default test path with scoped paths
+                # pytest tests/ -v -> pytest tests/mvp/ tests/api/ -v
+                new_cmd = [test_cmd[0]]  # Keep pytest
+                new_cmd.extend(test_paths)
+                # Keep flags (e.g., -v)
+                new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+                test_cmd = new_cmd
+
+        # Quarantine list: tests expected to fail
+        quarantine = test_gate.get("quarantine", [])
+        if quarantine:
+            print(f"  ⚠️  Quarantined tests ({len(quarantine)} tests will be skipped):")
+            for item in quarantine:
+                test_path = item.get("path", "")
+                reason = item.get("reason", "No reason provided")
+                print(f"     - {test_path}")
+                print(f"       Reason: {reason}")
+                # Add --deselect for pytest
+                test_cmd.extend(["--deselect", test_path])
+            print()
 
     # Run command and save trace
     exit_code = run_command_with_trace("tests", test_cmd, REPO_ROOT, TRACES_DIR)
@@ -209,11 +253,15 @@ def review_phase(phase_id: str):
     # Load plan
     plan = load_plan()
 
+    # Get phase config for test scoping
+    phases = plan.get("plan", {}).get("phases", [])
+    phase = next((p for p in phases if p["id"] == phase_id), None)
+
     # Show diff summary
     show_diff_summary(phase_id, plan)
 
-    # Run tests
-    test_exit_code = run_tests(plan)
+    # Run tests (with phase-specific scoping/quarantine)
+    test_exit_code = run_tests(plan, phase)
     if test_exit_code is None:
         return 2  # Test runner not available
 

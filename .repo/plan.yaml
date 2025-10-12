@@ -53,7 +53,17 @@ plan:
       artifacts:
         must_exist: ["src/mvp/feature.py", "tests/mvp/test_feature.py"]
       gates:
-        tests: { must_pass: true }
+        tests:
+          must_pass: true
+          # Test scoping: "scope" runs only tests matching scope.include, "all" runs everything
+          test_scope: "scope"  # Only run tests/mvp/** tests
+          # Quarantine: tests expected to fail (optional)
+          quarantine: []
+            # Example quarantine entries (commented out):
+            # - path: "tests/mvp/test_legacy.py::test_deprecated"
+            #   reason: "Removing deprecated endpoint in this phase, tests updated in P03"
+            # - path: "tests/integration/test_external_api.py::test_timeout"
+            #   reason: "External API occasionally times out, non-blocking"
         lint:  { must_pass: true }
         docs:  { must_update: ["docs/mvp.md#feature"] }
         llm_review: { enabled: true }
