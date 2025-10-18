@@ -1,72 +1,392 @@
 plan:
-  id: MVP-DEMO
-  summary: "Prove judge-gated phases with tests+docs."
+  # Required fields
+  id: PROTOCOL-EVOLUTION
+  summary: "Evolve the Judge-Gated Protocol with enhanced LLM judge calibration, collective intelligence, outer loop capabilities, and comprehensive meta-retrospective"
+
+  # Configuration
   base_branch: "main"
-
-  # Test command (optional, defaults to "pytest tests/ -v")
   test_command: "pytest tests/ -v"
-
-  # Lint command (optional, defaults to "ruff check .")
   lint_command: "ruff check ."
 
-  # LLM review configuration (optional, applies when llm_review gate is enabled)
+  # LLM review configuration for protocol evolution
   llm_review_config:
     model: "claude-sonnet-4-20250514"
     max_tokens: 2000
     temperature: 0
     timeout_seconds: 60
-    budget_usd: null  # Set to limit costs (e.g., 0.50)
-    fail_on_transport_error: false  # Set true for strict validation
-    include_extensions: [".py"]  # File extensions to review
-    exclude_patterns: []  # Patterns to skip (e.g., "**/test_*.py")
+    budget_usd: null
+    fail_on_transport_error: false
+    include_extensions: [".py", ".md", ".yaml"]
+    exclude_patterns: []
+    severity_threshold: "major"  # Block on CRITICAL and MAJOR issues
 
-  # Protocol integrity enforcement
+  # Protocol integrity protection
   protocol_lock:
     protected_globs:
       - "tools/**"
+      - "!.repo/**/__pycache__/**"
+      - "!.repo/**/*.pyc"
+      - ".repo/plan.yaml"
       - ".repo/protocol_manifest.json"
     allow_in_phases:
       - "P00-protocol-maintenance"
+      - "P01-llm-judge-calibration"
+      - "P02-collective-intelligence-foundation"
+      - "P04-outer-loop-integration"
+      - "P08-protocol-validation"
+      - "P10-final-documentation"
 
+  # Phase definitions
   phases:
-    - id: P01-scaffold
-      description: "Create skeleton module + golden test + docs."
-      scope:
-        include: ["src/mvp/**", "tests/mvp/**", "docs/mvp.md"]
-        exclude: ["src/**/legacy/**"]
-      artifacts:
-        must_exist: ["src/mvp/__init__.py", "tests/mvp/test_golden.py", "docs/mvp.md"]
-      gates:
-        tests: { must_pass: true }
-        lint:  { must_pass: true }
-        docs:  { must_update: ["docs/mvp.md"] }
-        drift:
-          allowed_out_of_scope_changes: 0
-      drift_rules:
-        forbid_changes: ["requirements.txt", "pyproject.toml"]
+    # Phase 1: Enhanced LLM Judge Calibration
+    - id: P01-llm-judge-calibration
+      description: "Implement phase-aware LLM judge with severity-based feedback and improved classification"
 
-    - id: P02-impl-feature
-      description: "Implement simple feature with refactor + doc section."
       scope:
-        include: ["src/mvp/feature.py", "tests/mvp/test_feature.py", "docs/mvp.md"]
+        include:
+          - "tools/llm_judge.py"
+          - "tools/judge.py"
+          - "tests/test_llm_judge.py"
+          - "PROTOCOL.md"
+          - "LLM_PLANNING.md"
+          - "README.md"
+          - ".repo/plan.yaml"
+          - ".repo/protocol_manifest.json"
+          - ".repo/briefs/CURRENT.json"
+
       artifacts:
-        must_exist: ["src/mvp/feature.py", "tests/mvp/test_feature.py"]
+        must_exist:
+          - "tools/llm_judge.py"
+          - "tests/test_llm_judge.py"
+
       gates:
         tests:
           must_pass: true
-          # Test scoping: "scope" runs only tests matching scope.include, "all" runs everything
-          test_scope: "scope"  # Only run tests/mvp/** tests
-          # Quarantine: tests expected to fail (optional)
-          quarantine: []
-            # Example quarantine entries (commented out):
-            # - path: "tests/mvp/test_legacy.py::test_deprecated"
-            #   reason: "Removing deprecated endpoint in this phase, tests updated in P03"
-            # - path: "tests/integration/test_external_api.py::test_timeout"
-            #   reason: "External API occasionally times out, non-blocking"
-        lint:  { must_pass: true }
-        docs:  { must_update: ["docs/mvp.md#feature"] }
-        llm_review: { enabled: true }
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        docs:
+          must_update: ["PROTOCOL.md", "LLM_PLANNING.md", "README.md"]
+        llm_review:
+          enabled: true
         drift:
           allowed_out_of_scope_changes: 0
+
       drift_rules:
-        forbid_changes: ["requirements.txt", "pyproject.toml", ".github/**"]
+        forbid_changes: ["requirements.txt"]
+
+    # Phase 2: Collective Intelligence Foundation
+    - id: P02-collective-intelligence-foundation
+      description: "Implement file-based collective intelligence system for storing and retrieving execution patterns"
+
+      scope:
+        include:
+          - "tools/lib/collective_intelligence.py"
+          - "tools/lib/execution_patterns.py"
+          - "tests/test_collective_intelligence.py"
+          - "tests/conftest.py"
+          - "PROTOCOL.md"
+          - ".repo/collective_intelligence/**"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+          - ".repo/briefs/CURRENT.json"
+
+      artifacts:
+        must_exist:
+          - "tools/lib/collective_intelligence.py"
+          - "tools/lib/execution_patterns.py"
+          - "tests/test_collective_intelligence.py"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        docs:
+          must_update: ["PROTOCOL.md"]
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
+
+    # Phase 3: Execution Pattern Recognition
+    - id: P03-execution-pattern-recognition
+      description: "Implement pattern recognition system to identify common execution patterns and anti-patterns"
+
+      scope:
+        include:
+          - "tools/lib/pattern_recognition.py"
+          - "tools/lib/pattern_analyzer.py"
+          - "tools/lib/collective_intelligence.py"
+          - "tools/lib/execution_patterns.py"
+          - "tests/test_pattern_recognition.py"
+          - "tests/test_collective_intelligence.py"
+          - "tests/conftest.py"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+          - ".repo/briefs/CURRENT.json"
+
+      artifacts:
+        must_exist:
+          - "tools/lib/pattern_recognition.py"
+          - "tools/lib/pattern_analyzer.py"
+          - "tests/test_pattern_recognition.py"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
+
+    # Phase 4: Outer Loop Integration
+    - id: P04-outer-loop-integration
+      description: "Integrate outer loop capabilities into phasectl for automatic retrospective and learning"
+
+      scope:
+        include:
+          - "tools/phasectl.py"
+          - "tools/lib/outer_loop.py"
+          - "tools/lib/collective_intelligence.py"
+          - "tools/lib/execution_patterns.py"
+          - "tools/lib/pattern_recognition.py"
+          - "tools/lib/pattern_analyzer.py"
+          - "tests/test_outer_loop.py"
+          - "tests/test_collective_intelligence.py"
+          - "tests/test_pattern_recognition.py"
+          - "tests/conftest.py"
+          - "PROTOCOL.md"
+          - ".repo/plan.yaml"
+          - ".repo/protocol_manifest.json"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+          - ".repo/briefs/CURRENT.json"
+
+      artifacts:
+        must_exist:
+          - "tools/lib/outer_loop.py"
+          - "tests/test_outer_loop.py"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        docs:
+          must_update: ["PROTOCOL.md"]
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
+
+    # Phase 5: Enhanced Phase Briefs
+    - id: P05-enhanced-phase-briefs
+      description: "Implement enhanced phase brief generation with pattern-based recommendations"
+
+      scope:
+        include:
+          - "tools/lib/brief_enhancer.py"
+          - "tools/lib/brief_templates.py"
+          - "tools/lib/collective_intelligence.py"
+          - "tools/lib/execution_patterns.py"
+          - "tools/lib/pattern_recognition.py"
+          - "tools/lib/pattern_analyzer.py"
+          - "tests/test_brief_enhancer.py"
+          - "tests/test_collective_intelligence.py"
+          - "tests/test_pattern_recognition.py"
+          - "tests/conftest.py"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+          - ".repo/briefs/CURRENT.json"
+
+      artifacts:
+        must_exist:
+          - "tools/lib/brief_enhancer.py"
+          - "tools/lib/brief_templates.py"
+          - "tests/test_brief_enhancer.py"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
+
+    # Phase 6: Protocol Documentation Update
+    - id: P06-protocol-documentation-update
+      description: "Update all protocol documentation to reflect new capabilities and best practices"
+
+      scope:
+        include:
+          - "PROTOCOL.md"
+          - "LLM_PLANNING.md"
+          - "README.md"
+          - "GETTING_STARTED.md"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+          - ".repo/briefs/CURRENT.json"
+
+      artifacts:
+        must_exist:
+          - "PROTOCOL.md"
+          - "LLM_PLANNING.md"
+          - "README.md"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        docs:
+          must_update: ["PROTOCOL.md", "LLM_PLANNING.md", "README.md", "GETTING_STARTED.md"]
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
+
+    # Phase 7: Integration Testing
+    - id: P07-integration-testing
+      description: "Comprehensive integration testing of all new protocol evolution features"
+
+      scope:
+        include:
+          - "tests/integration/test_protocol_evolution.py"
+          - "tests/integration/test_collective_intelligence.py"
+          - "tests/integration/test_outer_loop.py"
+          - "tests/integration/__init__.py"
+          - "tests/test_collective_intelligence.py"
+          - "tests/test_pattern_recognition.py"
+          - "tests/test_outer_loop.py"
+          - "tests/test_brief_enhancer.py"
+          - "tests/test_llm_judge.py"
+          - "tests/conftest.py"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+          - ".repo/briefs/CURRENT.json"
+
+      artifacts:
+        must_exist:
+          - "tests/integration/test_protocol_evolution.py"
+          - "tests/integration/test_collective_intelligence.py"
+          - "tests/integration/test_outer_loop.py"
+          - "tests/integration/__init__.py"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
+
+    # Phase 8: Protocol Validation
+    - id: P08-protocol-validation
+      description: "Comprehensive validation of protocol integrity and functionality"
+
+      scope:
+        include:
+          - "tools/**"
+          - "tests/**"
+          - "*.md"
+          - ".repo/plan.yaml"
+          - ".repo/protocol_manifest.json"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+          - ".repo/briefs/CURRENT.json"
+
+      artifacts:
+        must_exist:
+          - "tools/judge.py"
+          - "tools/phasectl.py"
+          - "tools/llm_judge.py"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "all"
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
+
+    # Phase 9: Meta-Retrospective
+    - id: P09-meta-retrospective
+      description: "Conduct comprehensive retrospective on protocol evolution and document lessons learned"
+
+      scope:
+        include:
+          - "PROTOCOL_EVOLUTION_RETRO.md"
+          - "LESSONS_LEARNED.md"
+          - "EVOLUTION_ANALYSIS.md"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+          - ".repo/briefs/CURRENT.json"
+
+      artifacts:
+        must_exist:
+          - "PROTOCOL_EVOLUTION_RETRO.md"
+          - "LESSONS_LEARNED.md"
+          - "EVOLUTION_ANALYSIS.md"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
+
+    # Phase 10: Final Documentation
+    - id: P10-final-documentation
+      description: "Create final documentation and revert to developer-friendly state"
+
+      scope:
+        include:
+          - "EVOLVED_PROTOCOL_GUIDE.md"
+          - "BEST_PRACTICES.md"
+          - "EVOLUTION_HISTORY.md"
+          - "README.md"
+          - "GETTING_STARTED.md"
+          - ".repo/plan.yaml"
+          - ".repo/protocol_manifest.json"
+          - ".repo/briefs/**"
+          - ".repo/critiques/**"
+          - ".repo/traces/**"
+
+      artifacts:
+        must_exist:
+          - "EVOLVED_PROTOCOL_GUIDE.md"
+          - "BEST_PRACTICES.md"
+          - "EVOLUTION_HISTORY.md"
+
+      gates:
+        tests:
+          must_pass: true
+          test_scope: "scope"
+        lint:
+          must_pass: true
+        docs:
+          must_update: ["EVOLVED_PROTOCOL_GUIDE.md", "BEST_PRACTICES.md", "EVOLUTION_HISTORY.md"]
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 0
