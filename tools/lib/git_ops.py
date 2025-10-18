@@ -24,18 +24,33 @@ def get_changed_files(
         List of changed file paths
     """
     try:
-        all_changes = []
+        all_changes: List[str] = []
 
-        # Always get uncommitted changes (staged and unstaged)
+        # Always get uncommitted changes (staged and unstaged) vs HEAD
         result = subprocess.run(
             ["git", "diff", "--name-only", "HEAD"],
             cwd=repo_root,
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         uncommitted = [f for f in result.stdout.strip().split("\n") if f]
         all_changes.extend(uncommitted)
+
+        # Include untracked files (not yet added to git index)
+        try:
+            untracked_result = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            untracked = [f for f in untracked_result.stdout.strip().split("\n") if f]
+            all_changes.extend(untracked)
+        except subprocess.CalledProcessError:
+            # If listing untracked fails, continue with what we have
+            pass
 
         # Optionally get committed changes
         if include_committed:
@@ -52,25 +67,30 @@ def get_changed_files(
                 all_changes.extend(committed)
             else:
                 # Fallback: use merge-base (can drift as base_branch advances)
-                result = subprocess.run(
-                    ["git", "merge-base", "HEAD", base_branch],
-                    cwd=repo_root,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                merge_base = result.stdout.strip()
+                try:
+                    result = subprocess.run(
+                        ["git", "merge-base", "HEAD", base_branch],
+                        cwd=repo_root,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    merge_base = result.stdout.strip()
 
-                # Get committed changes
-                result = subprocess.run(
-                    ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
-                    cwd=repo_root,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                committed = [f for f in result.stdout.strip().split("\n") if f]
-                all_changes.extend(committed)
+                    # Get committed changes
+                    result = subprocess.run(
+                        ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
+                        cwd=repo_root,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    committed = [f for f in result.stdout.strip().split("\n") if f]
+                    all_changes.extend(committed)
+                except subprocess.CalledProcessError:
+                    # Could not determine merge-base (e.g., base branch missing)
+                    # Proceed with uncommitted + untracked results only
+                    pass
 
         # Remove duplicates and empty strings
         unique_changes = list(set(all_changes))

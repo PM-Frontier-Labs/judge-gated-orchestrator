@@ -10,7 +10,8 @@ def run_command_with_trace(
     gate_name: str,
     command: List[str],
     repo_root: Path,
-    traces_dir: Path
+    traces_dir: Path,
+    timeout_seconds: int = 600,
 ) -> Optional[int]:
     """
     Run command and save trace. Returns exit code or None if tool missing.
@@ -20,24 +21,41 @@ def run_command_with_trace(
     version_cmd = ["ruff", "--version"] if tool_name == "ruff" else [tool_name, "--version"]
 
     try:
-        subprocess.run(version_cmd, capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        subprocess.run(version_cmd, capture_output=True, check=True, timeout=30)
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
-    # Run command
-    result = subprocess.run(command, cwd=repo_root, capture_output=True, text=True)
+    # Run command with timeout; capture timeout distinctly
+    timed_out = False
+    try:
+        result = subprocess.run(
+            command,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+        return_code = result.returncode
+        stdout = result.stdout
+        stderr = result.stderr
+    except subprocess.TimeoutExpired as e:
+        timed_out = True
+        return_code = 124  # conventional timeout code
+        stdout = e.stdout or ""
+        stderr = (e.stderr or "") + f"\n[timeout] Command exceeded {timeout_seconds}s and was terminated."
 
     # Save trace
     traces_dir.mkdir(parents=True, exist_ok=True)
     trace_file = traces_dir / f"last_{gate_name}.txt"
     trace_file.write_text(
-        f"Exit code: {result.returncode}\n"
+        f"Exit code: {return_code}\n"
         f"Timestamp: {time.time()}\n"
-        f"\n=== STDOUT ===\n{result.stdout}\n"
-        f"\n=== STDERR ===\n{result.stderr}\n"
+        f"\n=== STDOUT ===\n{stdout}\n"
+        f"\n=== STDERR ===\n{stderr}\n"
+        + ("\n[Note] Process timed out.\n" if timed_out else "")
     )
 
-    return result.returncode
+    return return_code
 
 
 def check_gate_trace(gate_name: str, traces_dir: Path, error_prefix: str) -> List[str]:

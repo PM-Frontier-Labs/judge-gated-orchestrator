@@ -140,7 +140,8 @@ def run_tests(plan, phase=None):
             print()
 
     # Run command and save trace
-    exit_code = run_command_with_trace("tests", test_cmd, REPO_ROOT, TRACES_DIR)
+    # Default 10 minute timeout to prevent hung test runs
+    exit_code = run_command_with_trace("tests", test_cmd, REPO_ROOT, TRACES_DIR, timeout_seconds=600)
 
     if exit_code is None:
         print(f"❌ Error: {test_cmd[0]} not installed")
@@ -174,7 +175,8 @@ def run_lint(plan, phase_id):
         lint_cmd = ["ruff", "check", "."]
 
     # Run command and save trace
-    exit_code = run_command_with_trace("lint", lint_cmd, REPO_ROOT, TRACES_DIR)
+    # Lint should be quick; give a reasonable cap
+    exit_code = run_command_with_trace("lint", lint_cmd, REPO_ROOT, TRACES_DIR, timeout_seconds=300)
 
     if exit_code is None:
         print(f"❌ Error: {lint_cmd[0]} not installed")

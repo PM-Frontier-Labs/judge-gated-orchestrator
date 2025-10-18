@@ -125,7 +125,7 @@ def check_docs(phase: Dict[str, Any], changed_files: List[str] = None) -> List[s
             pattern = rf'^#+\s+{re.escape(anchor)}'
             if not re.search(pattern, content, re.MULTILINE | re.IGNORECASE):
                 issues.append(
-                    f"Documentation section not found: {doc}#{anchor}\n"
+                    f"Documentation section not found: {doc}\n"
                     f"   Expected heading '{anchor}' in {doc_path}"
                 )
 
