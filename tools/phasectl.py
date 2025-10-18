@@ -13,6 +13,7 @@ import time
 import subprocess
 import shlex
 from pathlib import Path
+from typing import List, Dict, Any
 
 try:
     import yaml
@@ -48,18 +49,80 @@ def load_plan():
         sys.exit(1)
 
 
+def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
+    """Resolve test scope patterns to specific test paths."""
+    # Use pathspec to find matching test files/directories
+    try:
+        import pathspec
+        
+        # Create pathspec for include patterns
+        include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
+        exclude_spec = None
+        if exclude_patterns:
+            exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
+        
+        # Find all test files in tests/ directory
+        test_paths = set()
+        tests_dir = REPO_ROOT / "tests"
+        if tests_dir.exists():
+            for test_file in tests_dir.rglob("test_*.py"):
+                rel_path = str(test_file.relative_to(REPO_ROOT))
+                # Check if matches include patterns
+                if include_spec.match_file(rel_path):
+                    # Check if not excluded
+                    if not exclude_spec or not exclude_spec.match_file(rel_path):
+                        # Add parent directory for better pytest organization
+                        test_dir = str(test_file.parent.relative_to(REPO_ROOT))
+                        if test_dir.startswith("tests"):
+                            test_paths.add(test_dir)
+        
+        if test_paths:
+            print(f"  📍 Test scope: Running tests in {len(test_paths)} directories")
+            # Replace default test path with scoped paths
+            new_cmd = [test_cmd[0]]  # Keep pytest
+            new_cmd.extend(sorted(test_paths))
+            # Keep flags (e.g., -v)
+            new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+            return new_cmd
+        else:
+            print("  ⚠️  No test files match scope patterns - running all tests")
+            return test_cmd
+    
+    except ImportError:
+        # Fallback to simple string matching if pathspec not available
+        print("  ⚠️  pathspec not available - using simple pattern matching")
+        test_paths = []
+        for pattern in scope_patterns:
+            if pattern.startswith("tests/"):
+                base_path = pattern.split("*")[0].rstrip("/")
+                if base_path not in test_paths:
+                    test_paths.append(base_path)
+        
+        if test_paths:
+            print(f"  📍 Test scope: Running tests in {len(test_paths)} directories (fallback mode)")
+            new_cmd = [test_cmd[0]]
+            new_cmd.extend(test_paths)
+            new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+            return new_cmd
+        
+        return test_cmd
+
+
 def run_tests(plan, phase=None):
     """Run tests and save results to trace file."""
     print("🧪 Running tests...")
 
-    # Get test command from plan
-    test_config = plan.get("plan", {}).get("test_command", {})
-    if isinstance(test_config, str):
-        test_cmd = shlex.split(test_config)
-    elif isinstance(test_config, dict):
-        test_cmd = shlex.split(test_config.get("command", "pytest tests/ -v"))
+    # Get test command from runtime context if available, otherwise from plan
+    if phase and phase.get("runtime", {}).get("test_cmd"):
+        test_cmd = shlex.split(phase["runtime"]["test_cmd"])
     else:
-        test_cmd = ["pytest", "tests/", "-v"]
+        test_config = plan.get("plan", {}).get("test_command", {})
+        if isinstance(test_config, str):
+            test_cmd = shlex.split(test_config)
+        elif isinstance(test_config, dict):
+            test_cmd = shlex.split(test_config.get("command", "pytest tests/ -v"))
+        else:
+            test_cmd = ["pytest", "tests/", "-v"]
 
     # Apply test scoping and quarantine if phase provided
     if phase:
@@ -69,62 +132,9 @@ def run_tests(plan, phase=None):
         test_scope = test_gate.get("test_scope", "all")
 
         if test_scope == "scope":
-            # Filter test paths to match phase scope using pathspec
             scope_patterns = phase.get("scope", {}).get("include", [])
             exclude_patterns = phase.get("scope", {}).get("exclude", [])
-
-            # Use pathspec to find matching test files/directories
-            try:
-                import pathspec
-
-                # Create pathspec for include patterns
-                include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
-                exclude_spec = None
-                if exclude_patterns:
-                    exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
-
-                # Find all test files in tests/ directory
-                test_paths = set()
-                tests_dir = REPO_ROOT / "tests"
-                if tests_dir.exists():
-                    for test_file in tests_dir.rglob("test_*.py"):
-                        rel_path = str(test_file.relative_to(REPO_ROOT))
-                        # Check if matches include patterns
-                        if include_spec.match_file(rel_path):
-                            # Check if not excluded
-                            if not exclude_spec or not exclude_spec.match_file(rel_path):
-                                # Add parent directory for better pytest organization
-                                test_dir = str(test_file.parent.relative_to(REPO_ROOT))
-                                if test_dir.startswith("tests"):
-                                    test_paths.add(test_dir)
-
-                if test_paths:
-                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories")
-                    # Replace default test path with scoped paths
-                    new_cmd = [test_cmd[0]]  # Keep pytest
-                    new_cmd.extend(sorted(test_paths))
-                    # Keep flags (e.g., -v)
-                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-                    test_cmd = new_cmd
-                else:
-                    print("  ⚠️  No test files match scope patterns - running all tests")
-
-            except ImportError:
-                # Fallback to simple string matching if pathspec not available
-                print("  ⚠️  pathspec not available - using simple pattern matching")
-                test_paths = []
-                for pattern in scope_patterns:
-                    if pattern.startswith("tests/"):
-                        base_path = pattern.split("*")[0].rstrip("/")
-                        if base_path not in test_paths:
-                            test_paths.append(base_path)
-
-                if test_paths:
-                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories (fallback mode)")
-                    new_cmd = [test_cmd[0]]
-                    new_cmd.extend(test_paths)
-                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-                    test_cmd = new_cmd
+            test_cmd = _resolve_test_scope(test_cmd, scope_patterns, exclude_patterns)
 
         # Quarantine list: tests expected to fail
         quarantine = test_gate.get("quarantine", [])
@@ -298,6 +308,41 @@ def review_phase(phase_id: str):
         print("\nFix errors in .repo/plan.yaml and try again.")
         return 2
 
+    # Apply pending amendments before review
+    from lib.amendments import apply_amendments
+    applied_amendments = apply_amendments(phase_id)
+    
+    if applied_amendments:
+        print(f"✅ Applied {len(applied_amendments)} amendments")
+        for amendment in applied_amendments:
+            print(f"   {amendment['type']}: {amendment['value']}")
+        print()
+
+    # Auto-propose amendments from patterns
+    from lib.traces import propose_amendments_from_patterns
+    from lib.amendments import propose_amendment
+    
+    # Get context for pattern matching
+    traces_dir = REPO_ROOT / ".repo" / "traces"
+    test_trace_file = traces_dir / "last_tests.txt"
+    lint_trace_file = traces_dir / "last_lint.txt"
+    
+    context = {
+        "test_output": test_trace_file.read_text() if test_trace_file.exists() else "",
+        "lint_output": lint_trace_file.read_text() if lint_trace_file.exists() else "",
+        "changed_files": []  # Will be populated later
+    }
+    
+    # Propose amendments from patterns
+    pattern_proposals = propose_amendments_from_patterns(context)
+    for proposal in pattern_proposals:
+        success = propose_amendment(phase_id, proposal["type"], proposal["value"], proposal["reason"])
+        if success:
+            print(f"🧠 Pattern-based amendment proposed: {proposal['type']} = {proposal['value']}")
+    
+    if pattern_proposals:
+        print()
+
     # Get phase config for test scoping
     phases = plan.get("plan", {}).get("phases", [])
     phase = next((p for p in phases if p["id"] == phase_id), None)
@@ -327,6 +372,13 @@ def review_phase(phase_id: str):
 
     if ok_file.exists():
         print(f"✅ Phase {phase_id} approved!")
+        
+        # Learn from successful review
+        _learn_from_review(phase_id, applied_amendments)
+        
+        # Write micro-retrospective
+        _write_micro_retro(phase_id, applied_amendments)
+        
         return 0
     elif critique_file.exists():
         print(f"❌ Phase {phase_id} needs revision:")
@@ -336,6 +388,76 @@ def review_phase(phase_id: str):
     else:
         print("⚠️  Judge did not produce feedback. Check for errors above.")
         return 2
+
+def _learn_from_review(phase_id: str, applied_amendments: List[Dict[str, Any]]) -> None:
+    """Learn patterns from successful review"""
+    from lib.traces import store_pattern
+    
+    if not applied_amendments:
+        return
+    
+    # Get test output for learning
+    traces_dir = REPO_ROOT / ".repo" / "traces"
+    test_trace_file = traces_dir / "last_tests.txt"
+    
+    test_output = ""
+    if test_trace_file.exists():
+        test_output = test_trace_file.read_text()
+    
+    # Learn from amendments that fixed issues
+    for amendment in applied_amendments:
+        if amendment["type"] == "set_test_cmd" and "error" in test_output.lower():
+            pattern = {
+                "kind": "fix",
+                "when": {
+                    "pytest_error": "usage: python -m pytest"
+                },
+                "action": {
+                    "amend": "set_test_cmd",
+                    "value": amendment["value"]
+                },
+                "description": "Fix pytest usage error",
+                "confidence": 0.9,
+                "evidence": [test_output]
+            }
+            store_pattern(pattern)
+
+def _write_micro_retro(phase_id: str, applied_amendments: List[Dict[str, Any]]) -> None:
+    """Write micro-retrospective for successful phase"""
+    from lib.traces import write_micro_retro
+    
+    # Get execution data
+    traces_dir = REPO_ROOT / ".repo" / "traces"
+    test_trace_file = traces_dir / "last_tests.txt"
+    
+    test_output = ""
+    if test_trace_file.exists():
+        test_output = test_trace_file.read_text()
+    
+    # Determine what helped
+    what_helped = []
+    if applied_amendments:
+        for amendment in applied_amendments:
+            what_helped.append(f"Amendment {amendment['type']}: {amendment['value']}")
+    
+    # Determine root cause
+    root_cause = "unknown"
+    if "usage:" in test_output.lower():
+        root_cause = "test command issue"
+    elif "error" in test_output.lower():
+        root_cause = "test execution error"
+    
+    execution_data = {
+        "retries": 0,  # Could be tracked in future
+        "amendments": applied_amendments,
+        "llm_score": 1.0,  # Successful phase
+        "root_cause": root_cause,
+        "what_helped": what_helped,
+        "success": True,
+        "execution_time": "unknown"
+    }
+    
+    write_micro_retro(phase_id, execution_data)
 
 
 def next_phase():
@@ -442,7 +564,76 @@ def next_phase():
 
     print(f"➡️  Advanced to phase {next_id}")
     print(f"📄 Brief: {next_brief.relative_to(REPO_ROOT)}")
+    
+    # Show enhanced brief with hints and guardrails
+    _display_enhanced_brief(next_id, next_brief.read_text())
+    
     return 0
+
+
+def _display_enhanced_brief(phase_id: str, base_brief: str) -> None:
+    """Display brief enhanced with hints and guardrails."""
+    from lib.traces import get_phase_hints
+    from lib.state import load_phase_context
+    
+    # Get hints from recent executions
+    hints = get_phase_hints(phase_id, lookback_count=3)
+    
+    # Get current state for guardrails
+    context = load_phase_context(phase_id)
+    guardrails = _generate_guardrails(phase_id, context)
+    
+    # Only display if we have enhancements
+    if not hints and not guardrails:
+        return
+    
+    # Build enhanced brief
+    enhanced_sections = []
+    
+    if hints:
+        hints_section = "## 🧠 Collective Intelligence Hints\n\n"
+        for hint in hints:
+            hints_section += f"- {hint}\n"
+        enhanced_sections.append(hints_section)
+    
+    if guardrails:
+        guardrails_section = "## 🛡️ Execution Guardrails\n\n"
+        for guardrail in guardrails:
+            guardrails_section += f"- {guardrail}\n"
+        enhanced_sections.append(guardrails_section)
+    
+    # Display enhanced content
+    print("\n🧠 Enhanced Brief:")
+    print("=" * 50)
+    print(base_brief)
+    print("\n".join(enhanced_sections))
+    print("=" * 50)
+
+
+def _generate_guardrails(phase_id: str, context: Dict[str, Any]) -> List[str]:
+    """Generate guardrails based on current state."""
+    guardrails = []
+    
+    mode = context.get("mode", "EXPLORE")
+    amendments_used = context.get("amendments_used", {})
+    amendments_budget = context.get("amendments_budget", {})
+    
+    if mode == "EXPLORE":
+        guardrails.append("EXPLORE mode: You may propose amendments within budget")
+        
+        for amendment_type, budget in amendments_budget.items():
+            used = amendments_used.get(amendment_type, 0)
+            remaining = budget - used
+            if remaining <= 1:
+                guardrails.append(f"⚠️ {amendment_type} budget nearly exhausted ({remaining} remaining)")
+    
+    elif mode == "LOCK":
+        guardrails.append("LOCK mode: Amendments closed (except baseline shifts)")
+    
+    guardrails.append("Never modify .repo/plan.yaml directly")
+    guardrails.append("Always check scope before making changes")
+    
+    return guardrails
 
 
 def main():
@@ -460,11 +651,84 @@ def main():
 
     elif command == "next":
         return next_phase()
+    
+    elif command == "amend":
+        if len(sys.argv) < 4:
+            print("Usage: phasectl.py amend propose <type> <value> <reason>")
+            return 1
+        return handle_amendment_command(sys.argv[2:])
+    
+    elif command == "patterns":
+        if len(sys.argv) < 3:
+            print("Usage: phasectl.py patterns <command>")
+            return 1
+        return handle_patterns_command(sys.argv[2:])
 
     else:
         print(f"Unknown command: {command}")
         print(__doc__)
         return 1
+
+def load_current_phase():
+    """Load current phase from CURRENT.json"""
+    if not CURRENT_FILE.exists():
+        return None
+    
+    try:
+        return json.loads(CURRENT_FILE.read_text())
+    except (json.JSONDecodeError, KeyError):
+        return None
+
+def handle_amendment_command(args):
+    """Handle amendment commands"""
+    from lib.amendments import propose_amendment
+    
+    if args[0] == "propose":
+        if len(args) < 4:
+            print("Usage: amend propose <type> <value> <reason>")
+            return 1
+        
+        amendment_type = args[1]
+        value = args[2]
+        reason = args[3]
+        
+        # Get current phase
+        current = load_current_phase()
+        if not current:
+            print("❌ No current phase")
+            return 1
+        
+        success = propose_amendment(current["phase_id"], amendment_type, value, reason)
+        
+        if success:
+            print(f"✅ Amendment proposed: {amendment_type} = {value}")
+        else:
+            print(f"❌ Amendment budget exceeded for {amendment_type}")
+            return 1
+    
+    return 0
+
+def handle_patterns_command(args):
+    """Handle patterns commands"""
+    from lib.traces import find_matching_patterns
+    
+    if args[0] == "list":
+        patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+        
+        if not patterns_file.exists():
+            print("No patterns stored yet.")
+            return 0
+        
+        print("Stored patterns:")
+        with open(patterns_file, 'r') as f:
+            for i, line in enumerate(f, 1):
+                pattern = json.loads(line.strip())
+                print(f"{i}. {pattern.get('description', 'Unknown')} (confidence: {pattern.get('confidence', 0)})")
+                print(f"   When: {pattern.get('when', {})}")
+                print(f"   Action: {pattern.get('action', {})}")
+                print()
+    
+    return 0
 
 
 if __name__ == "__main__":

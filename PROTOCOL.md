@@ -12,12 +12,16 @@
 
 ```
 1. Orient:     ./orient.sh
-2. Read brief: cat .repo/briefs/<phase-id>.md
+2. Read brief: cat .repo/briefs/<phase-id>.md (enhanced with hints and guardrails)
 3. Implement:  Make changes within scope
 4. Review:     ./tools/phasectl.py review <phase-id>
+   ├─> Auto-applies pending amendments
+   ├─> Auto-proposes amendments from patterns
+   ├─> Learns from successful amendments
+   └─> Writes micro-retrospectives
 5. Check:      If .repo/critiques/<phase-id>.OK exists → approved
                If .repo/critiques/<phase-id>.md exists → fix and re-review
-6. Advance:    ./tools/phasectl.py next
+6. Advance:    ./tools/phasectl.py next (shows enhanced brief)
 7. Repeat from step 1
 ```
 
@@ -753,6 +757,40 @@ The protocol protects critical files from modification:
 3. Make fixes in that dedicated phase
 4. Run `./tools/generate_manifest.py`
 5. Complete maintenance phase
+
+---
+
+## Collective Intelligence System
+
+The protocol includes powerful collective intelligence capabilities that learn from execution patterns:
+
+### Amendment System
+- **Bounded Mutability**: Propose runtime adjustments within budget limits
+- **Auto-Application**: Amendments applied automatically during review
+- **Budget Enforcement**: Hard limits prevent amendment creep
+
+```bash
+# Propose amendments
+./tools/phasectl.py amend propose set_test_cmd "python -m pytest -q" "Fix test command"
+
+# View stored patterns
+./tools/phasectl.py patterns list
+```
+
+### Pattern Learning
+- **JSONL Storage**: Patterns stored in `.repo/collective_intelligence/patterns.jsonl`
+- **Auto-Proposal**: Patterns automatically propose amendments before review
+- **Learning**: System learns from successful amendments and stores patterns
+
+### Enhanced Briefs
+- **Hints**: Briefs enhanced with hints from recent successful executions
+- **Guardrails**: Execution guardrails based on current state and mode
+- **Outer Loop**: Micro-retrospectives after each phase for continuous learning
+
+### State Management
+- **Governance ≠ Runtime Split**: `plan.yaml` (human-locked) vs `.repo/state/` (AI-writable)
+- **Context Files**: `Pxx.ctx.json` stores runtime state (baseline_sha, test_cmd, mode)
+- **Mode Management**: EXPLORE → LOCK modes with automatic transitions
 
 ---
 
