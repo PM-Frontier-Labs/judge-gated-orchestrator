@@ -1,8 +1,9 @@
 # Getting Started Guide
 
-**Audience:** Human developers setting up and using the gated phase protocol
+**Get from zero to autonomous multi-phase development in 30 minutes**
 
-**Goal:** Get you from zero to running autonomous multi-phase development in 30 minutes
+**Audience:** Human developers  
+**Prerequisites:** Python 3.8+, Git, AI coding assistant (Claude Code, Cursor, etc.)
 
 ---
 
@@ -16,42 +17,24 @@ cd judge-gated-orchestrator
 pip install -r requirements.txt
 ```
 
-**Requirements:**
-- Python 3.8+
-- Git
-- Your preferred AI coding assistant (Claude Code, Cursor, Windsurf, etc.)
-
 ### 2. Try the Demo
 
 ```bash
-# See current status
-./orient.sh
-
-# Try review flow with existing phases
-./tools/phasectl.py review P02-impl-feature
+./orient.sh                                  # See current status
+./tools/phasectl.py review P02-impl-feature  # Try review flow
 ```
 
-**What you'll see:**
-- Diff summary showing in-scope vs out-of-scope changes
-- Test execution
-- Judge verdict (approval or critique)
-
-This demo runs on the example phases included in `.repo/plan.yaml`.
+**You'll see:** Diff summary, test execution, and judge verdict (approval or critique).
 
 ### 3. Understand the Structure
 
 ```bash
-# View the roadmap
-cat .repo/plan.yaml
-
-# Read a phase brief
-cat .repo/briefs/P01-scaffold.md
-
-# Check critique status
-ls .repo/critiques/
+cat .repo/plan.yaml                  # View roadmap
+cat .repo/briefs/P01-scaffold.md     # Read phase brief  
+ls .repo/critiques/                  # Check critique status
 ```
 
-**Key insight:** Everything is files. No hidden state, no databases, just files in `.repo/`.
+**Key insight:** Everything is files—no hidden state, no databases.
 
 ---
 
@@ -115,41 +98,31 @@ This file contains SHA256 hashes that prevent autonomous agents from modifying j
 
 ## Planning Your Roadmap
 
-**Key insight:** Planning is collaborative. You work WITH Claude/your AI assistant to break your project into phases.
+**Key insight:** Planning is collaborative—work with your AI assistant to break projects into phases.
 
 ### Step 1: Understand What Makes a Good Phase
 
-**Good phases are:**
-- ✅ 1-3 days of work
-- ✅ Single feature or module
-- ✅ Clear, testable deliverable
-- ✅ Independent from other phases
-
-**Bad phases are:**
-- ❌ "Implement entire backend" (too broad)
-- ❌ "Fix typo" (too narrow)
-- ❌ "Refactor everything" (unclear scope)
+| Good Phases ✅ | Bad Phases ❌ |
+|----------------|---------------|
+| 1-3 days of work | "Implement entire backend" (too broad) |
+| Single feature/module | "Fix typo" (too narrow) |
+| Clear, testable deliverable | "Refactor everything" (unclear) |
+| Independent from others | Multiple unrelated features |
 
 ### Step 2: Start a Planning Conversation
 
-Point your AI assistant at this prompt:
+**Prompt your AI assistant:**
 
 ```
-Read LLM_PLANNING.md and help me create a plan.yaml for my project.
+Read LLM_PLANNING.md and help me create a plan.yaml.
 
-My project is: [describe your project]
-
-I want to: [describe your goal]
+Project: [describe your project]
+Goal: [describe your goal]
 
 Let's break this into phases with proper scope and gates.
 ```
 
-**What happens:**
-1. AI reads LLM_PLANNING.md (planning guide for LLMs)
-2. AI proposes phases based on your goal
-3. You iterate together
-4. AI generates plan.yaml
-5. AI writes phase briefs
+**What happens:** AI reads planning guide → proposes phases → you iterate together → generates plan.yaml + briefs
 
 **Example conversation:**
 
@@ -348,65 +321,47 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ### Problem: AI Keeps Hitting Drift Errors
 
-**Symptom:** Review fails with "Out-of-scope changes detected"
+**Symptom:** "Out-of-scope changes detected"
 
-**Common causes:**
-1. Scope patterns too narrow
-2. AI misunderstanding scope boundaries
-3. Legitimate need for broader scope
+**Fix options:**
 
-**Fix:**
+1. **Clarify scope in brief** → Edit `.repo/briefs/<phase-id>.md`:
+   ```markdown
+   ## Scope 🎯
+   ✅ YOU MAY TOUCH: src/auth/**, tests/auth/**
+   ❌ DO NOT TOUCH: Everything else
+   ```
 
-**Option 1 - Clarify scope in brief:**
-Edit `.repo/briefs/<phase-id>.md` and make scope crystal clear:
-```markdown
-## Scope 🎯
-✅ YOU MAY TOUCH: src/auth/**, tests/auth/**
-❌ DO NOT TOUCH: Everything else
-🤔 IF YOU NEED DATABASE CHANGES: Stop and ask
-```
+2. **Expand scope** → Update `.repo/plan.yaml`:
+   ```yaml
+   scope:
+     include: ["src/auth/**", "tests/auth/**", "src/models/user.py"]
+   ```
 
-**Option 2 - Expand scope in plan.yaml:**
-```yaml
-scope:
-  include: ["src/auth/**", "tests/auth/**", "src/models/user.py"]
-```
-
-**Option 3 - Split into more phases:**
-Create separate phases for related work.
+3. **Split phase** → Create separate phases for out-of-scope work
 
 ---
 
 ### Problem: Tests Keep Failing
 
-**Symptom:** Review blocked on "Tests failed with exit code 1"
+**Symptom:** "Tests failed with exit code 1"
 
-**Debug:**
+**Debug steps:**
 ```bash
-# Read full test output
-cat .repo/traces/last_test.txt
-
-# Run tests manually
-pytest tests/ -v
-
-# Run specific failing test
-pytest tests/test_auth.py::test_login -v
+cat .repo/traces/last_test.txt              # Full output
+pytest tests/ -v                             # Run manually
+pytest tests/test_auth.py::test_login -v    # Specific test
 ```
 
-**Common issues:**
-1. **Missing dependencies** - Check requirements.txt
-2. **Wrong test scope** - Use `test_scope: "scope"` to run only relevant tests
-3. **Flaky external tests** - Use `quarantine` to skip temporarily
-
-**Quarantine example:**
-```yaml
-gates:
-  tests:
-    must_pass: true
-    quarantine:
-      - path: "tests/test_external_api.py::test_timeout"
-        reason: "External API occasionally times out, unrelated to this phase"
-```
+**Common fixes:**
+- Missing dependencies → Check `requirements.txt`
+- Too many tests → Use `test_scope: "scope"` in plan.yaml
+- Flaky tests → Use `quarantine` to skip temporarily:
+  ```yaml
+  quarantine:
+    - path: "tests/test_external_api.py::test_timeout"
+      reason: "External API timeout, non-blocking"
+  ```
 
 ---
 
@@ -414,111 +369,51 @@ gates:
 
 **Symptom:** AI says "I don't remember where we are"
 
-**Fix:**
-```
-Run: ./orient.sh
+**Fix:** Run `./orient.sh` → shows current phase, status, and next steps.
 
-This will show you current phase, status, and next steps.
-All state is in files - you can always recover.
-```
-
-**The protocol is context-window proof.** Everything needed is in `.repo/` files.
+**Why it works:** All state is in files. The protocol is context-window proof.
 
 ---
 
 ### Problem: Plan Validation Failed
 
-**Symptom:** "Plan validation failed" with list of errors before review starts
+**Symptom:** "Plan validation failed" with error list
 
-**What this means:** plan.yaml has schema errors that must be fixed before execution
+**Common errors and fixes:**
 
-**Common validation errors:**
+| Error | Fix |
+|-------|-----|
+| Missing required field: plan.id | Add `id: "my-project"` under `plan:` |
+| must_pass must be a boolean | Change `must_pass: yes` to `must_pass: true` |
+| Duplicate phase ID | Ensure unique phase IDs |
+| Empty strings in scope | Remove empty patterns |
 
-1. **Missing required fields:**
-   ```
-   Missing required field: plan.id
-   ```
-   Fix: Add `id: "my-project"` under `plan:` section
-
-2. **Invalid gate configuration:**
-   ```
-   plan.phases[0].gates.tests.must_pass must be a boolean
-   ```
-   Fix: Change `must_pass: yes` to `must_pass: true`
-
-3. **Duplicate phase IDs:**
-   ```
-   Duplicate phase ID: P01-scaffold
-   ```
-   Fix: Ensure each phase has a unique ID
-
-4. **Invalid patterns:**
-   ```
-   plan.phases[0].scope.include cannot contain empty strings
-   ```
-   Fix: Remove empty strings from scope patterns
-
-**How to fix:**
+**Steps:**
 ```bash
-# Edit plan.yaml
-nano .repo/plan.yaml
-
-# Validate manually (optional - phasectl does this automatically)
-python3 -c "from tools.lib.plan_validator import validate_plan_file; from pathlib import Path; errors = validate_plan_file(Path('.repo/plan.yaml')); print('Valid!' if not errors else '\n'.join(errors))"
-
-# Try review again
-./tools/phasectl.py review <phase-id>
+nano .repo/plan.yaml                       # Edit
+./tools/phasectl.py review <phase-id>      # Re-validate
 ```
 
-**Prevention:** Use LLM_PLANNING.md when creating plan.yaml - AI assistants will generate valid schemas.
+**Prevention:** Use `LLM_PLANNING.md` when creating plan.yaml—AI assistants generate valid schemas.
 
 ---
 
 ### Problem: Could Not Acquire Judge Lock
 
-**Symptom:** "Could not acquire judge lock: Could not acquire lock on .repo/.judge.lock within 60s"
+**Symptom:** "Could not acquire judge lock"
 
-**What this means:** Another judge process is already running (CI job, concurrent agent, or crashed process)
+**Cause:** Another judge process running (CI job, concurrent agent, or stale lock)
 
-**Common causes:**
-1. **Concurrent CI jobs** - Multiple GitHub Actions running simultaneously
-2. **Multi-agent scenario** - Two AI assistants trying to review at once
-3. **Stale lock** - Previous judge process crashed without cleanup
+**Fix options:**
 
-**Fix:**
+1. **Wait** → `sleep 60 && ./tools/phasectl.py review <phase-id>`
+2. **Kill hung process** → `ps aux | grep judge.py`, then `kill <PID>`
+3. **Remove stale lock** (last resort) → `rm .repo/.judge.lock`
 
-**Option 1 - Wait for other process:**
-```bash
-# Wait a minute and try again
-sleep 60
-./tools/phasectl.py review <phase-id>
-```
-
-**Option 2 - Check for running processes:**
-```bash
-# See if judge is running
-ps aux | grep judge.py
-
-# If hung process, kill it
-kill <PID>
-
-# Try review again
-./tools/phasectl.py review <phase-id>
-```
-
-**Option 3 - Remove stale lock (last resort):**
-```bash
-# Only do this if you're CERTAIN no other judge is running
-rm .repo/.judge.lock
-
-# Try review again
-./tools/phasectl.py review <phase-id>
-```
-
-**Prevention:**
-- In CI: Use job concurrency limits
-- With multiple agents: Coordinate who runs reviews
-- File lock auto-expires stale locks after 60 seconds
+**Prevention:** 
+- CI: Use job concurrency limits
+- Multi-agent: Coordinate reviews
+- Auto-expires: Locks expire after 60 seconds
 
 ---
 
@@ -526,40 +421,29 @@ rm .repo/.judge.lock
 
 **Symptom:** "Protocol file modified: tools/judge.py"
 
-**Fix:**
-
-**You can't modify protocol files during normal phases.** This is intentional (prevents AI from disabling gates).
+**Why:** Can't modify protocol during normal phases (prevents AI from disabling gates)
 
 **To make protocol changes:**
-
 1. Complete current phase
-2. Create protocol maintenance phase:
+2. Create protocol maintenance phase in plan.yaml:
    ```yaml
-   phases:
-     - id: P00-protocol-maintenance
-       description: "Update judge to add custom gate"
-       scope:
-         include: ["tools/**", ".repo/protocol_manifest.json"]
-       gates:
-         tests: { must_pass: true }
+   - id: P00-protocol-maintenance
+     scope: ["tools/**", ".repo/protocol_manifest.json"]
    ```
-3. Make changes within that phase
-4. Update hashes: `./tools/generate_manifest.py`
-5. Complete maintenance phase
-6. Resume normal phases
+3. Make changes + update hashes: `./tools/generate_manifest.py`
+4. Resume normal phases
 
 ---
 
 ### Problem: Judge Itself Has a Bug
 
-**If you find a bug in judge.py, phasectl.py, or lib/:**
+**Steps:**
+1. Report: https://github.com/PM-Frontier-Labs/judge-gated-orchestrator/issues
+2. Fork and fix (if urgent)
+3. Apply via protocol maintenance phase
+4. Regenerate: `./tools/generate_manifest.py`
 
-1. Report it: https://github.com/PM-Frontier-Labs/judge-gated-orchestrator/issues
-2. Fork and fix if urgent
-3. Use protocol maintenance phase to apply fix
-4. Regenerate manifest: `./tools/generate_manifest.py`
-
-**The protocol encourages forking.** It's a spec, not a framework - rewrite it in Bash if you want!
+**Note:** The protocol is a spec, not a framework\u2014fork and rewrite in any language!
 
 ---
 

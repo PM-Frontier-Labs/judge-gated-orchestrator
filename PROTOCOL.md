@@ -1,60 +1,41 @@
 # Gated Phase Protocol - Execution Manual
 
-**Audience:** AI coding assistants (Claude Code, Cursor, Windsurf, etc.) executing phases autonomously
-
-**Purpose:** Precise instructions for working within quality-gated phases
-
-**If you're helping plan a roadmap:** Read `LLM_PLANNING.md` instead. This document is for execution only.
+**For:** AI coding assistants executing phases autonomously  
+**Not for planning?** Read `LLM_PLANNING.md` instead.
 
 ---
 
-## Core Loop
+## Core Execution Loop
 
 ```
-1. Orient:     ./orient.sh
-2. Read brief: cat .repo/briefs/<phase-id>.md
-3. Implement:  Make changes within scope
-4. Review:     ./tools/phasectl.py review <phase-id>
-5. Check:      If .repo/critiques/<phase-id>.OK exists → approved
-               If .repo/critiques/<phase-id>.md exists → fix and re-review
-6. Advance:    ./tools/phasectl.py next
+1. Orient     → ./orient.sh
+2. Read brief → cat .repo/briefs/<phase-id>.md
+3. Implement  → Make changes within scope
+4. Review     → ./tools/phasectl.py review <phase-id>
+5. Check      → .repo/critiques/<phase-id>.OK exists?
+                 ✅ Yes: Approved, advance to step 6
+                 ❌ No: Read .md critique, fix issues, return to step 4
+6. Advance    → ./tools/phasectl.py next
 7. Repeat from step 1
 ```
 
-**All state lives in files.** No memory required. Recover full context anytime via `./orient.sh`.
+**Key principle:** All state lives in files. Recover context anytime with `./orient.sh`.
 
 ---
 
 ## Quick Command Reference
 
-```bash
-# Recover context (run this when lost)
-./orient.sh
-
-# Check current phase
-cat .repo/briefs/CURRENT.json
-
-# Read current brief
-cat .repo/briefs/$(jq -r .phase_id < .repo/briefs/CURRENT.json).md
-
-# Submit for review
-./tools/phasectl.py review <phase-id>
-
-# Check if approved
-ls .repo/critiques/<phase-id>.OK
-
-# Read critique if failed
-cat .repo/critiques/<phase-id>.md
-
-# Advance to next phase (only after approval)
-./tools/phasectl.py next
-
-# See test results
-cat .repo/traces/last_test.txt
-
-# Check diff before review
-git diff --name-only HEAD
-```
+| Task | Command |
+|------|----------|
+| **Recover context** | `./orient.sh` |
+| **Check current phase** | `cat .repo/briefs/CURRENT.json` |
+| **Read current brief** | `cat .repo/briefs/$(jq -r .phase_id < .repo/briefs/CURRENT.json).md` |
+| **Submit for review** | `./tools/phasectl.py review <phase-id>` |
+| **Check if approved** | `ls .repo/critiques/<phase-id>.OK` |
+| **Read critique** | `cat .repo/critiques/<phase-id>.md` |
+| **Advance to next** | `./tools/phasectl.py next` |
+| **See test results** | `cat .repo/traces/last_test.txt` |
+| **Check diff** | `git diff --name-only HEAD` |
 
 ---
 
@@ -292,34 +273,34 @@ Judge checks these in order:
 
 ### 1. Artifacts Gate
 
+**Purpose:** Verify required files exist and are non-empty
+
 ```yaml
 artifacts:
   must_exist: ["src/module/file.py", "tests/test_file.py"]
 ```
 
-**Check:** Files exist and are not empty
-
-**Fails if:** Any file missing or zero bytes
+**Passes if:** All files exist and have content  
+**Fails if:** Any file missing or empty (0 bytes)
 
 ---
 
 ### 2. Tests Gate
+
+**Purpose:** Ensure test suite passes
 
 ```yaml
 gates:
   tests:
     must_pass: true
     test_scope: "scope"  # "scope" | "all" (default: "all")
-    quarantine: []       # Tests expected to fail (optional)
+    quarantine: []       # Optional: skip specific tests
 ```
 
-**Check:** Test runner exit code == 0
-
-**Test command:** From plan.yaml `test_command`, defaults to `pytest tests/ -v`
-
-**Fails if:** Exit code != 0
-
-**See:** `.repo/traces/last_test.txt` for details
+**Passes if:** Test runner exit code == 0  
+**Fails if:** Exit code != 0  
+**Details:** See `.repo/traces/last_test.txt`  
+**Command:** From `plan.yaml` (defaults to `pytest tests/ -v`)
 
 #### Test Scoping (Phase 2.5)
 
@@ -373,73 +354,66 @@ gates:
 
 ### 3. Lint Gate (Optional)
 
+**Purpose:** Static code analysis
+
 ```yaml
 gates:
   lint: { must_pass: true }
 ```
 
-**Check:** Linter exit code == 0
-
-**Lint command:** From plan.yaml `lint_command`, defaults to `ruff check .`
-
-**Fails if:** Exit code != 0
-
-**See:** `.repo/traces/last_lint.txt` for details
+**Passes if:** Linter exit code == 0  
+**Fails if:** Exit code != 0  
+**Details:** See `.repo/traces/last_lint.txt`  
+**Command:** From `plan.yaml` (defaults to `ruff check .`)
 
 ---
 
 ### 4. Docs Gate
+
+**Purpose:** Verify documentation was updated
 
 ```yaml
 gates:
   docs: { must_update: ["docs/module.md"] }
 ```
 
-**Check:** Files exist and are not empty
-
-**Fails if:** Any doc missing or zero bytes
-
-**Note:** Supports section anchors like `docs/module.md#feature` (checks base file)
+**Passes if:** All docs exist, have content, AND were modified in this phase  
+**Fails if:** Doc missing, empty, or not changed  
+**Note:** Supports anchors like `docs/module.md#feature`
 
 ---
 
 ### 5. Drift Gate
+
+**Purpose:** Enforce scope boundaries
 
 ```yaml
 gates:
   drift: { allowed_out_of_scope_changes: 0 }
 ```
 
-**Check:** Out-of-scope file count <= allowed
-
-**Fails if:** More out-of-scope changes than allowed
-
-**See:** "Scope Rules" section below
+**Passes if:** Out-of-scope changes ≤ allowed  
+**Fails if:** Too many out-of-scope changes  
+**See:** "Scope Rules" section below for details
 
 ---
 
 ### 6. LLM Review Gate (Optional)
+
+**Purpose:** AI semantic code review
 
 ```yaml
 gates:
   llm_review: { enabled: true }
 ```
 
-**Check:** Claude reviews changed files for architecture issues
+**Requires:** `ANTHROPIC_API_KEY` environment variable  
+**Passes if:** LLM approves OR finds no issues  
+**Fails if:** LLM finds problems OR API key missing  
+**Scope:** Only reviews files in `git diff --name-only HEAD`
 
-**Requires:** `ANTHROPIC_API_KEY` environment variable
-
-**Fails if:** LLM finds issues or API key missing
-
-**Reviews only:** Files changed in `git diff --name-only HEAD`
-
-**When to use:**
-- High-stakes code (security, payments, data migrations)
-- Autonomous overnight execution (extra validation)
-
-**When to skip:**
-- Low-risk changes
-- Cost-sensitive projects
+**Use for:** Security-critical code, payments, migrations, overnight work  
+**Skip for:** Low-risk changes, cost-sensitive projects
 
 ---
 
@@ -573,33 +547,29 @@ Use this for files that require separate dedicated phases.
 
 ### Tests Failing
 
-**Symptom:** Review fails with "Tests failed with exit code 1"
+**Symptom:** "Tests failed with exit code 1"
 
 **Recovery:**
-1. Read `.repo/traces/last_test.txt`
-2. Find failing test in STDOUT/STDERR
-3. Fix the code or test
-4. Re-run `./tools/phasectl.py review <phase-id>`
+```bash
+cat .repo/traces/last_test.txt           # 1. Read full output
+# 2. Find failing test
+# 3. Fix code or test
+./tools/phasectl.py review <phase-id>    # 4. Re-review
+```
 
 ---
 
 ### Out-of-Scope Changes
 
-**Symptom:** Review fails with "Out-of-scope changes detected"
+**Symptom:** "Out-of-scope changes detected"
 
 **Recovery options:**
 
-**Option 1 - Revert:**
-```bash
-git restore file1.py file2.py
-./tools/phasectl.py review <phase-id>
-```
-
-**Option 2 - Update scope:**
-Edit `.repo/briefs/<phase-id>.md` and plan.yaml to include the files, then re-review.
-
-**Option 3 - Split phase:**
-Create a new phase for the out-of-scope work after current phase completes.
+| Option | Action |
+|--------|--------|
+| **1. Revert** | `git restore file1.py file2.py` |
+| **2. Update scope** | Edit `.repo/briefs/<phase-id>.md` and `plan.yaml` |
+| **3. Split phase** | Create new phase for out-of-scope work |
 
 ---
 
@@ -609,11 +579,11 @@ Create a new phase for the out-of-scope work after current phase completes.
 
 **Recovery:**
 ```bash
-git restore requirements.txt pyproject.toml
-./tools/phasectl.py review <phase-id>
+git restore requirements.txt pyproject.toml    # Revert
+./tools/phasectl.py review <phase-id>          # Re-review
 ```
 
-**Never change forbidden files** without creating a dedicated phase.
+**Rule:** Never change forbidden files without a dedicated phase.
 
 ---
 
@@ -644,16 +614,16 @@ Or disable LLM review in plan.yaml if not needed.
 
 ### Context Window Exhausted
 
-**Symptom:** You lost track of what you were doing
+**Symptom:** Lost track of current state
 
 **Recovery:**
 ```bash
-./orient.sh  # Shows current state
-cat .repo/briefs/CURRENT.json  # Current phase
-cat .repo/briefs/<phase-id>.md  # What to do
+./orient.sh                             # Full status
+cat .repo/briefs/CURRENT.json           # Current phase
+cat .repo/briefs/<phase-id>.md          # Instructions
 ```
 
-**All state is in files.** You can always recover.
+**Remember:** All state is in files—recovery is always possible.
 
 ---
 

@@ -1,148 +1,84 @@
 # Gated Phase Protocol - Testing Guide
 
-**Audience:** Evaluators, contributors, QA engineers
+**For:** Evaluators, contributors, QA engineers  
+**Purpose:** Validate protocol implementation  
+**Time:** 25-30 minutes for full validation
 
-**Purpose:** Validate the protocol implementation works correctly
-
-**Time:** 25-30 minutes for full validation (includes Phase 1 + Phase 2.5 enhancements)
-
-**Note:** Tests 10-12 validate Phase 1 (baseline SHA, globstar patterns) and Phase 2.5 (test scoping, quarantine)
+**Coverage:**
+- Tests 1-9: Core protocol functionality
+- Tests 10-11: Phase 1 enhancements (baseline SHA, globstar patterns)
+- Test 12: Phase 2.5 enhancements (test scoping, quarantine)
 
 ---
 
 ## Prerequisites
 
-### Required
+### Required Setup
 
 ```bash
-# Python 3.8+
-python3 --version
+python3 --version                  # Verify Python 3.8+
+git --version                      # Verify Git
 
-# Git
-git --version
-
-# Clone repo
+# Clone and install
 git clone https://github.com/PM-Frontier-Labs/judge-gated-orchestrator.git
 cd judge-gated-orchestrator
-
-# Install dependencies
 pip install -r requirements.txt
 
-# Verify installation
-python3 -c "import yaml; print('✓ pyyaml installed')"
+# Verify
+python3 -c "import yaml; print('✓ pyyaml')"
 pytest --version
 ```
 
-### Optional (for LLM review test)
+### Optional (Test 5: LLM Review)
 
 ```bash
-# Anthropic API key
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Verify
-python3 -c "from anthropic import Anthropic; print('✓ anthropic package installed')"
+export ANTHROPIC_API_KEY="sk-ant-..."    # Set API key
+python3 -c "from anthropic import Anthropic; print('✓ anthropic')"  # Verify
 ```
 
 ---
 
 ## Test 1: Basic Pass Flow
 
-**Goal:** Verify a phase can pass all gates and advance
-
-**Steps:**
+**Goal:** Verify phase approval and advancement
 
 ```bash
-# 1. Check current state
-./orient.sh
-# Expected: Shows P02-impl-feature as current phase
-# (P01 already completed in repo)
-
-# 2. Verify P01 passed
-ls .repo/critiques/
-# Expected: P01-scaffold.OK exists
-
-# 3. Check what P02 requires
-cat .repo/briefs/P02-impl-feature.md
-# Expected: Shows scope, artifacts, gates
-
-# 4. Verify required files exist
-ls src/mvp/feature.py tests/mvp/test_feature.py
-# Expected: Both files exist (already implemented)
-
-# 5. Run review
-./tools/phasectl.py review P02-impl-feature
-# Expected output:
-#   📊 Change Summary: (may show changes)
-#   🧪 Running tests...
-#   ⚖️  Invoking judge...
-#   Either: ✅ Phase approved OR ❌ Phase needs revision
-
-# 6. Check critique
-ls .repo/critiques/P02-impl-feature.*
-# If .OK exists → test passed
-# If .md exists → see "Troubleshooting" below
+./orient.sh                                    # Check current state
+ls .repo/critiques/                            # Verify P01 passed
+cat .repo/briefs/P02-impl-feature.md          # Check requirements
+ls src/mvp/feature.py tests/mvp/test_feature.py # Verify files exist
+./tools/phasectl.py review P02-impl-feature    # Run review
+ls .repo/critiques/P02-impl-feature.*          # Check verdict
 ```
 
-**Success criteria:**
-- ✅ orient.sh runs without errors
-- ✅ Tests run and show results
-- ✅ Judge produces either .OK or .md file
-- ✅ Feedback is actionable
+**Expected:** 
+- ✅ orient.sh shows P02 as current
+- ✅ P01-scaffold.OK exists
+- ✅ Review produces .OK (approved) or .md (critique)
 
-**Note:** P02 may fail due to out-of-scope changes from previous work. That's expected - see Test 3.
+**Success:** Judge provides clear, actionable feedback
 
 ---
 
 ## Test 2: Intentional Failure Flow
 
-**Goal:** Verify judge catches issues and provides critique
-
-**Steps:**
+**Goal:** Verify judge catches failures and provides critique
 
 ```bash
-# 1. Create a branch for testing
 git checkout -b test-failure-flow
-
-# 2. Break the tests
 echo "def test_broken(): assert False" >> tests/mvp/test_feature.py
-
-# 3. Submit for review
-./tools/phasectl.py review P02-impl-feature
-
-# Expected output:
-#   📊 Change Summary: tests/mvp/test_feature.py in scope
-#   🧪 Running tests...
-#   ⚖️  Invoking judge...
-#   ❌ Phase P02-impl-feature needs revision:
-#
-#   # Critique: P02-impl-feature
-#   ## Issues Found
-#   - Tests failed with exit code 1. See .repo/traces/last_test.txt
-
-# 4. Verify critique exists
-cat .repo/critiques/P02-impl-feature.md
-# Expected: Shows "Tests failed" issue
-
-# 5. Check test trace
-cat .repo/traces/last_test.txt
-# Expected: Shows pytest output with FAILED test_broken
-
-# 6. Fix the issue
-git checkout tests/mvp/test_feature.py
-
-# 7. Re-review
-./tools/phasectl.py review P02-impl-feature
-# Expected: ✅ Phase approved (assuming no other issues)
-
-# 8. Clean up
-git checkout main
-git branch -D test-failure-flow
+./tools/phasectl.py review P02-impl-feature    # Should fail
+cat .repo/critiques/P02-impl-feature.md       # Check critique
+cat .repo/traces/last_test.txt                # Check test output
+git checkout tests/mvp/test_feature.py         # Fix
+./tools/phasectl.py review P02-impl-feature    # Should pass
+git checkout main && git branch -D test-failure-flow
 ```
 
-**Success criteria:**
-- ✅ Judge detected test failure
-- ✅ Critique file created with actionable feedback
-- ✅ Trace file shows detailed test output
+**Expected:**
+- ❌ Judge detects test failure
+- 📝 Critique created with actionable feedback
+- 📊 Trace shows detailed test output
 - ✅ After fix, re-review passes
 
 ---
@@ -809,68 +745,68 @@ python3 tools/judge.py P02-impl-feature
 
 ## Validation Checklist
 
-Use this to verify the system is production-ready:
-
-**Core Functionality:**
+### Core Functionality
 - [ ] Orient shows complete status in < 10 seconds
-- [ ] Review command runs tests and invokes judge
+- [ ] Review runs tests and invokes judge
 - [ ] Judge enforces all enabled gates
 - [ ] Critiques are actionable and specific
-- [ ] Approval markers created when all gates pass
+- [ ] Approval markers created when gates pass
 - [ ] Next command advances phases correctly
 
-**Quality Gates:**
-- [ ] Protocol integrity detects judge tampering
-- [ ] Phase binding catches mid-phase plan changes
-- [ ] Baseline SHA provides stable diffs throughout phase
-- [ ] Tests gate catches test failures
-- [ ] Test scoping filters tests to phase scope (Phase 2.5)
-- [ ] Test quarantine skips specific tests with reasons (Phase 2.5)
-- [ ] Docs gate catches missing documentation AND verifies actual changes
+### Quality Gates
+- [ ] Protocol integrity detects tampering
+- [ ] Phase binding catches mid-phase changes
+- [ ] Baseline SHA provides stable diffs
+- [ ] Tests gate catches failures
+- [ ] Test scoping filters tests (Phase 2.5)
+- [ ] Test quarantine skips tests (Phase 2.5)
+- [ ] Docs gate verifies actual changes
 - [ ] Drift gate catches out-of-scope changes
-- [ ] Drift gate respects include/exclude patterns with proper globstar support
+- [ ] Drift gate respects globstar patterns (Phase 1)
 - [ ] Forbidden files are blocked
-- [ ] LLM review works when enabled (optional) and reviews all changes
+- [ ] LLM review works when enabled (optional)
 
-**Error Handling:**
-- [ ] Missing files produce clear errors
-- [ ] Invalid YAML produces clear errors
-- [ ] Missing dependencies produce clear errors
+### Error Handling
+- [ ] Missing files → clear errors
+- [ ] Invalid YAML → clear errors
+- [ ] Missing dependencies → clear errors
 - [ ] All errors include fix suggestions
 
-**Context Recovery:**
-- [ ] All state stored in files (no hidden state)
-- [ ] Orient recovers full context from files
-- [ ] Can resume work after context window exhaustion
+### Context Recovery
+- [ ] All state in files (no hidden state)
+- [ ] Orient recovers full context
+- [ ] Can resume after context exhaustion
 - [ ] CURRENT.json always accurate
 
-**Documentation:**
-- [ ] README.md clear for humans evaluating
-- [ ] PROTOCOL.md complete for LLM execution
-- [ ] TESTME.md (this file) validates system
+### Documentation
+- [ ] README.md clear for evaluators
+- [ ] PROTOCOL.md complete for AI execution
+- [ ] TESTME.md validates system
 - [ ] All docs accurate and up-to-date
 
 ---
 
 ## Success Criteria
 
-**The protocol implementation is valid if:**
+**Protocol is valid when:**
 
-1. ✅ All 12 tests pass without modification (including Phase 1+2.5 enhancements)
-2. ✅ Full system test completes successfully
-3. ✅ Validation checklist 100% checked
-4. ✅ Error handling graceful for all error conditions
-5. ✅ Context recovery works from any state
-6. ✅ Protocol integrity prevents agent self-modification
-7. ✅ Baseline SHA provides stable diffs (Test 10)
-8. ✅ Globstar pattern matching works correctly (Test 11)
-9. ✅ Test scoping and quarantine work correctly (Test 12)
+| Requirement | Status |
+|-------------|--------|
+| All 12 tests pass | \u2705 |
+| Full system test completes | \u2705 |
+| Validation checklist 100% | \u2705 |
+| Error handling graceful | \u2705 |
+| Context recovery works | \u2705 |
+| Protocol integrity enforced | \u2705 |
+| Baseline SHA stable (Test 10) | \u2705 |
+| Globstar patterns work (Test 11) | \u2705 |
+| Test scoping works (Test 12) | \u2705 |
 
-**When complete, you can confidently:**
-- Use the protocol for real projects
-- Extend it for your needs
-- Trust the gates enforce quality
-- Run autonomous multi-phase work
+**When complete, you can:**
+- \u2705 Use for real projects
+- \u2705 Extend for your needs
+- \u2705 Trust gates enforce quality
+- \u2705 Run autonomous multi-phase work
 
 ---
 

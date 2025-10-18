@@ -1,26 +1,24 @@
 # LLM Planning Guide - Judge-Gated Protocol
 
-**READ THIS WHEN:** Helping a human plan a multi-phase roadmap
-**DON'T READ WHEN:** Executing work within an already-planned project (read PROTOCOL.md instead)
+**For:** AI assistants helping humans plan multi-phase roadmaps  
+**Not for execution?** Read PROTOCOL.md instead.
 
-**Purpose:** This guide teaches you how to create effective `plan.yaml` files and phase briefs for autonomous execution.
+**Purpose:** Create effective `plan.yaml` files and phase briefs for autonomous execution.
 
 ---
 
-## Quick Start
+## Planning Workflow
 
-You're helping a human break their project into phases with quality gates. Here's the flow:
-
-1. **Understand their goal** - What are they building?
-2. **Propose phases** - Break work into 1-3 day increments
-3. **Define scope** - What files can change in each phase?
-4. **Choose gates** - What quality checks make sense?
-5. **Write plan.yaml** - Formalize the roadmap
-6. **Write briefs** - Detailed instructions for each phase
-7. **Initialize** - Create CURRENT.json for phase 1
-8. **Handoff** - Tell them to point you at PROTOCOL.md for execution
-
-**After planning is done, you'll switch modes and read PROTOCOL.md for execution.**
+```
+1. Understand goal    → What are they building?
+2. Propose phases     → Break work into 1-3 day chunks
+3. Define scope       → What files can change per phase?
+4. Choose gates       → What quality checks make sense?
+5. Write plan.yaml    → Formalize the roadmap
+6. Write briefs       → Detailed phase instructions
+7. Initialize         → Create CURRENT.json
+8. Handoff            → Switch to PROTOCOL.md for execution
+```
 
 ---
 
@@ -28,28 +26,21 @@ You're helping a human break their project into phases with quality gates. Here'
 
 ### Size: 1-3 Days of Work
 
-**Good phases:**
-- ✅ Single feature or module
-- ✅ Clear deliverable
-- ✅ Independently testable
-- ✅ 100-300 lines of code typically
-
-**Bad phases:**
-- ❌ "Implement entire backend" (too broad)
-- ❌ "Add semicolon to line 42" (too narrow)
-- ❌ Multiple unrelated features
-- ❌ Work spanning 1+ weeks
+| Good Phases ✅ | Bad Phases ❌ |
+|-----------------|------------------|
+| Single feature/module | "Implement entire backend" (too broad) |
+| Clear deliverable | "Add semicolon" (too narrow) |
+| Independently testable | Multiple unrelated features |
+| 100-300 lines typically | Work spanning 1+ weeks |
 
 ### Testability: Every Phase Must Be Verifiable
 
-**Each phase should:**
-- Have tests that prove it works
-- Create artifacts that can be checked
-- Produce docs that can be reviewed
-
-**If you can't test it, split it:**
-- "Design auth system" → Not testable (too vague)
-- "Implement JWT login endpoint" → Testable ✅
+| Testable ✅ | Not Testable ❌ |
+|--------------|-------------------|
+| "Implement JWT login endpoint" | "Design auth system" (too vague) |
+| Has tests proving it works | No way to verify |
+| Creates checkable artifacts | Only planning/thinking |
+| Produces reviewable docs | Abstract concepts |
 
 ### Scope: Clear Boundaries
 
@@ -218,87 +209,73 @@ quarantine:
 
 ## Gate Selection Guide
 
-### When to Use Each Gate
+### Tests Gate (Always Use)
 
-#### tests: { must_pass: true }
-**Always use** - Every phase should have tests
-
-**test_scope: "scope"** when:
-- Large codebase (100+ tests)
-- Isolated module work
-- Fast feedback loop desired
-- Legacy tests exist elsewhere
-
-**test_scope: "all"** when:
-- Small codebase (<50 tests)
-- Integration phase
-- Breaking changes possible
-- Final validation before release
-
-**quarantine** when:
-- Flaky external API tests
-- Deliberately breaking tests (fixing next phase)
-- Legacy tests unrelated to work
-- Infrastructure not yet built
-
-#### lint: { must_pass: true }
-**Use when:**
-- Team has style standards
-- Want consistent code formatting
-- Linter already configured
-
-**Skip when:**
-- Exploratory/prototype phase
-- No linter configured yet
-- Would slow down too much
-
-#### docs: { must_update: ["file.md"] }
-**Use when:**
-- Public API changes
-- New features need documentation
-- Architecture decisions made
-
-**Specify section anchors:**
 ```yaml
-docs:
-  must_update: ["docs/api.md#authentication"]
+tests: { must_pass: true }
 ```
 
-**Skip when:**
-- Internal refactoring
-- Bug fixes with no API changes
-- Docs will be batch-updated later
+| test_scope | When to Use |
+|------------|-------------|
+| **"scope"** | Large codebase (100+ tests), isolated module work, fast feedback |
+| **"all"** | Small codebase (<50 tests), integration, breaking changes, pre-release |
 
-#### drift: { allowed_out_of_scope_changes: N }
-**Start with 0** - Be strict by default
+**Use quarantine for:**
+- Flaky external API tests
+- Deliberately broken tests (fixing in next phase)
+- Legacy tests unrelated to current work
+- Tests requiring infrastructure not yet built
 
-**Allow 1-2 when:**
-- Small config tweaks expected
-- README updates likely
-- Minor refactors of nearby code
+### Lint Gate (Optional)
 
-**Allow 5+ when:**
-- Exploratory refactor phase
-- Touch files discovered during work
+```yaml
+lint: { must_pass: true }
+```
 
-**Skip entirely** (omit gate) when:
-- No scope defined
-- Prototyping phase
+| Use When ✅ | Skip When ❌ |
+|-------------|-------------|
+| Team has style standards | Exploratory/prototype phase |
+| Want consistent formatting | No linter configured yet |
+| Linter already configured | Would slow progress |
 
-#### llm_review: { enabled: true }
-**Enable for:**
-- Security-critical code (auth, encryption)
-- Complex algorithms
-- Public APIs
-- Money/payment handling
-- Untrusted input processing
+### Docs Gate (Recommended)
 
-**Skip for:**
-- Boilerplate code
-- Configuration files
-- Test files
-- Simple CRUD operations
-- Cost-sensitive projects
+```yaml
+docs: { must_update: ["docs/api.md#authentication"] }
+```
+
+| Use When ✅ | Skip When ❌ |
+|-------------|-------------|
+| Public API changes | Internal refactoring |
+| New features | Bug fixes (no API changes) |
+| Architecture decisions | Batch doc updates planned |
+
+### Drift Gate (Strongly Recommended)
+
+```yaml
+drift: { allowed_out_of_scope_changes: 0 }  # Start strict
+```
+
+| Allowed Changes | When to Use |
+|-----------------|-------------|
+| **0** (strict) | Normal phases with clear scope |
+| **1-2** | Small config tweaks, README updates |
+| **5+** | Exploratory refactors |
+| **Omit gate** | No scope defined, prototyping |
+
+### LLM Review Gate (High-Stakes Only)
+
+```yaml
+llm_review: { enabled: true }
+```
+
+| Enable For ✅ | Skip For ❌ |
+|----------------|---------------|
+| Security-critical code | Boilerplate code |
+| Complex algorithms | Config files |
+| Payment handling | Test files |
+| Untrusted input processing | Simple CRUD |
+| Public APIs | Cost-sensitive projects |
 
 ---
 

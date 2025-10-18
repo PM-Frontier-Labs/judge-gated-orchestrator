@@ -1,23 +1,18 @@
 # Phase P02: Implement Feature
 
 ## Objective
-Implement a simple feature with refactoring and documentation section.
+Implement feature with tests and documentation.
 
 ## Scope 🎯
 
-✅ **YOU MAY TOUCH:**
-- `src/mvp/feature.py` - New feature module
-- `tests/mvp/test_feature.py` - Feature tests
-- `docs/mvp.md` - Update documentation
+| Allowed ✅ | Forbidden ❌ |
+|-----------|-------------|
+| `src/mvp/feature.py` | `requirements.txt` |
+| `tests/mvp/test_feature.py` | `pyproject.toml` |
+| `docs/mvp.md` | `.github/**` |
+| | Other modules |
 
-❌ **DO NOT TOUCH:**
-- `requirements.txt` - Dependencies (use separate phase)
-- `pyproject.toml` - Project config (use separate phase)
-- `.github/**` - CI/CD config (use separate phase)
-- Other modules outside this specific scope
-
-🤔 **IF YOU NEED TO TOUCH THESE:**
-Stop and create a separate phase. Drift prevention will fail the review.
+**If you need forbidden files:** Stop and create a separate phase.
 
 ## Required Artifacts
 - [ ] `src/mvp/feature.py` - Feature implementation
@@ -31,27 +26,16 @@ Stop and create a separate phase. Drift prevention will fail the review.
 
 ## Implementation Steps
 
-1. **Create feature module**
-   - Create `src/mvp/feature.py`
-   - Implement a `calculate_score(value: int) -> int` function
-   - Function should validate input and return value * 2
-
-2. **Create feature tests**
-   - Create `tests/mvp/test_feature.py`
+1. **Create feature** → `src/mvp/feature.py` with `calculate_score(value: int) -> int`
+   - Validates input and returns value * 2
+2. **Create tests** → `tests/mvp/test_feature.py`
    - Test valid inputs (positive, zero, negative)
-   - Test edge cases
-   - Ensure all tests pass
-
-3. **Update documentation**
-   - Add a "## Feature" section to `docs/mvp.md`
-   - Document the `calculate_score` function
-   - Include usage examples
-
-4. **Submit for review**
-   - Run: `./tools/phasectl.py review P02-impl-feature`
-   - Wait for judge feedback
-   - If critique appears, fix issues and re-run review
-   - When approved, pipeline is complete!
+   - Test edge cases and type validation
+3. **Update docs** → Add "## Feature" section to `docs/mvp.md`
+   - Document function and usage examples
+4. **Submit review** → `./tools/phasectl.py review P02-impl-feature`
+5. **Iterate** → Fix any critique issues and re-review
+6. **Complete** → Pipeline finished when approved!
 
 ## 4-Step Protocol
 

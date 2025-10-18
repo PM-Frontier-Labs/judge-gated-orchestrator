@@ -4,69 +4,64 @@
 
 ## What Is This?
 
-A **protocol** for autonomous execution—not a framework you import, but file conventions you follow.
+A **protocol** (not a framework) for autonomous execution. Like Git tracks changes with `.git/` files, this protocol tracks autonomous work with simple file conventions:
 
-Like Git tracks code changes through `.git/`, `HEAD`, and commit messages, this protocol tracks autonomous work through:
-- **`.repo/briefs/CURRENT.json`** - Points to current phase
-- **`.repo/plan.yaml`** - Defines phases and quality gates
-- **`.repo/critiques/<phase>.{md,OK}`** - Judge feedback
+- **`.repo/briefs/CURRENT.json`** → Current phase
+- **`.repo/plan.yaml`** → Roadmap with phases and quality gates  
+- **`.repo/critiques/<phase>.{md,OK}`** → Judge feedback
 
-Any tool that follows these conventions can participate. This repo includes a reference implementation in Python, but you could rewrite it in Bash, Rust, or Make.
+Any tool following these conventions can participate. This repo provides a Python reference implementation, but you could rewrite it in any language.
 
 ## Why It Matters
 
-**The problem:** AI agents drift off-task, skip tests, ignore scope boundaries, and require constant supervision.
+**Problem:** AI agents drift off-task, skip tests, and require constant supervision.
 
-**The solution:** Define phases with quality gates. Judge blocks progression until all gates pass. Agent iterates until approved, then advances autonomously.
+**Solution:** Define phases with quality gates. The judge blocks progression until all gates pass. The agent iterates until approved, then advances autonomously.
 
-**Result:** You define a 6-week roadmap, go to sleep, wake up to 2-3 completed phases with tests passing and docs updated.
+**Result:** Define a 6-week roadmap, let it run overnight, wake up to completed phases with passing tests and updated docs.
 
 ## Key Features
 
-✅ **Autonomous execution** - Agent works through phases without supervision
-✅ **Quality enforcement** - Tests, docs, drift prevention, optional LLM review
-✅ **Protocol integrity** - SHA256-based tamper detection prevents agents from modifying judge
-✅ **Schema validation** - Comprehensive plan.yaml validation catches configuration errors before execution
-✅ **Concurrent safety** - File locking prevents race conditions in CI/multi-agent scenarios
-✅ **Context-window proof** - All state in files, `./orient.sh` recovers context in <10 seconds
-✅ **Terminal-native** - No servers, no APIs, just files and shell commands
-✅ **Language-agnostic** - File-based protocol works for any language
-✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
+| Feature | Benefit |
+|---------|----------|
+| **Autonomous execution** | Agent works through phases without supervision |
+| **Quality gates** | Enforces tests, docs, drift prevention, optional LLM review |
+| **Protocol integrity** | SHA256 tamper detection prevents agent self-modification |
+| **Context-window proof** | All state in files, `./orient.sh` recovers context in <10 seconds |
+| **Concurrent-safe** | File locking prevents race conditions in CI/multi-agent scenarios |
+| **Terminal-native** | No servers, no APIs—just files and shell commands |
+| **Language-agnostic** | Works with any language |
+| **5-minute setup** | Clone, install, run demo |
 
 ## When to Use
 
-✅ **Multi-phase projects** - Breaking work into 3+ sequential phases
-✅ **Overnight autonomous work** - Agent executes while you sleep
-✅ **Quality-critical code** - Need tests + docs enforced automatically
-✅ **AI-assisted development** - Claude Code, Cursor, Windsurf, etc.
-✅ **Scope control** - Prevent drift and "drive-by" changes
+**Perfect for:**
+- ✅ Multi-phase projects (3+ sequential phases)
+- ✅ Overnight autonomous work
+- ✅ Quality-critical code (tests + docs required)
+- ✅ Preventing scope drift
 
-## When NOT to Use
-
-❌ **Single tasks** - Just prompt Claude directly
-❌ **No quality requirements** - Gates add overhead
-❌ **Exploratory coding** - Rigid phases slow down discovery
-❌ **Non-git projects** - Drift prevention requires git
+**Not ideal for:**
+- ❌ Single tasks (just prompt Claude directly)
+- ❌ Exploratory coding (rigid phases slow discovery)
+- ❌ Non-git projects (drift prevention requires git)
 
 ## Quick Demo (30 Seconds)
 
 ```bash
-# Clone
+# Clone and install
 git clone https://github.com/PM-Frontier-Labs/judge-gated-orchestrator.git
 cd judge-gated-orchestrator
-
-# Install
 pip install -r requirements.txt
 
-# See status
+# Check status
 ./orient.sh
 
 # Try the review flow
 ./tools/phasectl.py review P02-impl-feature
-# → Shows diff summary, runs tests, invokes judge, shows result
 ```
 
-**What you'll see:** System catches out-of-scope changes, enforces gates, provides clear feedback.
+**You'll see:** Diff summary, test execution, judge verdict, and actionable feedback.
 
 ## How It Compares
 
@@ -104,40 +99,32 @@ Gates are configurable per phase. Enforce what matters for your project.
 ## Core Workflow
 
 ```
-1. Claude reads brief (.repo/briefs/P01-scaffold.md)
-2. Claude implements files within scope
-3. Claude runs: ./tools/phasectl.py review P01-scaffold
-   ├─> Validates plan.yaml schema
-   ├─> Shows diff summary (in-scope vs out-of-scope)
-   ├─> Runs tests (with optional scope filtering)
-   ├─> Invokes judge (with file locking)
-   └─> Judge checks all gates
-4. Judge writes:
-   ├─> .repo/critiques/P01-scaffold.md (if issues)
-   └─> .repo/critiques/P01-scaffold.OK (if approved)
-5. If approved: ./tools/phasectl.py next → advance
-   If critique: fix issues → re-run review
+1. Agent reads brief      → .repo/briefs/P01-scaffold.md
+2. Agent implements       → Changes within scope
+3. Agent reviews          → ./tools/phasectl.py review P01-scaffold
+   - Validates plan.yaml
+   - Shows diff summary  
+   - Runs tests
+   - Judge checks all gates
+4. Judge writes verdict   → .repo/critiques/P01-scaffold.{md|OK}
+5. If approved            → ./tools/phasectl.py next
+   If critique            → Fix issues, re-review
 ```
 
-**The key:** Judge blocks until quality standards met. Agent iterates automatically.
+**Key principle:** Judge blocks until quality standards met. Agent iterates automatically.
 
-## Real-World Usage
+## Real-World Example
 
 **Scenario:** 6-phase backend refactor
 
-**Setup (you):**
-- Write `.repo/plan.yaml` with 6 phases
-- Write 6 briefs describing what to build
-- Define scope + gates for each phase
+| Your Role | AI Agent's Role |
+|-----------|----------------|
+| Write `.repo/plan.yaml` (6 phases) | Reads P01 brief |
+| Write 6 briefs | Implements changes |
+| Define scope + gates | Submits review → gets critique → fixes → approved |
+| Go to sleep | Advances to P02, repeats for all phases |
 
-**Execution (Claude Code):**
-- Reads P01 brief
-- Implements changes
-- Submits review, gets critique, fixes, re-submits, approved
-- Advances to P02
-- Repeats for all 6 phases
-
-**Result:** Wake up to completed refactor, all tests passing, docs updated, no drift.
+**Result:** Wake up to completed refactor with passing tests, updated docs, zero drift.
 
 ## File Structure
 
@@ -198,7 +185,7 @@ Start here if you're setting up or using the protocol:
 
 - **TESTME.md** - 12 tests to validate protocol implementation (25-30 minutes)
 
-### Navigation
+### Quick Navigation
 
 | Audience | Goal | Read This |
 |----------|------|-----------|
@@ -210,13 +197,15 @@ Start here if you're setting up or using the protocol:
 
 ## Next Steps
 
-**New here?** Read `GETTING_STARTED.md` for a step-by-step guide.
+| Your Goal | Action |
+|-----------|--------|
+| **New here?** | Read `GETTING_STARTED.md` |
+| **Ready to plan?** | Point Claude at `LLM_PLANNING.md` |
+| **Want to validate?** | Follow `TESTME.md` (12 tests, 25-30 min) |
 
-**Ready to use it?** Point Claude at `LLM_PLANNING.md` to design your roadmap.
+### CI/CD Integration
 
-**Want to validate?** Follow `TESTME.md` (12 tests, 25-30 minutes).
-
-**Integrating with CI/CD?** The protocol is just files + shell commands:
+The protocol is just files + shell commands:
 ```bash
 ./tools/phasectl.py review $PHASE_ID
 if [ $? -eq 0 ]; then

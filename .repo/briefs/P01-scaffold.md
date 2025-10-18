@@ -1,23 +1,18 @@
 # Phase P01: Scaffold
 
 ## Objective
-Create the skeleton module structure with a golden test and initial documentation.
+Create skeleton module with golden test and initial documentation.
 
 ## Scope 🎯
 
-✅ **YOU MAY TOUCH:**
-- `src/mvp/**` - Module code
-- `tests/mvp/**` - Test files
-- `docs/mvp.md` - Documentation
+| Allowed ✅ | Forbidden ❌ |
+|-----------|-------------|
+| `src/mvp/**` | `requirements.txt` |
+| `tests/mvp/**` | `pyproject.toml` |
+| `docs/mvp.md` | `src/**/legacy/**` |
+| | Other modules |
 
-❌ **DO NOT TOUCH:**
-- `requirements.txt` - Dependencies (use separate phase)
-- `pyproject.toml` - Project config (use separate phase)
-- `src/**/legacy/**` - Legacy code (excluded)
-- Other modules outside `mvp/`
-
-🤔 **IF YOU NEED TO TOUCH THESE:**
-Stop and create a separate phase. Drift prevention will fail the review.
+**If you need forbidden files:** Stop and create a separate phase.
 
 ## Required Artifacts
 - [ ] `src/mvp/__init__.py` - Module initialization
@@ -31,24 +26,12 @@ Stop and create a separate phase. Drift prevention will fail the review.
 
 ## Implementation Steps
 
-1. **Create module structure**
-   - Create `src/mvp/__init__.py` with basic module setup
-   - Add a simple `hello_world()` function for testing
-
-2. **Create golden test**
-   - Create `tests/mvp/test_golden.py`
-   - Write a test that validates `hello_world()` returns expected value
-   - Ensure test passes
-
-3. **Create documentation**
-   - Create `docs/mvp.md`
-   - Document the module purpose and basic API
-
-4. **Submit for review**
-   - Run: `./tools/phasectl.py review P01-scaffold`
-   - Wait for judge feedback
-   - If critique appears, fix issues and re-run review
-   - When approved, run: `./tools/phasectl.py next`
+1. **Create module** → `src/mvp/__init__.py` with `hello_world()` function
+2. **Create test** → `tests/mvp/test_golden.py` that validates function
+3. **Create docs** → `docs/mvp.md` with module purpose and API
+4. **Submit review** → `./tools/phasectl.py review P01-scaffold`
+5. **Iterate** → Fix any critique issues and re-review
+6. **Advance** → `./tools/phasectl.py next` when approved
 
 ## 4-Step Protocol
 
