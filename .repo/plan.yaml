@@ -2,7 +2,7 @@ plan:
   id: PROTOCOL-EVOLUTION
   summary: "Evolve the Judge-Gated Protocol with collective intelligence and enhanced capabilities"
   base_branch: "main"
-  test_command: "pytest tests/test_collective_intelligence.py -v"
+  test_command: "pytest tests/test_collective_intelligence.py::TestCollectiveIntelligence -v"
   
   llm_review_config:
     severity_threshold: "major"
@@ -45,7 +45,7 @@ plan:
       gates:
         tests:
           must_pass: true
-          test_scope: "scope"
+          test_scope: "all"
         lint:
           must_pass: true
         integrity:
