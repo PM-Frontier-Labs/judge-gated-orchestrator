@@ -1,9 +1,9 @@
 {
-  "phase_id": "P02-collective-intelligence-foundation",
-  "brief_path": ".repo/briefs/P02-collective-intelligence-foundation.md",
+  "phase_id": "P01-collective-intelligence-foundation",
+  "brief_path": ".repo/briefs/P01-collective-intelligence-foundation.md",
   "status": "active",
-  "started_at": 1760750733.081439,
+  "started_at": 1760753000.0,
   "baseline_sha": "c1f75effeec081a698ac2bbfa21af13ff8f4c578",
-  "plan_sha": "a76827779ec15deceed45358ef50bce9befbeaa9",
-  "manifest_sha": "2f8fd5765d86d69a4b14f7793262177a8d10498243fedbedf6fe84b2a1f48cbc"
+  "plan_sha": "ec245b1019e30766125e984b43a812dd1d318e1517969a90ee77ecb02301020e",
+  "manifest_sha": "6caea6ef1729a8342771a361875876cecc83f5f9e215ea6cb237206055b9691b"
 }
