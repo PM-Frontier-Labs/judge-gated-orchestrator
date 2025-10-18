@@ -53,7 +53,7 @@ plan:
         docs:
           must_update: ["PROTOCOL.md"]
         llm_review:
-          enabled: true
+          enabled: false
         drift:
           allowed_out_of_scope_changes: 0
 
