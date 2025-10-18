@@ -13,6 +13,7 @@ import time
 import subprocess
 import shlex
 from pathlib import Path
+from typing import List, Dict, Any
 
 try:
     import yaml
@@ -311,6 +312,31 @@ def review_phase(phase_id: str):
             print(f"   {amendment['type']}: {amendment['value']}")
         print()
 
+    # Auto-propose amendments from patterns
+    from lib.traces import propose_amendments_from_patterns
+    from lib.amendments import propose_amendment
+    
+    # Get context for pattern matching
+    traces_dir = REPO_ROOT / ".repo" / "traces"
+    test_trace_file = traces_dir / "last_tests.txt"
+    lint_trace_file = traces_dir / "last_lint.txt"
+    
+    context = {
+        "test_output": test_trace_file.read_text() if test_trace_file.exists() else "",
+        "lint_output": lint_trace_file.read_text() if lint_trace_file.exists() else "",
+        "changed_files": []  # Will be populated later
+    }
+    
+    # Propose amendments from patterns
+    pattern_proposals = propose_amendments_from_patterns(context)
+    for proposal in pattern_proposals:
+        success = propose_amendment(phase_id, proposal["type"], proposal["value"], proposal["reason"])
+        if success:
+            print(f"🧠 Pattern-based amendment proposed: {proposal['type']} = {proposal['value']}")
+    
+    if pattern_proposals:
+        print()
+
     # Get phase config for test scoping
     phases = plan.get("plan", {}).get("phases", [])
     phase = next((p for p in phases if p["id"] == phase_id), None)
@@ -340,6 +366,10 @@ def review_phase(phase_id: str):
 
     if ok_file.exists():
         print(f"✅ Phase {phase_id} approved!")
+        
+        # Learn from successful review
+        _learn_from_review(phase_id, applied_amendments)
+        
         return 0
     elif critique_file.exists():
         print(f"❌ Phase {phase_id} needs revision:")
@@ -349,6 +379,39 @@ def review_phase(phase_id: str):
     else:
         print("⚠️  Judge did not produce feedback. Check for errors above.")
         return 2
+
+def _learn_from_review(phase_id: str, applied_amendments: List[Dict[str, Any]]) -> None:
+    """Learn patterns from successful review"""
+    from lib.traces import store_pattern
+    
+    if not applied_amendments:
+        return
+    
+    # Get test output for learning
+    traces_dir = REPO_ROOT / ".repo" / "traces"
+    test_trace_file = traces_dir / "last_tests.txt"
+    
+    test_output = ""
+    if test_trace_file.exists():
+        test_output = test_trace_file.read_text()
+    
+    # Learn from amendments that fixed issues
+    for amendment in applied_amendments:
+        if amendment["type"] == "set_test_cmd" and "error" in test_output.lower():
+            pattern = {
+                "kind": "fix",
+                "when": {
+                    "pytest_error": "usage: python -m pytest"
+                },
+                "action": {
+                    "amend": "set_test_cmd",
+                    "value": amendment["value"]
+                },
+                "description": "Fix pytest usage error",
+                "confidence": 0.9,
+                "evidence": [test_output]
+            }
+            store_pattern(pattern)
 
 
 def next_phase():
@@ -479,6 +542,12 @@ def main():
             print("Usage: phasectl.py amend propose <type> <value> <reason>")
             return 1
         return handle_amendment_command(sys.argv[2:])
+    
+    elif command == "patterns":
+        if len(sys.argv) < 3:
+            print("Usage: phasectl.py patterns <command>")
+            return 1
+        return handle_patterns_command(sys.argv[2:])
 
     else:
         print(f"Unknown command: {command}")
@@ -521,6 +590,28 @@ def handle_amendment_command(args):
         else:
             print(f"❌ Amendment budget exceeded for {amendment_type}")
             return 1
+    
+    return 0
+
+def handle_patterns_command(args):
+    """Handle patterns commands"""
+    from lib.traces import find_matching_patterns
+    
+    if args[0] == "list":
+        patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+        
+        if not patterns_file.exists():
+            print("No patterns stored yet.")
+            return 0
+        
+        print("Stored patterns:")
+        with open(patterns_file, 'r') as f:
+            for i, line in enumerate(f, 1):
+                pattern = json.loads(line.strip())
+                print(f"{i}. {pattern.get('description', 'Unknown')} (confidence: {pattern.get('confidence', 0)})")
+                print(f"   When: {pattern.get('when', {})}")
+                print(f"   Action: {pattern.get('action', {})}")
+                print()
     
     return 0
 
