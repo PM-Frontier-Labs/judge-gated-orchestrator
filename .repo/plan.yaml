@@ -65,6 +65,10 @@ plan:
           test_scope: "scope"
         lint:
           must_pass: true
+        integrity:
+          must_pass: true
+        integrity:
+          must_pass: true
         docs:
           must_update: ["PROTOCOL.md", "LLM_PLANNING.md", "README.md"]
         llm_review:
@@ -103,6 +107,8 @@ plan:
           test_scope: "scope"
         lint:
           must_pass: true
+        integrity:
+          must_pass: true
         docs:
           must_update: ["PROTOCOL.md"]
         llm_review:
@@ -138,6 +144,8 @@ plan:
           must_pass: true
           test_scope: "scope"
         lint:
+          must_pass: true
+        integrity:
           must_pass: true
         llm_review:
           enabled: true
@@ -178,6 +186,8 @@ plan:
           test_scope: "scope"
         lint:
           must_pass: true
+        integrity:
+          must_pass: true
         docs:
           must_update: ["PROTOCOL.md"]
         llm_review:
@@ -217,6 +227,8 @@ plan:
           test_scope: "scope"
         lint:
           must_pass: true
+        integrity:
+          must_pass: true
         llm_review:
           enabled: true
         drift:
@@ -247,6 +259,8 @@ plan:
           must_pass: true
           test_scope: "scope"
         lint:
+          must_pass: true
+        integrity:
           must_pass: true
         docs:
           must_update: ["PROTOCOL.md", "LLM_PLANNING.md", "README.md", "GETTING_STARTED.md"]
@@ -288,6 +302,8 @@ plan:
           test_scope: "scope"
         lint:
           must_pass: true
+        integrity:
+          must_pass: true
         llm_review:
           enabled: true
         drift:
@@ -320,6 +336,8 @@ plan:
           test_scope: "all"
         lint:
           must_pass: true
+        integrity:
+          must_pass: true
         llm_review:
           enabled: true
         drift:
@@ -349,6 +367,8 @@ plan:
           must_pass: true
           test_scope: "scope"
         lint:
+          must_pass: true
+        integrity:
           must_pass: true
         llm_review:
           enabled: true
@@ -383,6 +403,8 @@ plan:
           must_pass: true
           test_scope: "scope"
         lint:
+          must_pass: true
+        integrity:
           must_pass: true
         docs:
           must_update: ["EVOLVED_PROTOCOL_GUIDE.md", "BEST_PRACTICES.md", "EVOLUTION_HISTORY.md"]

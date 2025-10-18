@@ -63,6 +63,50 @@ def get_phase(plan: Dict[str, Any], phase_id: str) -> Dict[str, Any]:
     raise ValueError(f"Phase {phase_id} not found in plan")
 
 
+def check_integrity_gate(phase_id: str, changed_files: List[str]) -> List[str]:
+    """Protocol Integrity Gate - Enforces file management discipline"""
+    
+    integrity_issues = []
+    
+    for file_path in changed_files:
+        file_path_obj = Path(file_path)
+        
+        # Verify file exists and is readable
+        if not file_path_obj.exists():
+            integrity_issues.append(f"File missing: {file_path}")
+            continue
+        
+        # Verify file is properly staged in git
+        try:
+            import subprocess
+            result = subprocess.run(['git', 'ls-files', '--error-unmatch', file_path], 
+                                  capture_output=True, text=True, cwd=REPO_ROOT)
+            if result.returncode != 0:
+                integrity_issues.append(f"File not staged: {file_path}")
+        except Exception as e:
+            integrity_issues.append(f"Git check failed for {file_path}: {e}")
+        
+        # For critical files, verify content integrity
+        if file_path == ".repo/plan.yaml":
+            try:
+                with open(file_path_obj, 'r') as f:
+                    content = f.read()
+                    if "id: PROTOCOL-EVOLUTION" not in content and "id: MVP-DEMO" not in content:
+                        integrity_issues.append(f"Plan file corrupted: {file_path}")
+            except Exception as e:
+                integrity_issues.append(f"Plan file read error: {file_path}: {e}")
+        
+        if file_path == ".repo/protocol_manifest.json":
+            try:
+                import json
+                with open(file_path_obj, 'r') as f:
+                    json.load(f)  # Verify valid JSON
+            except Exception as e:
+                integrity_issues.append(f"Manifest file corrupted: {file_path}: {e}")
+    
+    return integrity_issues
+
+
 def check_artifacts(phase: Dict[str, Any]) -> List[str]:
     """Check that required artifacts exist and are non-empty."""
     issues = []
@@ -488,6 +532,12 @@ def judge_phase(phase_id: str):
         base_branch=base_branch,
         baseline_sha=baseline_sha
     )
+
+    # Integrity gate (mandatory for all phases)
+    print("  🔍 Checking file integrity...")
+    integrity_issues = check_integrity_gate(phase_id, changed_files)
+    gate_results["integrity"] = integrity_issues
+    all_issues.extend(integrity_issues)
 
     print("  🔍 Checking documentation...")
     docs_issues = check_docs(phase, changed_files)

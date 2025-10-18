@@ -186,7 +186,7 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
                 errors.append(f"{phase_prefix}.gates must be a dict")
             else:
                 # Define valid gate names
-                valid_gates = {"tests", "lint", "docs", "drift", "llm_review"}
+                valid_gates = {"tests", "lint", "integrity", "docs", "drift", "llm_review"}
                 unknown_gates = set(gates.keys()) - valid_gates
                 if unknown_gates:
                     errors.append(f"{phase_prefix}.gates contains unknown gates: {', '.join(sorted(unknown_gates))}")
@@ -229,6 +229,14 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
                         errors.append(f"{phase_prefix}.gates.lint must be a dict")
                     elif "must_pass" in lint_gate and not isinstance(lint_gate["must_pass"], bool):
                         errors.append(f"{phase_prefix}.gates.lint.must_pass must be a boolean")
+
+                # Validate integrity gate
+                if "integrity" in gates:
+                    integrity_gate = gates["integrity"]
+                    if not isinstance(integrity_gate, dict):
+                        errors.append(f"{phase_prefix}.gates.integrity must be a dict")
+                    elif "must_pass" in integrity_gate and not isinstance(integrity_gate["must_pass"], bool):
+                        errors.append(f"{phase_prefix}.gates.integrity.must_pass must be a boolean")
 
                 # Validate docs gate
                 if "docs" in gates:
