@@ -17,13 +17,14 @@ def run_command_with_trace(
     """
     Run command and save trace. Returns exit code or None if tool missing.
     """
-    # Check if tool exists
+    # Check if tool exists with a lightweight probe
     tool_name = command[0]
-    version_cmd = ["ruff", "--version"] if tool_name == "ruff" else [tool_name, "--version"]
+    probe_cmd = ["ruff", "--version"] if tool_name == "ruff" else [tool_name, "--version"]
 
     try:
-        subprocess.run(version_cmd, capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Do not fail the gate due to non-zero exit on --version; only absence matters
+        subprocess.run(probe_cmd, capture_output=True, check=False)
+    except FileNotFoundError:
         return None
 
     # Run command
@@ -32,11 +33,21 @@ def run_command_with_trace(
     # Save trace
     traces_dir.mkdir(parents=True, exist_ok=True)
     trace_file = traces_dir / f"last_{gate_name}.txt"
+    # Truncate excessive output to keep traces readable while preserving tail
+    def _truncate(text: str, max_len: int = 20000) -> str:
+        if text is None:
+            return ""
+        if len(text) <= max_len:
+            return text
+        head = text[: max_len // 2]
+        tail = text[-max_len // 2 :]
+        return head + "\n... [truncated] ...\n" + tail
+
     trace_file.write_text(
         f"Exit code: {result.returncode}\n"
         f"Timestamp: {time.time()}\n"
-        f"\n=== STDOUT ===\n{result.stdout}\n"
-        f"\n=== STDERR ===\n{result.stderr}\n"
+        f"\n=== STDOUT ===\n{_truncate(result.stdout)}\n"
+        f"\n=== STDERR ===\n{_truncate(result.stderr)}\n"
     )
 
     return result.returncode

@@ -27,6 +27,7 @@ def _critic_analyze(phase: Dict[str, Any], changed_files: List[str],
     """Critic analyzes code and suggests must-fix items and amendments"""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
+        # Deterministic no-op when not configured
         return {"must_fix": [], "proposed_amendments": []}
     
     try:
@@ -68,7 +69,11 @@ Respond in JSON format:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        return json.loads(response.content[0].text)
+        try:
+            return json.loads(response.content[0].text)
+        except Exception:
+            # Guard against unexpected model output
+            return {"must_fix": [], "proposed_amendments": []}
         
     except Exception as e:
         print(f"⚠️ LLM critic failed: {e}")

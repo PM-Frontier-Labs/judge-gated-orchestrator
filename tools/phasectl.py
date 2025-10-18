@@ -114,21 +114,9 @@ def run_tests(plan, phase=None):
                     print("  ⚠️  No test files match scope patterns - running all tests")
 
             except ImportError:
-                # Fallback to simple string matching if pathspec not available
-                print("  ⚠️  pathspec not available - using simple pattern matching")
-                test_paths = []
-                for pattern in scope_patterns:
-                    if pattern.startswith("tests/"):
-                        base_path = pattern.split("*")[0].rstrip("/")
-                        if base_path not in test_paths:
-                            test_paths.append(base_path)
-
-                if test_paths:
-                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories (fallback mode)")
-                    new_cmd = [test_cmd[0]]
-                    new_cmd.extend(test_paths)
-                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-                    test_cmd = new_cmd
+                # Require pathspec for scoped testing (it's in requirements.txt)
+                print("  ❌ pathspec is required for scoped testing. Install with: pip install pathspec")
+                # Leave test_cmd unchanged -> run full test suite
 
         # Quarantine list: tests expected to fail
         quarantine = test_gate.get("quarantine", [])

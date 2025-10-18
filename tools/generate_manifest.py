@@ -8,14 +8,19 @@ REPO_ROOT = Path(__file__).parent.parent
 MANIFEST_PATH = REPO_ROOT / ".repo/protocol_manifest.json"
 
 PROTOCOL_FILES = [
+    # Core protocol entrypoints and gates
     "tools/judge.py",
     "tools/phasectl.py",
+    # Optional LLM judge (treated as protocol when present)
     "tools/llm_judge.py",
+    # Shared libraries that define protocol behavior
     "tools/lib/__init__.py",
     "tools/lib/git_ops.py",
     "tools/lib/scope.py",
     "tools/lib/traces.py",
     "tools/lib/protocol_guard.py",
+    "tools/lib/plan_validator.py",
+    "tools/lib/file_lock.py",
 ]
 
 
