@@ -75,8 +75,8 @@ def validate_plan(plan: Dict[str, Any]) -> List[str]:
             if "temperature" in llm_config:
                 if not isinstance(llm_config["temperature"], (int, float)):
                     errors.append("plan.llm_review_config.temperature must be a number")
-                elif not 0 <= llm_config["temperature"] <= 1:
-                    errors.append("plan.llm_review_config.temperature must be between 0 and 1")
+                elif not 0 <= llm_config["temperature"] <= 2:
+                    errors.append("plan.llm_review_config.temperature must be between 0 and 2")
 
             if "timeout_seconds" in llm_config and not isinstance(llm_config["timeout_seconds"], int):
                 errors.append("plan.llm_review_config.timeout_seconds must be an integer")

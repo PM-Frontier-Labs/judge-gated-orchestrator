@@ -88,13 +88,11 @@ def file_lock(lock_file: Path, timeout: int = 30):
                         raise TimeoutError(f"Could not acquire lock on {lock_file} within {timeout}s")
 
                     # Check if lock file is stale (>60s old)
-                    try:
-                        age = time.time() - lock_file.stat().st_mtime
-                        if age > 60:
-                            # Stale lock, remove it
-                            lock_file.unlink()
-                    except Exception:
-                        pass
+                    # Note: Stale lock cleanup has been removed to prevent race conditions.
+                    # The TOCTOU (time-of-check to time-of-use) vulnerability between checking
+                    # the file age and unlinking it could allow multiple processes to acquire
+                    # the lock simultaneously. Instead, rely on the timeout mechanism and
+                    # manual cleanup if needed.
 
                     time.sleep(0.1)
 

@@ -16,7 +16,8 @@ def calculate_score(value: int) -> int:
     Raises:
         TypeError: If value is not an integer
     """
-    if not isinstance(value, int):
+    # Explicitly reject bool since bool is a subclass of int in Python
+    if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"Expected int, got {type(value).__name__}")
 
     return value * 2
