@@ -25,6 +25,8 @@ from lib.git_ops import get_changed_files
 from lib.scope import classify_files, check_forbidden_files
 from lib.traces import check_gate_trace
 from lib.protocol_guard import verify_protocol_lock, verify_phase_binding
+from lib.state import load_phase_context
+from lib.llm_pipeline import review_phase_with_llm
 
 # Import LLM judge (optional)
 try:
@@ -55,10 +57,21 @@ def load_plan() -> Dict[str, Any]:
 
 
 def get_phase(plan: Dict[str, Any], phase_id: str) -> Dict[str, Any]:
-    """Get phase configuration from plan."""
+    """Get phase configuration from plan + runtime context"""
     phases = plan.get("plan", {}).get("phases", [])
     for phase in phases:
         if phase.get("id") == phase_id:
+            # Get runtime state from context
+            context = load_phase_context(phase_id)
+            
+            # Merge runtime state into phase config
+            phase["runtime"] = {
+                "baseline_sha": context.get("baseline_sha"),
+                "test_cmd": context.get("test_cmd"),
+                "mode": context.get("mode"),
+                "scope_cache": context.get("scope_cache", {})
+            }
+            
             return phase
     raise ValueError(f"Phase {phase_id} not found in plan")
 

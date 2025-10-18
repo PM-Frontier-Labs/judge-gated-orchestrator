@@ -52,14 +52,17 @@ def run_tests(plan, phase=None):
     """Run tests and save results to trace file."""
     print("🧪 Running tests...")
 
-    # Get test command from plan
-    test_config = plan.get("plan", {}).get("test_command", {})
-    if isinstance(test_config, str):
-        test_cmd = shlex.split(test_config)
-    elif isinstance(test_config, dict):
-        test_cmd = shlex.split(test_config.get("command", "pytest tests/ -v"))
+    # Get test command from runtime context if available, otherwise from plan
+    if phase and phase.get("runtime", {}).get("test_cmd"):
+        test_cmd = shlex.split(phase["runtime"]["test_cmd"])
     else:
-        test_cmd = ["pytest", "tests/", "-v"]
+        test_config = plan.get("plan", {}).get("test_command", {})
+        if isinstance(test_config, str):
+            test_cmd = shlex.split(test_config)
+        elif isinstance(test_config, dict):
+            test_cmd = shlex.split(test_config.get("command", "pytest tests/ -v"))
+        else:
+            test_cmd = ["pytest", "tests/", "-v"]
 
     # Apply test scoping and quarantine if phase provided
     if phase:
@@ -298,6 +301,16 @@ def review_phase(phase_id: str):
         print("\nFix errors in .repo/plan.yaml and try again.")
         return 2
 
+    # Apply pending amendments before review
+    from lib.amendments import apply_amendments
+    applied_amendments = apply_amendments(phase_id)
+    
+    if applied_amendments:
+        print(f"✅ Applied {len(applied_amendments)} amendments")
+        for amendment in applied_amendments:
+            print(f"   {amendment['type']}: {amendment['value']}")
+        print()
+
     # Get phase config for test scoping
     phases = plan.get("plan", {}).get("phases", [])
     phase = next((p for p in phases if p["id"] == phase_id), None)
@@ -460,11 +473,56 @@ def main():
 
     elif command == "next":
         return next_phase()
+    
+    elif command == "amend":
+        if len(sys.argv) < 4:
+            print("Usage: phasectl.py amend propose <type> <value> <reason>")
+            return 1
+        return handle_amendment_command(sys.argv[2:])
 
     else:
         print(f"Unknown command: {command}")
         print(__doc__)
         return 1
+
+def load_current_phase():
+    """Load current phase from CURRENT.json"""
+    if not CURRENT_FILE.exists():
+        return None
+    
+    try:
+        return json.loads(CURRENT_FILE.read_text())
+    except (json.JSONDecodeError, KeyError):
+        return None
+
+def handle_amendment_command(args):
+    """Handle amendment commands"""
+    from lib.amendments import propose_amendment
+    
+    if args[0] == "propose":
+        if len(args) < 4:
+            print("Usage: amend propose <type> <value> <reason>")
+            return 1
+        
+        amendment_type = args[1]
+        value = args[2]
+        reason = args[3]
+        
+        # Get current phase
+        current = load_current_phase()
+        if not current:
+            print("❌ No current phase")
+            return 1
+        
+        success = propose_amendment(current["phase_id"], amendment_type, value, reason)
+        
+        if success:
+            print(f"✅ Amendment proposed: {amendment_type} = {value}")
+        else:
+            print(f"❌ Amendment budget exceeded for {amendment_type}")
+            return 1
+    
+    return 0
 
 
 if __name__ == "__main__":
