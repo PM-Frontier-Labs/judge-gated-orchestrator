@@ -94,18 +94,12 @@ plan:
           - ".repo/critiques/**"
           - ".repo/traces/**"
           - ".repo/briefs/CURRENT.json"
-          - "tools/judge.py"
-          - "tools/lib/plan_validator.py"
-          - ".repo/plan.yaml"
-          - ".repo/protocol_manifest.json"
 
       artifacts:
         must_exist:
           - "tools/lib/collective_intelligence.py"
           - "tools/lib/execution_patterns.py"
           - "tests/test_collective_intelligence.py"
-          - "tools/judge.py"
-          - "tools/lib/plan_validator.py"
 
       gates:
         tests:
