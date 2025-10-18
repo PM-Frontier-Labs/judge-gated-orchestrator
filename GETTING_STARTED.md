@@ -255,7 +255,7 @@ ls .repo/critiques/
 cat .repo/briefs/CURRENT.json
 
 # See latest test results
-cat .repo/traces/last_test.txt
+cat .repo/traces/last_tests.txt
 ```
 
 ---
@@ -316,6 +316,62 @@ ls .repo/critiques/
 
 ---
 
+## Collective Intelligence Features
+
+### Amendment System (bounded mutability)
+
+Use amendments to make targeted runtime adjustments without editing governance files:
+
+```bash
+# Propose an amendment for the CURRENT phase
+./tools/phasectl.py amend propose set_test_cmd "python -m pytest -q" "Fix test command"
+
+# Budgets are enforced per phase; proposals beyond budget are rejected
+# Runtime state lives here (AI-writable):
+cat .repo/state/$(jq -r .phase_id < .repo/briefs/CURRENT.json).ctx.json
+
+# Example default budgets:
+# {
+#   "amendments_budget": { "add_scope": 2, "set_test_cmd": 1, "note_baseline_shift": 1 }
+# }
+```
+
+Notes:
+- Budgets are enforced automatically; exceeding them returns an error.
+- Prefer surgical amendments; split larger changes into phases.
+
+### Pattern Learning (auto-proposals)
+
+Successful amendments are learned as patterns and stored as JSON Lines:
+
+```bash
+# List stored patterns (highest confidence first)
+./tools/phasectl.py patterns list
+
+# Storage location (do not hand-edit):
+cat .repo/collective_intelligence/patterns.jsonl
+```
+
+During review, matching patterns auto-propose amendments before tests run.
+
+### Enhanced Briefs (hints + guardrails)
+
+After advancing with `./tools/phasectl.py next`, the brief is displayed with:
+- Hints learned from recent successful phases (micro-retrospectives)
+- Guardrails based on current mode and budgets (EXPLORE vs LOCK)
+
+### Governance ≠ Runtime split
+
+- Governance (human-locked): `.repo/plan.yaml`
+- Runtime state (AI-writable): `.repo/state/Pxx.ctx.json`
+- Context fields include `baseline_sha`, `test_cmd`, `mode`, and amendment usage/budgets
+
+Modes:
+- EXPLORE: You may propose amendments within budget
+- LOCK: Avoid amendments (except essential baseline shifts)
+
+---
+
 ### Workflow 3: High-Stakes with LLM Review
 
 Enable LLM review gate for critical phases:
@@ -341,6 +397,62 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 - Database migrations
 - API contract changes
 - Production deployments
+
+---
+
+## Collective Intelligence Features
+
+### Amendment System (bounded mutability)
+
+Use amendments to make targeted runtime adjustments without editing governance files:
+
+```bash
+# Propose an amendment for the CURRENT phase
+./tools/phasectl.py amend propose set_test_cmd "python -m pytest -q" "Fix test command"
+
+# Budgets are enforced per phase; proposals beyond budget are rejected
+# Runtime state lives here (AI-writable):
+cat .repo/state/$(jq -r .phase_id < .repo/briefs/CURRENT.json).ctx.json
+
+# Example default budgets:
+# {
+#   "amendments_budget": { "add_scope": 2, "set_test_cmd": 1, "note_baseline_shift": 1 }
+# }
+```
+
+Notes:
+- Budgets are enforced automatically; exceeding them returns an error.
+- Prefer surgical amendments; split larger changes into phases.
+
+### Pattern Learning (auto-proposals)
+
+Successful amendments are learned as patterns and stored as JSON Lines:
+
+```bash
+# List stored patterns (highest confidence first)
+./tools/phasectl.py patterns list
+
+# Storage location (do not hand-edit):
+cat .repo/collective_intelligence/patterns.jsonl
+```
+
+During review, matching patterns auto-propose amendments before tests run.
+
+### Enhanced Briefs (hints + guardrails)
+
+After advancing with `./tools/phasectl.py next`, the brief is displayed with:
+- Hints learned from recent successful phases (micro-retrospectives)
+- Guardrails based on current mode and budgets (EXPLORE vs LOCK)
+
+### Governance ≠ Runtime split
+
+- Governance (human-locked): `.repo/plan.yaml`
+- Runtime state (AI-writable): `.repo/state/Pxx.ctx.json`
+- Context fields include `baseline_sha`, `test_cmd`, `mode`, and amendment usage/budgets
+
+Modes:
+- EXPLORE: You may propose amendments within budget
+- LOCK: Avoid amendments (except essential baseline shifts)
 
 ---
 
@@ -384,7 +496,7 @@ Create separate phases for related work.
 **Debug:**
 ```bash
 # Read full test output
-cat .repo/traces/last_test.txt
+cat .repo/traces/last_tests.txt
 
 # Run tests manually
 pytest tests/ -v
@@ -702,13 +814,19 @@ Gives you clean rollback points.
 - `README.md` - Overview and philosophy
 - `LLM_PLANNING.md` - Planning guide (for Claude)
 - `PROTOCOL.md` - Execution manual (for Claude)
+- `MIGRATION_GUIDE.md` - Upgrade from older protocol
+- `EXAMPLES.md` - Practical end-to-end examples
 - `TESTME.md` - Validation guide (12 tests)
 
 **Quick commands:**
 ```bash
-./orient.sh              # Current status
-./tools/phasectl.py -h   # Command help
-cat .repo/plan.yaml      # View roadmap
+./orient.sh                               # Current status
+./tools/phasectl.py -h                    # Command help
+./tools/phasectl.py review <phase-id>     # Submit for review
+./tools/phasectl.py next                  # Advance after approval
+./tools/phasectl.py amend propose <t> <v> <reason>  # Propose amendment
+./tools/phasectl.py patterns list         # View learned patterns
+cat .repo/plan.yaml                       # View roadmap (governance)
 ```
 
 **Issues and feedback:**

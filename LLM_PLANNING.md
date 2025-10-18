@@ -132,6 +132,9 @@ plan:
     allow_in_phases:
       - "P00-protocol-maintenance"
 
+  # Runtime learning (collective intelligence)
+  # No configuration needed here; learning is handled at runtime and stored under .repo/
+
   # Phase definitions
   phases:
     - id: P01-phase-name                   # Must be unique
@@ -755,3 +758,37 @@ Next: Tell me to read PROTOCOL.md and I'll start executing P01 autonomously."
 **END OF PLANNING GUIDE**
 
 **Next step:** After plan created, read **PROTOCOL.md** for execution mode.
+
+---
+
+## Collective Intelligence Planning (for better execution)
+
+### Enhanced Briefs: Add Hints and Guardrails Context
+- Include a short "Hints" section in briefs when known pitfalls exist (e.g., test runner quirks).
+- Add explicit guardrails in briefs: clear YOU MAY/DO NOT TOUCH lists, and guidance on when to split phases.
+
+### Plan for Amendments (bounded mutability)
+- Assume occasional runtime adjustments without editing governance files.
+- Recommend initial budgets per phase (runtime defaults exist, but set expectations in the brief):
+  - `add_scope`: up to 2
+  - `set_test_cmd`: up to 1
+  - `note_baseline_shift`: up to 1
+- Instruct the agent to use `./tools/phasectl.py amend propose ...` rather than editing files directly.
+
+### Outer Loop Considerations
+- After each successful phase, a micro-retrospective is written and used for future hints.
+- Encourage concise notes in briefs about what likely helps, to seed future patterns.
+
+### Pattern Learning Guidance
+- Patterns are auto-learned from successful amendments and stored in `.repo/collective_intelligence/patterns.jsonl`.
+- You don't need to configure this in `plan.yaml`.
+- Power users may review with `./tools/phasectl.py patterns list`.
+
+### Phase Design Patterns (updated)
+- Prefer phases with stable test commands; if unknown, allow one `set_test_cmd` amendment.
+- For modules with sprawling tests, set `tests.test_scope: "scope"` to speed iteration.
+- Use strict `drift.allowed_out_of_scope_changes: 0`, relying on `add_scope` amendments instead of broad includes.
+
+### Amendment System Planning
+- When you anticipate integration edges, note them in the brief and suggest `add_scope` targets.
+- For CI variance, note acceptable `note_baseline_shift` usage.

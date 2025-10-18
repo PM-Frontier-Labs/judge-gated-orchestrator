@@ -54,7 +54,7 @@ cat .repo/critiques/<phase-id>.md
 ./tools/phasectl.py next
 
 # See test results
-cat .repo/traces/last_test.txt
+cat .repo/traces/last_tests.txt
 
 # Check diff before review
 git diff --name-only HEAD
@@ -205,7 +205,7 @@ Options to fix:
 2. Update phase scope in .repo/briefs/P01-scaffold.md
 3. Split into separate phase
 
-- Tests failed with exit code 1. See .repo/traces/last_test.txt
+- Tests failed with exit code 1. See .repo/traces/last_tests.txt
 
 ## Resolution
 
@@ -249,7 +249,7 @@ Machine-readable critique/approval formats for CI/tooling integration.
   "issues": [
     {
       "gate": "tests",
-      "messages": ["Tests failed with exit code 1. See .repo/traces/last_test.txt"]
+      "messages": ["Tests failed with exit code 1. See .repo/traces/last_tests.txt"]
     },
     {
       "gate": "drift",
@@ -272,7 +272,7 @@ Machine-readable critique/approval formats for CI/tooling integration.
 
 ---
 
-### `.repo/traces/last_test.txt`
+### `.repo/traces/last_tests.txt`
 
 Test execution results. **Read this when tests fail.**
 
@@ -323,7 +323,7 @@ gates:
 
 **Fails if:** Exit code != 0
 
-**See:** `.repo/traces/last_test.txt` for details
+**See:** `.repo/traces/last_tests.txt` for details
 
 #### Test Scoping (Phase 2.5)
 
@@ -539,7 +539,7 @@ Use this for files that require separate dedicated phases.
 **What it does:**
 1. Shows diff summary (in-scope vs out-of-scope files)
 2. Runs test command from plan.yaml
-3. Saves results to `.repo/traces/last_test.txt`
+3. Saves results to `.repo/traces/last_tests.txt`
 4. Invokes judge to check all gates
 5. Produces either `.repo/critiques/<phase-id>.md` or `.repo/critiques/<phase-id>.OK`
 
@@ -580,7 +580,7 @@ Use this for files that require separate dedicated phases.
 **Symptom:** Review fails with "Tests failed with exit code 1"
 
 **Recovery:**
-1. Read `.repo/traces/last_test.txt`
+1. Read `.repo/traces/last_tests.txt`
 2. Find failing test in STDOUT/STDERR
 3. Fix the code or test
 4. Re-run `./tools/phasectl.py review <phase-id>`
@@ -775,6 +775,9 @@ The protocol includes powerful collective intelligence capabilities that learn f
 
 # View stored patterns
 ./tools/phasectl.py patterns list
+ 
+# Important: LLMs do not edit files directly.
+# They propose amendments that are filtered by budgets and auto-applied.
 ```
 
 ### Pattern Learning
@@ -789,8 +792,8 @@ The protocol includes powerful collective intelligence capabilities that learn f
 
 ### State Management
 - **Governance ≠ Runtime Split**: `plan.yaml` (human-locked) vs `.repo/state/` (AI-writable)
-- **Context Files**: `Pxx.ctx.json` stores runtime state (baseline_sha, test_cmd, mode)
-- **Mode Management**: EXPLORE → LOCK modes with automatic transitions
+- **Context Files**: `Pxx.ctx.json` store runtime state (baseline_sha, test_cmd, mode, budgets, usage)
+- **Mode Management**: EXPLORE → LOCK transitions govern if amendments are encouraged or closed
 
 ---
 
