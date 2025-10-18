@@ -147,6 +147,72 @@ def check_docs(phase: Dict[str, Any], changed_files: List[str] = None) -> List[s
 
 
 
+def _generate_forbidden_remediation(forbidden_files: List[str], baseline_sha: str, repo_root: Path) -> List[str]:
+    """Generate remediation hints for forbidden file changes."""
+    import subprocess
+    
+    # Get uncommitted changes
+    uncommitted_result = subprocess.run(
+        ["git", "diff", "--name-only", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True
+    )
+    uncommitted_set = set(uncommitted_result.stdout.strip().split("\n")) if uncommitted_result.returncode == 0 else set()
+    
+    uncommitted_forbidden = [f for f in forbidden_files if f in uncommitted_set]
+    committed_forbidden = [f for f in forbidden_files if f not in uncommitted_set]
+    
+    remediation = []
+    if uncommitted_forbidden:
+        remediation.append(f"Fix uncommitted: git restore --worktree --staged -- {' '.join(uncommitted_forbidden)}")
+    if committed_forbidden:
+        if baseline_sha:
+            remediation.append(f"Fix committed: git restore --source={baseline_sha} -- {' '.join(committed_forbidden)}")
+        else:
+            remediation.append(f"Fix committed: git revert <commits> (or restore: git restore --source=<baseline> -- {' '.join(committed_forbidden[:2])})")
+    
+    return remediation
+
+
+def _generate_drift_remediation(out_of_scope: List[str], baseline_sha: str, phase_id: str, repo_root: Path) -> List[str]:
+    """Generate remediation hints for out-of-scope changes."""
+    import subprocess
+    
+    # Get uncommitted changes
+    uncommitted_result = subprocess.run(
+        ["git", "diff", "--name-only", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True
+    )
+    uncommitted_set = set(uncommitted_result.stdout.strip().split("\n")) if uncommitted_result.returncode == 0 else set()
+    
+    # Classify files
+    uncommitted_out = [f for f in out_of_scope if f in uncommitted_set]
+    committed_out = [f for f in out_of_scope if f not in uncommitted_set]
+    
+    remediation = ["Options to fix:"]
+    
+    if uncommitted_out:
+        remediation.append(f"1. Revert uncommitted changes: git restore --worktree --staged -- {' '.join(uncommitted_out[:3])}")
+        if len(uncommitted_out) > 3:
+            remediation.append(f"   (and {len(uncommitted_out) - 3} more)")
+    
+    if committed_out:
+        if baseline_sha:
+            remediation.append(f"2. Restore committed files to baseline: git restore --source={baseline_sha} -- {' '.join(committed_out[:3])}")
+        else:
+            remediation.append("2. Revert committed changes: git revert <commit-range> (or restore specific files)")
+        if len(committed_out) > 3:
+            remediation.append(f"   (and {len(committed_out) - 3} more)")
+    
+    remediation.append(f"3. Update phase scope in .repo/briefs/{phase_id}.md")
+    remediation.append("4. Split into separate phase for out-of-scope work")
+    
+    return remediation
+
+
 def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str = None) -> List[str]:
     """Check for changes outside phase scope (plan drift)."""
     issues = []
@@ -194,28 +260,7 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
         issues.append("Forbidden files changed (these require a separate phase):")
         for f in forbidden_files:
             issues.append(f"  - {f}")
-
-        # Get uncommitted changes to provide correct remediation
-        import subprocess
-        uncommitted_result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True
-        )
-        uncommitted_set = set(uncommitted_result.stdout.strip().split("\n")) if uncommitted_result.returncode == 0 else set()
-
-        uncommitted_forbidden = [f for f in forbidden_files if f in uncommitted_set]
-        committed_forbidden = [f for f in forbidden_files if f not in uncommitted_set]
-
-        if uncommitted_forbidden:
-            issues.append(f"Fix uncommitted: git restore --worktree --staged -- {' '.join(uncommitted_forbidden)}")
-        if committed_forbidden:
-            if baseline_sha:
-                issues.append(f"Fix committed: git restore --source={baseline_sha} -- {' '.join(committed_forbidden)}")
-            else:
-                issues.append(f"Fix committed: git revert <commits> (or restore: git restore --source=<baseline> -- {' '.join(committed_forbidden[:2])})")
-
+        issues.extend(_generate_forbidden_remediation(forbidden_files, baseline_sha, REPO_ROOT))
         issues.append("")
 
     # Check out-of-scope changes
@@ -226,40 +271,7 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
         for f in out_of_scope:
             issues.append(f"  - {f}")
         issues.append("")
-
-        # Determine which files are committed vs uncommitted for better remediation
-        import subprocess
-
-        # Get uncommitted changes
-        uncommitted_result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True
-        )
-        uncommitted_set = set(uncommitted_result.stdout.strip().split("\n")) if uncommitted_result.returncode == 0 else set()
-
-        # Classify out-of-scope files
-        uncommitted_out = [f for f in out_of_scope if f in uncommitted_set]
-        committed_out = [f for f in out_of_scope if f not in uncommitted_set]
-
-        issues.append("Options to fix:")
-
-        if uncommitted_out:
-            issues.append(f"1. Revert uncommitted changes: git restore --worktree --staged -- {' '.join(uncommitted_out[:3])}")
-            if len(uncommitted_out) > 3:
-                issues.append(f"   (and {len(uncommitted_out) - 3} more)")
-
-        if committed_out:
-            if baseline_sha:
-                issues.append(f"2. Restore committed files to baseline: git restore --source={baseline_sha} -- {' '.join(committed_out[:3])}")
-            else:
-                issues.append("2. Revert committed changes: git revert <commit-range> (or restore specific files)")
-            if len(committed_out) > 3:
-                issues.append(f"   (and {len(committed_out) - 3} more)")
-
-        issues.append(f"3. Update phase scope in .repo/briefs/{phase['id']}.md")
-        issues.append("4. Split into separate phase for out-of-scope work")
+        issues.extend(_generate_drift_remediation(out_of_scope, baseline_sha, phase['id'], REPO_ROOT))
 
     return issues
 

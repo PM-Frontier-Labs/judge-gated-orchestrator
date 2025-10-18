@@ -49,6 +49,65 @@ def load_plan():
         sys.exit(1)
 
 
+def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
+    """Resolve test scope patterns to specific test paths."""
+    # Use pathspec to find matching test files/directories
+    try:
+        import pathspec
+        
+        # Create pathspec for include patterns
+        include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
+        exclude_spec = None
+        if exclude_patterns:
+            exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
+        
+        # Find all test files in tests/ directory
+        test_paths = set()
+        tests_dir = REPO_ROOT / "tests"
+        if tests_dir.exists():
+            for test_file in tests_dir.rglob("test_*.py"):
+                rel_path = str(test_file.relative_to(REPO_ROOT))
+                # Check if matches include patterns
+                if include_spec.match_file(rel_path):
+                    # Check if not excluded
+                    if not exclude_spec or not exclude_spec.match_file(rel_path):
+                        # Add parent directory for better pytest organization
+                        test_dir = str(test_file.parent.relative_to(REPO_ROOT))
+                        if test_dir.startswith("tests"):
+                            test_paths.add(test_dir)
+        
+        if test_paths:
+            print(f"  📍 Test scope: Running tests in {len(test_paths)} directories")
+            # Replace default test path with scoped paths
+            new_cmd = [test_cmd[0]]  # Keep pytest
+            new_cmd.extend(sorted(test_paths))
+            # Keep flags (e.g., -v)
+            new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+            return new_cmd
+        else:
+            print("  ⚠️  No test files match scope patterns - running all tests")
+            return test_cmd
+    
+    except ImportError:
+        # Fallback to simple string matching if pathspec not available
+        print("  ⚠️  pathspec not available - using simple pattern matching")
+        test_paths = []
+        for pattern in scope_patterns:
+            if pattern.startswith("tests/"):
+                base_path = pattern.split("*")[0].rstrip("/")
+                if base_path not in test_paths:
+                    test_paths.append(base_path)
+        
+        if test_paths:
+            print(f"  📍 Test scope: Running tests in {len(test_paths)} directories (fallback mode)")
+            new_cmd = [test_cmd[0]]
+            new_cmd.extend(test_paths)
+            new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+            return new_cmd
+        
+        return test_cmd
+
+
 def run_tests(plan, phase=None):
     """Run tests and save results to trace file."""
     print("🧪 Running tests...")
@@ -73,62 +132,9 @@ def run_tests(plan, phase=None):
         test_scope = test_gate.get("test_scope", "all")
 
         if test_scope == "scope":
-            # Filter test paths to match phase scope using pathspec
             scope_patterns = phase.get("scope", {}).get("include", [])
             exclude_patterns = phase.get("scope", {}).get("exclude", [])
-
-            # Use pathspec to find matching test files/directories
-            try:
-                import pathspec
-
-                # Create pathspec for include patterns
-                include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
-                exclude_spec = None
-                if exclude_patterns:
-                    exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
-
-                # Find all test files in tests/ directory
-                test_paths = set()
-                tests_dir = REPO_ROOT / "tests"
-                if tests_dir.exists():
-                    for test_file in tests_dir.rglob("test_*.py"):
-                        rel_path = str(test_file.relative_to(REPO_ROOT))
-                        # Check if matches include patterns
-                        if include_spec.match_file(rel_path):
-                            # Check if not excluded
-                            if not exclude_spec or not exclude_spec.match_file(rel_path):
-                                # Add parent directory for better pytest organization
-                                test_dir = str(test_file.parent.relative_to(REPO_ROOT))
-                                if test_dir.startswith("tests"):
-                                    test_paths.add(test_dir)
-
-                if test_paths:
-                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories")
-                    # Replace default test path with scoped paths
-                    new_cmd = [test_cmd[0]]  # Keep pytest
-                    new_cmd.extend(sorted(test_paths))
-                    # Keep flags (e.g., -v)
-                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-                    test_cmd = new_cmd
-                else:
-                    print("  ⚠️  No test files match scope patterns - running all tests")
-
-            except ImportError:
-                # Fallback to simple string matching if pathspec not available
-                print("  ⚠️  pathspec not available - using simple pattern matching")
-                test_paths = []
-                for pattern in scope_patterns:
-                    if pattern.startswith("tests/"):
-                        base_path = pattern.split("*")[0].rstrip("/")
-                        if base_path not in test_paths:
-                            test_paths.append(base_path)
-
-                if test_paths:
-                    print(f"  📍 Test scope: Running tests in {len(test_paths)} directories (fallback mode)")
-                    new_cmd = [test_cmd[0]]
-                    new_cmd.extend(test_paths)
-                    new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-                    test_cmd = new_cmd
+            test_cmd = _resolve_test_scope(test_cmd, scope_patterns, exclude_patterns)
 
         # Quarantine list: tests expected to fail
         quarantine = test_gate.get("quarantine", [])
@@ -560,17 +566,13 @@ def next_phase():
     print(f"📄 Brief: {next_brief.relative_to(REPO_ROOT)}")
     
     # Show enhanced brief with hints and guardrails
-    enhanced_brief = enhance_brief(next_id, next_brief.read_text())
-    if enhanced_brief != next_brief.read_text():
-        print("\n🧠 Enhanced Brief:")
-        print("=" * 50)
-        print(enhanced_brief)
-        print("=" * 50)
+    _display_enhanced_brief(next_id, next_brief.read_text())
     
     return 0
 
-def enhance_brief(phase_id: str, base_brief: str) -> str:
-    """Enhance brief with hints and guardrails"""
+
+def _display_enhanced_brief(phase_id: str, base_brief: str) -> None:
+    """Display brief enhanced with hints and guardrails."""
     from lib.traces import get_phase_hints
     from lib.state import load_phase_context
     
@@ -579,27 +581,37 @@ def enhance_brief(phase_id: str, base_brief: str) -> str:
     
     # Get current state for guardrails
     context = load_phase_context(phase_id)
-    guardrails = generate_guardrails(phase_id, context)
+    guardrails = _generate_guardrails(phase_id, context)
     
-    # Enhance the brief
-    enhanced_brief = base_brief
+    # Only display if we have enhancements
+    if not hints and not guardrails:
+        return
+    
+    # Build enhanced brief
+    enhanced_sections = []
     
     if hints:
-        hints_section = "\n## 🧠 Collective Intelligence Hints\n\n"
+        hints_section = "## 🧠 Collective Intelligence Hints\n\n"
         for hint in hints:
             hints_section += f"- {hint}\n"
-        enhanced_brief += hints_section
+        enhanced_sections.append(hints_section)
     
     if guardrails:
-        guardrails_section = "\n## 🛡️ Execution Guardrails\n\n"
+        guardrails_section = "## 🛡️ Execution Guardrails\n\n"
         for guardrail in guardrails:
             guardrails_section += f"- {guardrail}\n"
-        enhanced_brief += guardrails_section
+        enhanced_sections.append(guardrails_section)
     
-    return enhanced_brief
+    # Display enhanced content
+    print("\n🧠 Enhanced Brief:")
+    print("=" * 50)
+    print(base_brief)
+    print("\n".join(enhanced_sections))
+    print("=" * 50)
 
-def generate_guardrails(phase_id: str, context: Dict[str, Any]) -> List[str]:
-    """Generate guardrails based on current state"""
+
+def _generate_guardrails(phase_id: str, context: Dict[str, Any]) -> List[str]:
+    """Generate guardrails based on current state."""
     guardrails = []
     
     mode = context.get("mode", "EXPLORE")
