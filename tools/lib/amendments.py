@@ -26,7 +26,7 @@ def propose_amendment(phase_id: str, amendment_type: str, value: Any, reason: st
     pending_dir = Path(repo_root) / ".repo" / "amendments" / "pending"
     pending_dir.mkdir(parents=True, exist_ok=True)
     
-    amendment_file = pending_dir / f"{amendment_type}_{len(list(pending_dir.glob('*')))}.yaml"
+    amendment_file = pending_dir / f"{amendment_type}_{phase_id}_{len(list(pending_dir.glob('*')))}.yaml"
     with open(amendment_file, 'w') as f:
         yaml.dump(amendment, f)
     
@@ -39,7 +39,7 @@ def apply_amendments(phase_id: str, repo_root: str = ".") -> List[Dict[str, Any]
     applied_dir.mkdir(parents=True, exist_ok=True)
     
     applied = []
-    pending_files = list(pending_dir.glob(f"*_{phase_id}.yaml"))
+    pending_files = list(pending_dir.glob(f"*_{phase_id}_*.yaml"))
     
     for file_path in pending_files:
         with open(file_path, 'r') as f:
