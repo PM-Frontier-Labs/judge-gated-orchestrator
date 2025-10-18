@@ -2,7 +2,7 @@ plan:
   id: PROTOCOL-EVOLUTION
   summary: "Evolve the Judge-Gated Protocol with collective intelligence and enhanced capabilities"
   base_branch: "main"
-  test_command: "python3 -m pytest"
+  test_command: "python3 -m pytest tests/test_collective_intelligence.py -v"
   
   llm_review_config:
     severity_threshold: "major"
