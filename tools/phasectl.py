@@ -370,6 +370,9 @@ def review_phase(phase_id: str):
         # Learn from successful review
         _learn_from_review(phase_id, applied_amendments)
         
+        # Write micro-retrospective
+        _write_micro_retro(phase_id, applied_amendments)
+        
         return 0
     elif critique_file.exists():
         print(f"❌ Phase {phase_id} needs revision:")
@@ -412,6 +415,43 @@ def _learn_from_review(phase_id: str, applied_amendments: List[Dict[str, Any]]) 
                 "evidence": [test_output]
             }
             store_pattern(pattern)
+
+def _write_micro_retro(phase_id: str, applied_amendments: List[Dict[str, Any]]) -> None:
+    """Write micro-retrospective for successful phase"""
+    from lib.traces import write_micro_retro
+    
+    # Get execution data
+    traces_dir = REPO_ROOT / ".repo" / "traces"
+    test_trace_file = traces_dir / "last_tests.txt"
+    
+    test_output = ""
+    if test_trace_file.exists():
+        test_output = test_trace_file.read_text()
+    
+    # Determine what helped
+    what_helped = []
+    if applied_amendments:
+        for amendment in applied_amendments:
+            what_helped.append(f"Amendment {amendment['type']}: {amendment['value']}")
+    
+    # Determine root cause
+    root_cause = "unknown"
+    if "usage:" in test_output.lower():
+        root_cause = "test command issue"
+    elif "error" in test_output.lower():
+        root_cause = "test execution error"
+    
+    execution_data = {
+        "retries": 0,  # Could be tracked in future
+        "amendments": applied_amendments,
+        "llm_score": 1.0,  # Successful phase
+        "root_cause": root_cause,
+        "what_helped": what_helped,
+        "success": True,
+        "execution_time": "unknown"
+    }
+    
+    write_micro_retro(phase_id, execution_data)
 
 
 def next_phase():
@@ -518,7 +558,70 @@ def next_phase():
 
     print(f"➡️  Advanced to phase {next_id}")
     print(f"📄 Brief: {next_brief.relative_to(REPO_ROOT)}")
+    
+    # Show enhanced brief with hints and guardrails
+    enhanced_brief = enhance_brief(next_id, next_brief.read_text())
+    if enhanced_brief != next_brief.read_text():
+        print("\n🧠 Enhanced Brief:")
+        print("=" * 50)
+        print(enhanced_brief)
+        print("=" * 50)
+    
     return 0
+
+def enhance_brief(phase_id: str, base_brief: str) -> str:
+    """Enhance brief with hints and guardrails"""
+    from lib.traces import get_phase_hints
+    from lib.state import load_phase_context
+    
+    # Get hints from recent executions
+    hints = get_phase_hints(phase_id, lookback_count=3)
+    
+    # Get current state for guardrails
+    context = load_phase_context(phase_id)
+    guardrails = generate_guardrails(phase_id, context)
+    
+    # Enhance the brief
+    enhanced_brief = base_brief
+    
+    if hints:
+        hints_section = "\n## 🧠 Collective Intelligence Hints\n\n"
+        for hint in hints:
+            hints_section += f"- {hint}\n"
+        enhanced_brief += hints_section
+    
+    if guardrails:
+        guardrails_section = "\n## 🛡️ Execution Guardrails\n\n"
+        for guardrail in guardrails:
+            guardrails_section += f"- {guardrail}\n"
+        enhanced_brief += guardrails_section
+    
+    return enhanced_brief
+
+def generate_guardrails(phase_id: str, context: Dict[str, Any]) -> List[str]:
+    """Generate guardrails based on current state"""
+    guardrails = []
+    
+    mode = context.get("mode", "EXPLORE")
+    amendments_used = context.get("amendments_used", {})
+    amendments_budget = context.get("amendments_budget", {})
+    
+    if mode == "EXPLORE":
+        guardrails.append("EXPLORE mode: You may propose amendments within budget")
+        
+        for amendment_type, budget in amendments_budget.items():
+            used = amendments_used.get(amendment_type, 0)
+            remaining = budget - used
+            if remaining <= 1:
+                guardrails.append(f"⚠️ {amendment_type} budget nearly exhausted ({remaining} remaining)")
+    
+    elif mode == "LOCK":
+        guardrails.append("LOCK mode: Amendments closed (except baseline shifts)")
+    
+    guardrails.append("Never modify .repo/plan.yaml directly")
+    guardrails.append("Always check scope before making changes")
+    
+    return guardrails
 
 
 def main():

@@ -139,3 +139,58 @@ def _pattern_matches(pattern: Dict[str, Any], context: Dict[str, Any]) -> bool:
                 return True
     
     return False
+
+
+# Outer Loop Functions
+
+def write_micro_retro(phase_id: str, execution_data: Dict[str, Any], repo_root: str = ".") -> str:
+    """Write a micro-retrospective for a phase"""
+    traces_dir = Path(repo_root) / ".repo" / "traces"
+    traces_dir.mkdir(parents=True, exist_ok=True)
+    
+    retro_data = {
+        "phase": phase_id,
+        "timestamp": datetime.now().isoformat(),
+        "retries": execution_data.get("retries", 0),
+        "amendments": execution_data.get("amendments", []),
+        "llm_score": execution_data.get("llm_score", 0.0),
+        "root_cause": execution_data.get("root_cause", "unknown"),
+        "what_helped": execution_data.get("what_helped", []),
+        "success": execution_data.get("success", False),
+        "execution_time": execution_data.get("execution_time", "unknown")
+    }
+    
+    retro_file = traces_dir / f"{phase_id}.outer.json"
+    with open(retro_file, 'w') as f:
+        json.dump(retro_data, f, indent=2)
+    
+    return str(retro_file)
+
+def read_micro_retro(phase_id: str, repo_root: str = ".") -> Optional[Dict[str, Any]]:
+    """Read a micro-retrospective for a phase"""
+    retro_file = Path(repo_root) / ".repo" / "traces" / f"{phase_id}.outer.json"
+    
+    if not retro_file.exists():
+        return None
+    
+    with open(retro_file, 'r') as f:
+        return json.load(f)
+
+def get_phase_hints(phase_id: str, lookback_count: int = 3, repo_root: str = ".") -> List[str]:
+    """Get hints from recent phase executions"""
+    traces_dir = Path(repo_root) / ".repo" / "traces"
+    
+    if not traces_dir.exists():
+        return []
+    
+    hints = []
+    retro_files = sorted(traces_dir.glob("*.outer.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+    
+    for retro_file in retro_files[:lookback_count]:
+        with open(retro_file, 'r') as f:
+            retro = json.load(f)
+        
+        if retro.get("success") and retro.get("what_helped"):
+            hints.extend(retro["what_helped"])
+    
+    return hints[:5]  # Limit to 5 hints
