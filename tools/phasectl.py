@@ -248,6 +248,53 @@ def run_tests(plan, phase=None):
     return exit_code
 
 
+def _resolve_lint_scope(lint_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
+    """Resolve lint scope patterns to specific file paths."""
+    try:
+        import pathspec
+        
+        # Create pathspec for include patterns
+        include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
+        exclude_spec = None
+        if exclude_patterns:
+            exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
+        
+        # Find all Python files matching scope patterns
+        lint_paths = set()
+        for pattern in scope_patterns:
+            # Convert glob pattern to actual file paths
+            for file_path in REPO_ROOT.rglob("*"):
+                if file_path.is_file() and file_path.suffix == '.py':
+                    rel_path = str(file_path.relative_to(REPO_ROOT))
+                    if include_spec.match_file(rel_path):
+                        if not exclude_spec or not exclude_spec.match_file(rel_path):
+                            lint_paths.add(rel_path)
+        
+        if lint_paths:
+            print(f"  📍 Lint scope: Running on {len(lint_paths)} specific files")
+            
+            # Handle poetry run ruff commands
+            if len(lint_cmd) >= 3 and lint_cmd[0] == "poetry" and lint_cmd[1] == "run" and lint_cmd[2] == "ruff":
+                new_cmd = lint_cmd[:3]  # Keep "poetry run ruff"
+                new_cmd.extend(sorted(lint_paths))
+                new_cmd.extend([arg for arg in lint_cmd[3:] if arg.startswith("-")])
+            else:
+                # Original logic for direct ruff commands
+                new_cmd = [lint_cmd[0]]  # Keep ruff
+                new_cmd.extend(sorted(lint_paths))
+                new_cmd.extend([arg for arg in lint_cmd[1:] if arg.startswith("-")])
+            
+            return new_cmd
+        else:
+            print("  ⚠️  No files match scope patterns - running on all files")
+            return lint_cmd
+    
+    except ImportError:
+        # Fallback to simple pattern matching if pathspec not available
+        print("  ⚠️  pathspec not available - using simple pattern matching")
+        return lint_cmd
+
+
 def run_lint(plan, phase_id):
     """Run linter and save results to trace file."""
     # Check if lint gate is enabled for this phase
@@ -271,6 +318,15 @@ def run_lint(plan, phase_id):
         lint_cmd = shlex.split(lint_config.get("command", "ruff check ."))
     else:
         lint_cmd = ["ruff", "check", "."]
+
+    # Apply lint scoping if phase provided
+    if phase:
+        lint_scope = lint_gate.get("lint_scope", "all")
+        
+        if lint_scope == "scope":
+            scope_patterns = phase.get("scope", {}).get("include", [])
+            exclude_patterns = phase.get("scope", {}).get("exclude", [])
+            lint_cmd = _resolve_lint_scope(lint_cmd, scope_patterns, exclude_patterns)
 
     # Run command and save trace
     exit_code = run_command_with_trace("lint", lint_cmd, REPO_ROOT, TRACES_DIR)
