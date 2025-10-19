@@ -17,20 +17,20 @@ def file_lock(lock_file: Path, timeout: int = 30):
         TimeoutError: If lock cannot be acquired within timeout
     """
     import sys
-
+    
     # Create lock file directory if needed
     lock_file.parent.mkdir(parents=True, exist_ok=True)
-
+    
     # Try fcntl first (Unix/Linux/Mac)
     try:
         import fcntl
         lock_fd = None
         lock_acquired = False
-
+        
         try:
             # Open/create lock file
             lock_fd = open(lock_file, 'w')
-
+            
             # Try to acquire lock with timeout
             start_time = time.time()
             while True:
@@ -43,13 +43,13 @@ def file_lock(lock_file: Path, timeout: int = 30):
                     if time.time() - start_time > timeout:
                         raise TimeoutError(f"Could not acquire lock on {lock_file} within {timeout}s")
                     time.sleep(0.1)
-
-            # Write PID to lock file for debugging
+            
+            # Write timestamp for debugging
             lock_fd.write(f"{sys.platform}:{time.time()}\n")
             lock_fd.flush()
-
+            
             yield
-
+        
         finally:
             if lock_acquired and lock_fd:
                 try:
@@ -67,12 +67,12 @@ def file_lock(lock_file: Path, timeout: int = 30):
                     lock_file.unlink()
             except Exception:
                 pass
-
+    
     except ImportError:
-        # fcntl not available (Windows) - fall back to file-based locking
+        # fcntl not available (Windows) - fall back to exclusive file creation
         lock_acquired = False
         start_time = time.time()
-
+        
         try:
             while True:
                 try:
@@ -86,20 +86,10 @@ def file_lock(lock_file: Path, timeout: int = 30):
                     # Lock held by another process
                     if time.time() - start_time > timeout:
                         raise TimeoutError(f"Could not acquire lock on {lock_file} within {timeout}s")
-
-                    # Check if lock file is stale (>60s old)
-                    try:
-                        age = time.time() - lock_file.stat().st_mtime
-                        if age > 60:
-                            # Stale lock, remove it
-                            lock_file.unlink()
-                    except Exception:
-                        pass
-
                     time.sleep(0.1)
-
+            
             yield
-
+        
         finally:
             if lock_acquired:
                 try:

@@ -32,6 +32,10 @@ Any tool that follows these conventions can participate. This repo includes a re
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
 ✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
+✅ **Collective Intelligence** - Learn from execution patterns and provide intelligent guidance
+✅ **Amendment System** - Bounded mutability for runtime adjustments
+✅ **Enhanced Briefs** - Hints and guardrails for intelligent execution
+✅ **Outer Loop Learning** - Micro-retrospectives and continuous improvement
 
 ## When to Use
 
@@ -58,6 +62,9 @@ cd judge-gated-orchestrator
 # Install
 pip install -r requirements.txt
 
+# Optional: Install LLM features for enhanced code review
+pip install -r requirements-llm.txt
+
 # See status
 ./orient.sh
 
@@ -65,6 +72,8 @@ pip install -r requirements.txt
 ./tools/phasectl.py review P02-impl-feature
 # → Shows diff summary, runs tests, invokes judge, shows result
 ```
+
+**Note:** `tools/phasectl.py` is the only supported CLI. Other tools in `tools/` are internal implementation details.
 
 **What you'll see:** System catches out-of-scope changes, enforces gates, provides clear feedback.
 
@@ -100,6 +109,38 @@ pip install -r requirements.txt
 - `quarantine: [...]` - Skip specific tests with documented reasons (flaky APIs, legacy tests)
 
 Gates are configurable per phase. Enforce what matters for your project.
+
+## Collective Intelligence Features
+
+The protocol includes powerful collective intelligence capabilities that learn from execution patterns:
+
+### Amendment System
+- **Bounded Mutability**: Propose runtime adjustments within budget limits
+- **Auto-Application**: Amendments applied automatically during review
+- **Budget Enforcement**: Hard limits prevent amendment creep
+
+```bash
+# Propose amendments
+./tools/phasectl.py amend propose set_test_cmd "python -m pytest -q" "Fix test command"
+
+# View stored patterns
+./tools/phasectl.py patterns list
+```
+
+### Pattern Learning
+- **JSONL Storage**: Patterns stored in `.repo/collective_intelligence/patterns.jsonl`
+- **Auto-Proposal**: Patterns automatically propose amendments before review
+- **Learning**: System learns from successful amendments and stores patterns
+
+### Enhanced Briefs
+- **Hints**: Briefs enhanced with hints from recent successful executions
+- **Guardrails**: Execution guardrails based on current state and mode
+- **Outer Loop**: Micro-retrospectives after each phase for continuous learning
+
+### State Management
+- **Governance ≠ Runtime Split**: `plan.yaml` (human-locked) vs `.repo/state/` (AI-writable)
+- **Context Files**: `Pxx.ctx.json` stores runtime state (baseline_sha, test_cmd, mode)
+- **Mode Management**: EXPLORE → LOCK modes with automatic transitions
 
 ## Core Workflow
 

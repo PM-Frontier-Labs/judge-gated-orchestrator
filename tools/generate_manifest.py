@@ -16,6 +16,8 @@ PROTOCOL_FILES = [
     "tools/lib/scope.py",
     "tools/lib/traces.py",
     "tools/lib/protocol_guard.py",
+    "tools/lib/plan_validator.py",
+    "tools/lib/file_lock.py",
 ]
 
 

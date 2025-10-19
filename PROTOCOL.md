@@ -12,12 +12,16 @@ This document is for execution. For planning, collaborate with a human to draft 
 
 ```
 1. Orient:     ./orient.sh
-2. Read brief: cat .repo/briefs/<phase-id>.md
+2. Read brief: cat .repo/briefs/<phase-id>.md (enhanced with hints and guardrails)
 3. Implement:  Make changes within scope
 4. Review:     ./tools/phasectl.py review <phase-id>
+   ├─> Auto-applies pending amendments
+   ├─> Auto-proposes amendments from patterns
+   ├─> Learns from successful amendments
+   └─> Writes micro-retrospectives
 5. Check:      If .repo/critiques/<phase-id>.OK exists → approved
                If .repo/critiques/<phase-id>.md exists → fix and re-review
-6. Advance:    ./tools/phasectl.py next
+6. Advance:    ./tools/phasectl.py next (shows enhanced brief)
 7. Repeat from step 1
 ```
 
@@ -50,11 +54,13 @@ cat .repo/critiques/<phase-id>.md
 ./tools/phasectl.py next
 
 # See test results
-cat .repo/traces/last_test.txt
+cat .repo/traces/last_tests.txt
 
 # Check diff before review
 git diff --name-only HEAD
 ```
+
+**Note:** `tools/phasectl.py` is the only supported CLI. `tools/judge.py` and other tools are internal implementation details.
 
 ---
 
@@ -201,7 +207,7 @@ Options to fix:
 2. Update phase scope in .repo/briefs/P01-scaffold.md
 3. Split into separate phase
 
-- Tests failed with exit code 1. See .repo/traces/last_test.txt
+- Tests failed with exit code 1. See .repo/traces/last_tests.txt
 
 ## Resolution
 
@@ -245,7 +251,7 @@ Machine-readable critique/approval formats for CI/tooling integration.
   "issues": [
     {
       "gate": "tests",
-      "messages": ["Tests failed with exit code 1. See .repo/traces/last_test.txt"]
+      "messages": ["Tests failed with exit code 1. See .repo/traces/last_tests.txt"]
     },
     {
       "gate": "drift",
@@ -268,7 +274,7 @@ Machine-readable critique/approval formats for CI/tooling integration.
 
 ---
 
-### `.repo/traces/last_test.txt`
+### `.repo/traces/last_tests.txt`
 
 Test execution results. **Read this when tests fail.**
 
@@ -319,7 +325,7 @@ gates:
 
 **Fails if:** Exit code != 0
 
-**See:** `.repo/traces/last_test.txt` for details
+**See:** `.repo/traces/last_tests.txt` for details
 
 #### Test Scoping (Phase 2.5)
 
@@ -535,7 +541,7 @@ Use this for files that require separate dedicated phases.
 **What it does:**
 1. Shows diff summary (in-scope vs out-of-scope files)
 2. Runs test command from plan.yaml
-3. Saves results to `.repo/traces/last_test.txt`
+3. Saves results to `.repo/traces/last_tests.txt`
 4. Invokes judge to check all gates
 5. Produces either `.repo/critiques/<phase-id>.md` or `.repo/critiques/<phase-id>.OK`
 
@@ -576,7 +582,7 @@ Use this for files that require separate dedicated phases.
 **Symptom:** Review fails with "Tests failed with exit code 1"
 
 **Recovery:**
-1. Read `.repo/traces/last_test.txt`
+1. Read `.repo/traces/last_tests.txt`
 2. Find failing test in STDOUT/STDERR
 3. Fix the code or test
 4. Re-run `./tools/phasectl.py review <phase-id>`
@@ -753,6 +759,43 @@ The protocol protects critical files from modification:
 3. Make fixes in that dedicated phase
 4. Run `./tools/generate_manifest.py`
 5. Complete maintenance phase
+
+---
+
+## Collective Intelligence System
+
+The protocol includes powerful collective intelligence capabilities that learn from execution patterns:
+
+### Amendment System
+- **Bounded Mutability**: Propose runtime adjustments within budget limits
+- **Auto-Application**: Amendments applied automatically during review
+- **Budget Enforcement**: Hard limits prevent amendment creep
+
+```bash
+# Propose amendments
+./tools/phasectl.py amend propose set_test_cmd "python -m pytest -q" "Fix test command"
+
+# View stored patterns
+./tools/phasectl.py patterns list
+ 
+# Important: LLMs do not edit files directly.
+# They propose amendments that are filtered by budgets and auto-applied.
+```
+
+### Pattern Learning
+- **JSONL Storage**: Patterns stored in `.repo/collective_intelligence/patterns.jsonl`
+- **Auto-Proposal**: Patterns automatically propose amendments before review
+- **Learning**: System learns from successful amendments and stores patterns
+
+### Enhanced Briefs
+- **Hints**: Briefs enhanced with hints from recent successful executions
+- **Guardrails**: Execution guardrails based on current state and mode
+- **Outer Loop**: Micro-retrospectives after each phase for continuous learning
+
+### State Management
+- **Governance ≠ Runtime Split**: `plan.yaml` (human-locked) vs `.repo/state/` (AI-writable)
+- **Context Files**: `Pxx.ctx.json` store runtime state (baseline_sha, test_cmd, mode, budgets, usage)
+- **Mode Management**: EXPLORE → LOCK transitions govern if amendments are encouraged or closed
 
 ---
 
