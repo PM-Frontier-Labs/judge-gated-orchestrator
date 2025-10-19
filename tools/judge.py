@@ -371,14 +371,146 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
     return issues
 
 
+def _analyze_failure_context(issues: List[str], gate_results: Dict[str, List[str]]) -> Dict[str, Any]:
+    """Analyze what mechanisms are relevant for this failure."""
+    context = {
+        "has_drift": any("out-of-scope" in issue.lower() for issue in issues),
+        "has_test_failures": any("test" in issue.lower() for issue in issues),
+        "has_plan_corruption": any("plan changed mid-phase" in issue.lower() for issue in issues),
+        "has_lint_failures": any("lint" in issue.lower() for issue in issues),
+        "has_forbidden_files": any("forbidden" in issue.lower() for issue in issues),
+    }
+    return context
+
+
+def _generate_mechanism_resolution(context: Dict[str, Any], phase_id: str) -> str:
+    """Generate mechanism-aware resolution based on failure context."""
+    
+    if context["has_drift"]:
+        return f"""### 🚨 REQUIRED: Use Amendment System
+
+**DO NOT manually edit files. Use the amendment system:**
+
+```bash
+# Check available patterns (may suggest exact solution)
+./tools/phasectl.py patterns list
+
+# Propose scope expansion for legitimate changes
+./tools/phasectl.py amend propose add_scope "src/file.py" "Adding new feature"
+
+# Re-run review
+./tools/phasectl.py review {phase_id}
+```
+
+**Available budgets:** add_scope(2), set_test_cmd(1), note_baseline_shift(1)
+
+**💡 What happened:**
+- Protocol auto-approved legitimate changes (protocol tools, tests, docs, Python files in src/)
+- Blocked rogue changes (new files, frontend, scripts)
+- Use amendments for legitimate scope expansion"""
+
+    elif context["has_plan_corruption"]:
+        return f"""### 🚨 CRITICAL: Plan State Corruption
+
+**REQUIRED: Use recovery commands (DO NOT manually edit state files):**
+
+```bash
+# Detect and recover from corruption
+./tools/phasectl.py recover
+
+# Reset phase state to match current plan
+./tools/phasectl.py reset {phase_id}
+
+# Re-run review
+./tools/phasectl.py review {phase_id}
+```
+
+**💡 What happened:**
+- Plan file was modified externally (git checkout, etc.)
+- Protocol state is inconsistent with current plan
+- Recovery commands will fix the state mismatch"""
+
+    elif context["has_test_failures"]:
+        return f"""### 🚨 REQUIRED: Fix Test Failures
+
+```bash
+# Check test results
+cat .repo/traces/last_tests.txt
+
+# Fix failing tests and re-run
+./tools/phasectl.py review {phase_id}
+```
+
+### 💡 OPTIONAL: Performance Optimization
+
+```bash
+# Check patterns for test fixes
+./tools/phasectl.py patterns list
+
+# Consider test scoping (if tests are slow)
+# Add to plan.yaml:
+gates:
+  tests:
+    test_scope: "scope"  # Run only relevant tests
+    quarantine:          # Skip flaky tests
+      - path: "tests/flaky_test.py"
+        reason: "External API timeout"
+```"""
+
+    elif context["has_lint_failures"]:
+        return f"""### 🚨 REQUIRED: Fix Linting Issues
+
+```bash
+# Check lint results
+cat .repo/traces/last_lint.txt
+
+# Fix linting issues and re-run
+./tools/phasectl.py review {phase_id}
+```
+
+### 💡 OPTIONAL: Check Patterns
+
+```bash
+# Check patterns for lint fixes
+./tools/phasectl.py patterns list
+```"""
+
+    elif context["has_forbidden_files"]:
+        return f"""### 🚨 CRITICAL: Forbidden Files Changed
+
+**REQUIRED: Revert forbidden files (these require a separate phase):**
+
+```bash
+# Revert forbidden files
+git restore requirements.txt pyproject.toml
+
+# Re-run review
+./tools/phasectl.py review {phase_id}
+```
+
+**💡 What happened:**
+- Forbidden files (requirements.txt, pyproject.toml) were modified
+- These require a dedicated phase for dependency changes
+- Never change forbidden files without creating a separate phase"""
+
+    else:
+        return "Please address the issues above and re-run the review."
+
+
 def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, List[str]] = None):
-    """Write critique files atomically (both .md and .json)."""
+    """Write critique files with mechanism-aware resolution."""
     import tempfile
     import os
     import json
 
     # Ensure critiques directory exists
     CRITIQUES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Analyze failure context
+    context = _analyze_failure_context(issues, gate_results)
+    
+    # Generate mechanism-aware resolution
+    resolution = _generate_mechanism_resolution(context, phase_id)
 
     # Markdown critique
     critique_content = f"""# Critique: {phase_id}
@@ -388,6 +520,8 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
 {chr(10).join(f"- {issue}" for issue in issues)}
 
 ## Resolution
+
+{resolution}
 
 Please address the issues above and re-run:
 ```
@@ -426,7 +560,8 @@ Please address the issues above and re-run:
             }
             for gate, msgs in gate_results.items() if msgs
         ],
-        "total_issue_count": len(issues)
+        "total_issue_count": len(issues),
+        "context": context  # Include context for debugging
     }
 
     json_file = CRITIQUES_DIR / f"{phase_id}.json"
