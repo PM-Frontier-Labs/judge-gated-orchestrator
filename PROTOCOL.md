@@ -4,7 +4,7 @@
 
 **Purpose:** Precise instructions for working within quality-gated phases
 
-**If you're helping plan a roadmap:** Read `LLM_PLANNING.md` instead. This document is for execution only.
+This document is for execution. For planning, collaborate with a human to draft `.repo/plan.yaml` following the examples in `GETTING_STARTED.md`.
 
 ---
 

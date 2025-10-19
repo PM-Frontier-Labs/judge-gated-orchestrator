@@ -184,19 +184,11 @@ Start here if you're setting up or using the protocol:
    - Executing phases with Claude
    - Troubleshooting and tips
 
-### For AI Assistants 🤖
-
-**Planning mode** (collaborative roadmap creation):
-- **LLM_PLANNING.md** - Complete guide for helping humans design phases, scope, and gates
-- Use this when: Human says "help me create a plan.yaml" or "let's break this project into phases"
+### For Automation 🤖
 
 **Execution mode** (autonomous phase implementation):
 - **PROTOCOL.md** - Execution manual with file specs, commands, gates, and error handling
 - Use this when: Human says "execute the current phase" or "read PROTOCOL.md and start working"
-
-### For Validation 🧪
-
-- **TESTME.md** - 12 tests to validate protocol implementation (25-30 minutes)
 
 ### Navigation
 
@@ -204,17 +196,13 @@ Start here if you're setting up or using the protocol:
 |----------|------|-----------|
 | Human setting up | Understand what this is | README.md |
 | Human using it | Learn how to use | GETTING_STARTED.md |
-| AI planning roadmap | Help create plan.yaml | LLM_PLANNING.md |
 | AI executing phases | Implement within gates | PROTOCOL.md |
-| Anyone validating | Verify it works | TESTME.md |
 
 ## Next Steps
 
 **New here?** Read `GETTING_STARTED.md` for a step-by-step guide.
 
-**Ready to use it?** Point Claude at `LLM_PLANNING.md` to design your roadmap.
-
-**Want to validate?** Follow `TESTME.md` (12 tests, 25-30 minutes).
+**Ready to use it?** Read `PROTOCOL.md` to execute phases.
 
 **Integrating with CI/CD?** The protocol is just files + shell commands:
 ```bash
