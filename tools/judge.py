@@ -637,6 +637,44 @@ git restore requirements.txt pyproject.toml
         return "Please address the issues above and re-run the review."
 
 
+def enhance_critique_with_intelligence(phase_id: str, issues: List[str]) -> str:
+    """Enhance critique with intelligence guidance and mechanism opportunities."""
+    intelligence_guidance = ""
+    
+    # Check for available patterns
+    patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+    if patterns_file.exists():
+        pattern_count = len(patterns_file.read_text().strip().split('\n')) if patterns_file.read_text().strip() else 0
+        if pattern_count > 0:
+            intelligence_guidance += f"""
+### 🧠 Intelligence Guidance
+
+**Available Patterns**: {pattern_count} stored patterns
+- Check patterns for similar scenarios: `./tools/phasectl.py patterns list`
+- Patterns may suggest exact solutions for your issues
+- Learning from patterns accelerates problem-solving
+
+"""
+    
+    # Check for mechanism opportunities
+    intelligence_guidance += """
+### 🎯 Mechanism Opportunities
+
+**Available Mechanisms**:
+- **Patterns**: Learn from previous successful amendments
+- **Amendments**: Propose runtime adjustments within budget
+- **Recovery**: Detect and recover from plan state corruption
+- **Learning**: Build collective intelligence through successful patterns
+
+**Intelligence Rewards**:
+- Pattern usage provides amendment budget bonuses
+- Learning behavior unlocks enhanced capabilities
+- Collective intelligence contribution improves future phases
+
+"""
+    
+    return intelligence_guidance
+
 def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, List[str]] = None):
     """Write critique files with mechanism-aware resolution."""
     import tempfile
@@ -657,6 +695,9 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
     # Generate mechanism-aware resolution
     resolution = _generate_mechanism_resolution(context, phase_id)
     
+    # NEW: Add intelligence guidance
+    intelligence_guidance = enhance_critique_with_intelligence(phase_id, issues)
+    
     # NEW: Add learning progress
     learning_progress = show_learning_progress(phase_id)
     
@@ -672,6 +713,7 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
 
 {learning_progress}
 {learning_rewards}
+{intelligence_guidance}
 
 ## Resolution
 

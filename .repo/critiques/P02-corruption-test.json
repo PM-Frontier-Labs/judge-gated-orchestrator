@@ -1,0 +1,21 @@
+{
+  "phase": "P02-corruption-test",
+  "timestamp": 1760911274.553268,
+  "passed": false,
+  "issues": [
+    {
+      "gate": "integrity",
+      "messages": [
+        "Plan changed mid-phase"
+      ]
+    }
+  ],
+  "total_issue_count": 1,
+  "context": {
+    "has_drift": false,
+    "has_test_failures": false,
+    "has_plan_corruption": true,
+    "has_lint_failures": false,
+    "has_forbidden_files": false
+  }
+}

@@ -452,10 +452,46 @@ def show_diff_summary(phase_id: str, plan: dict):
         print()
 
 
+def show_intelligence_context(phase_id: str):
+    """Show intelligence context before judge runs."""
+    print("🧠 Intelligence Context:")
+    print("=" * 50)
+    
+    # Check for available patterns
+    patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+    if patterns_file.exists():
+        pattern_count = len(patterns_file.read_text().strip().split('\n')) if patterns_file.read_text().strip() else 0
+        print(f"📚 Available patterns: {pattern_count}")
+        if pattern_count > 0:
+            print("   💡 Consider checking patterns before proposing amendments")
+    else:
+        print("📚 Available patterns: 0")
+    
+    # Check for pending amendments
+    amendments_dir = REPO_ROOT / ".repo" / "amendments" / "pending"
+    if amendments_dir.exists():
+        amendment_files = list(amendments_dir.glob("*.yaml"))
+        print(f"📝 Pending amendments: {len(amendment_files)}")
+        if amendment_files:
+            print("   ✅ Amendments will be applied automatically")
+    else:
+        print("📝 Pending amendments: 0")
+    
+    # Show mechanism opportunities
+    print("🎯 Mechanism opportunities:")
+    print("   - Check patterns: ./tools/phasectl.py patterns list")
+    print("   - Propose amendments: ./tools/phasectl.py amend propose")
+    print("   - Recovery: ./tools/phasectl.py recover")
+    
+    print()
+
 def review_phase(phase_id: str):
     """Submit phase for review and block until judge provides feedback."""
     print(f"📋 Submitting phase {phase_id} for review...")
     print()
+    
+    # Show intelligence context
+    show_intelligence_context(phase_id)
 
     # Load plan
     plan = load_plan()
@@ -721,6 +757,87 @@ def reset_phase(phase_id: str):
     return 0
 
 
+def enhance_brief_with_intelligence(brief_content: str, phase_id: str) -> str:
+    """Enhance brief with intelligence context and mechanism guidance."""
+    enhanced_brief = brief_content
+    
+    # Add intelligence context section
+    intelligence_section = """
+---
+
+## 🧠 Intelligence Context
+
+### Available Mechanisms
+- **Patterns**: Check stored patterns for similar scenarios
+  ```bash
+  ./tools/phasectl.py patterns list
+  ```
+- **Amendments**: Propose runtime adjustments within budget
+  ```bash
+  ./tools/phasectl.py amend propose add_scope "file.py" "Adding new feature"
+  ```
+- **Recovery**: Detect and recover from plan state corruption
+  ```bash
+  ./tools/phasectl.py recover
+  ```
+
+### Learning Opportunities
+- Check patterns before implementing to learn from previous phases
+- Propose amendments for legitimate scope changes
+- Contribute to collective intelligence through successful amendments
+
+### Intelligence Rewards
+- Pattern usage provides amendment budget bonuses
+- Learning behavior unlocks enhanced capabilities
+- Collective intelligence contribution improves future phases
+
+"""
+    
+    # Insert intelligence section before the end of the brief
+    if "---" in enhanced_brief:
+        # Insert before the last "---" if it exists
+        parts = enhanced_brief.split("---")
+        if len(parts) > 1:
+            enhanced_brief = "---".join(parts[:-1]) + intelligence_section + "---" + parts[-1]
+        else:
+            enhanced_brief += intelligence_section
+    else:
+        enhanced_brief += intelligence_section
+    
+    return enhanced_brief
+
+def show_mechanism_opportunities(phase_id: str):
+    """Show relevant mechanism opportunities during phase start."""
+    print("🧠 Intelligence Opportunities:")
+    print("=" * 50)
+    
+    # Check for available patterns
+    patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+    if patterns_file.exists():
+        pattern_count = len(patterns_file.read_text().strip().split('\n')) if patterns_file.read_text().strip() else 0
+        print(f"📚 Available patterns: {pattern_count}")
+        print("   Run: ./tools/phasectl.py patterns list")
+    else:
+        print("📚 Available patterns: 0 (none stored yet)")
+    
+    # Check for pending amendments
+    amendments_dir = REPO_ROOT / ".repo" / "amendments" / "pending"
+    if amendments_dir.exists():
+        amendment_files = list(amendments_dir.glob("*.yaml"))
+        print(f"📝 Pending amendments: {len(amendment_files)}")
+        if amendment_files:
+            print("   Run: ./tools/phasectl.py review <phase-id> to apply")
+    else:
+        print("📝 Pending amendments: 0")
+    
+    # Show mechanism opportunities
+    print("🎯 Mechanism opportunities:")
+    print("   - Check patterns before implementing (./tools/phasectl.py patterns list)")
+    print("   - Propose amendments for scope changes (./tools/phasectl.py amend propose)")
+    print("   - Use recovery commands if needed (./tools/phasectl.py recover)")
+    
+    print()
+
 def start_phase(phase_id: str):
     """Start implementation phase with mandatory brief acknowledgment."""
     print(f"📋 Starting phase: {phase_id}")
@@ -749,7 +866,10 @@ def start_phase(phase_id: str):
     print("📄 Brief Content:")
     print("=" * 50)
     brief_content = brief_path.read_text()
-    print(brief_content)
+    
+    # Enhance brief with intelligence context
+    enhanced_brief = enhance_brief_with_intelligence(brief_content, phase_id)
+    print(enhanced_brief)
     print("=" * 50)
     print()
     
@@ -772,6 +892,9 @@ def start_phase(phase_id: str):
         print("❌ No specific exclude patterns found")
     
     print()
+    
+    # Show mechanism opportunities
+    show_mechanism_opportunities(phase_id)
     
     # Require explicit acknowledgment
     print("⚠️  Before proceeding, you must confirm you have read and understood the brief.")
@@ -812,6 +935,36 @@ def start_phase(phase_id: str):
     
     return 0
 
+
+def show_intelligence_summary(phase_id: str):
+    """Show intelligence summary during phase advancement."""
+    print("🧠 Intelligence Summary:")
+    print("=" * 50)
+    
+    # Check for available patterns
+    patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+    if patterns_file.exists():
+        pattern_count = len(patterns_file.read_text().strip().split('\n')) if patterns_file.read_text().strip() else 0
+        print(f"📚 Total patterns stored: {pattern_count}")
+    else:
+        print("📚 Total patterns stored: 0")
+    
+    # Check for amendments used in this phase
+    amendments_dir = REPO_ROOT / ".repo" / "amendments" / "pending"
+    if amendments_dir.exists():
+        amendment_files = list(amendments_dir.glob("*.yaml"))
+        print(f"📝 Amendments used this phase: {len(amendment_files)}")
+    else:
+        print("📝 Amendments used this phase: 0")
+    
+    # Show intelligence opportunities for next phase
+    print("🎯 Next phase intelligence opportunities:")
+    print("   - Check patterns before implementing")
+    print("   - Propose amendments for legitimate scope changes")
+    print("   - Contribute to collective intelligence")
+    print("   - Build learning velocity")
+    
+    print()
 
 def next_phase():
     """Advance to the next phase."""
@@ -936,6 +1089,9 @@ def next_phase():
 
     print(f"➡️  Advanced to phase {next_id}")
     print(f"📄 Brief: {next_brief.relative_to(REPO_ROOT)}")
+    
+    # Show intelligence summary
+    show_intelligence_summary(next_id)
     
     # Show enhanced brief with hints and guardrails
     _display_enhanced_brief(next_id, next_brief.read_text())

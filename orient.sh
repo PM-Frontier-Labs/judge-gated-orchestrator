@@ -6,6 +6,38 @@ echo "  Judge-Gated Orchestration - Status"
 echo "════════════════════════════════════════════════════════════════"
 echo ""
 
+# Intelligence status
+echo "🧠 INTELLIGENCE STATUS"
+echo "────────────────────────────────────────────────────────────────"
+if [ -n "$PHASE_ID" ]; then
+    # Check for patterns
+    PATTERNS_FILE=".repo/collective_intelligence/patterns.jsonl"
+    if [ -f "$PATTERNS_FILE" ]; then
+        PATTERN_COUNT=$(wc -l < "$PATTERNS_FILE" 2>/dev/null || echo "0")
+        echo "📚 Stored patterns: $PATTERN_COUNT"
+    else
+        echo "📚 Stored patterns: 0"
+    fi
+    
+    # Check for amendments
+    AMENDMENTS_DIR=".repo/amendments/pending"
+    if [ -d "$AMENDMENTS_DIR" ]; then
+        AMENDMENT_COUNT=$(ls "$AMENDMENTS_DIR"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+        echo "📝 Pending amendments: $AMENDMENT_COUNT"
+    else
+        echo "📝 Pending amendments: 0"
+    fi
+    
+    # Show mechanism opportunities
+    echo "🎯 Available mechanisms:"
+    echo "   - ./tools/phasectl.py patterns list (check patterns)"
+    echo "   - ./tools/phasectl.py amend propose (propose amendments)"
+    echo "   - ./tools/phasectl.py recover (recover from corruption)"
+else
+    echo "⚠️  No active phase - run ./tools/phasectl.py start <phase-id>"
+fi
+echo ""
+
 # Current phase
 echo "📍 CURRENT PHASE"
 echo "────────────────────────────────────────────────────────────────"
