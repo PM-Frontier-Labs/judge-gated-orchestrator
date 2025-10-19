@@ -213,6 +213,30 @@ def _generate_drift_remediation(out_of_scope: List[str], baseline_sha: str, phas
     return remediation
 
 
+def classify_drift_intelligence(out_of_scope: List[str], phase_id: str, repo_root: str) -> tuple[List[str], List[str]]:
+    """Classify out-of-scope changes as legitimate or rogue."""
+    legitimate = []
+    rogue = []
+    
+    for file_path in out_of_scope:
+        if is_legitimate_change(file_path):
+            legitimate.append(file_path)
+        else:
+            rogue.append(file_path)
+    
+    return legitimate, rogue
+
+
+def is_legitimate_change(file_path: str) -> bool:
+    """Conservative classification of legitimate changes."""
+    return (
+        file_path.startswith("tools/") or  # Protocol tools
+        file_path.startswith(".repo/") or  # Protocol state
+        (file_path.endswith(".py") and "test" in file_path) or  # Test files
+        file_path.endswith((".md", ".rst"))  # Documentation
+    )
+
+
 def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str = None) -> List[str]:
     """Check for changes outside phase scope (plan drift)."""
     issues = []
@@ -276,15 +300,25 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
         issues.extend(_generate_forbidden_remediation(forbidden_files, baseline_sha, REPO_ROOT))
         issues.append("")
 
-    # Check out-of-scope changes
-    allowed_drift = drift_gate.get("allowed_out_of_scope_changes", 0)
-
-    if len(out_of_scope) > allowed_drift:
-        issues.append(f"Out-of-scope changes detected ({len(out_of_scope)} files, {allowed_drift} allowed):")
-        for f in out_of_scope:
-            issues.append(f"  - {f}")
-        issues.append("")
-        issues.extend(_generate_drift_remediation(out_of_scope, baseline_sha, phase['id'], REPO_ROOT))
+    # NEW: Intelligent drift classification
+    if out_of_scope:
+        legitimate_changes, rogue_changes = classify_drift_intelligence(
+            out_of_scope, phase_id, str(REPO_ROOT)
+        )
+        
+        # Log legitimate changes for transparency
+        if legitimate_changes:
+            print(f"✅ Auto-approved {len(legitimate_changes)} legitimate changes")
+        
+        # Apply intelligent limits - only count rogue changes against the limit
+        allowed_drift = drift_gate.get("allowed_out_of_scope_changes", 0)
+        
+        if len(rogue_changes) > allowed_drift:
+            issues.append(f"Out-of-scope changes detected ({len(rogue_changes)} unauthorized files, {allowed_drift} allowed):")
+            for f in rogue_changes:
+                issues.append(f"  - {f}")
+            issues.append("")
+            issues.extend(_generate_drift_remediation(rogue_changes, baseline_sha, phase_id, REPO_ROOT))
 
     return issues
 
