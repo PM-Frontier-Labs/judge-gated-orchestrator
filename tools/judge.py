@@ -219,7 +219,7 @@ def classify_drift_intelligence(out_of_scope: List[str], phase_id: str, repo_roo
     rogue = []
     
     for file_path in out_of_scope:
-        if is_legitimate_change(file_path):
+        if is_legitimate_change_with_context(file_path, repo_root):
             legitimate.append(file_path)
         else:
             rogue.append(file_path)
@@ -232,10 +232,55 @@ def is_legitimate_change(file_path: str) -> bool:
     return (
         file_path.startswith("tools/") or  # Protocol tools
         file_path.startswith(".repo/") or  # Protocol state
-        (file_path.endswith(".py") and "test" in file_path) or  # Test files
-        file_path.endswith((".md", ".rst")) or  # Documentation
-        (file_path.endswith(".py") and "src/" in file_path)  # Source code files (likely linting fixes)
+        (file_path.endswith(".py") and "test" in file_path)  # Test files
+        # Removed documentation auto-approval - too permissive
     )
+
+
+def is_legitimate_change_with_context(file_path: str, repo_root: str) -> bool:
+    """Enhanced classification using git diff context."""
+    import subprocess
+    
+    # First check basic legitimate categories
+    if is_legitimate_change(file_path):
+        return True
+    
+    # For Python files in src/, check if it's a modification vs new file
+    if file_path.endswith(".py") and "src/" in file_path:
+        try:
+            # Check if file exists in baseline (modification) vs new file
+            result = subprocess.run(
+                ["git", "diff", "--name-status", "HEAD~1", "HEAD", "--", file_path],
+                cwd=repo_root,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # File was modified (M) - likely legitimate linting fix
+                if result.stdout.strip().startswith("M"):
+                    return True
+                # File was added (A) - likely rogue feature
+                elif result.stdout.strip().startswith("A"):
+                    return False
+            
+            # Fallback: check if file exists in git history
+            result = subprocess.run(
+                ["git", "log", "--oneline", "-1", "--", file_path],
+                cwd=repo_root,
+                capture_output=True,
+                text=True
+            )
+            
+            # If file has git history, it's a modification (legitimate)
+            # If no history, it's likely a new file (rogue)
+            return result.returncode == 0 and result.stdout.strip() != ""
+            
+        except Exception:
+            # If git analysis fails, be conservative and block
+            return False
+    
+    return False
 
 
 def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str = None) -> List[str]:
