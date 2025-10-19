@@ -279,8 +279,13 @@ def _resolve_lint_scope(lint_cmd: List[str], scope_patterns: List[str], exclude_
                 new_cmd = lint_cmd[:3]  # Keep "poetry run ruff"
                 new_cmd.extend(sorted(lint_paths))
                 new_cmd.extend([arg for arg in lint_cmd[3:] if arg.startswith("-")])
+            elif len(lint_cmd) >= 2 and lint_cmd[0] == "ruff" and lint_cmd[1] == "check":
+                # Handle "ruff check" commands properly
+                new_cmd = ["ruff", "check"]  # Keep "ruff check"
+                new_cmd.extend(sorted(lint_paths))
+                new_cmd.extend([arg for arg in lint_cmd[2:] if arg.startswith("-")])
             else:
-                # Original logic for direct ruff commands
+                # Original logic for direct ruff commands (fallback)
                 new_cmd = [lint_cmd[0]]  # Keep ruff
                 new_cmd.extend(sorted(lint_paths))
                 new_cmd.extend([arg for arg in lint_cmd[1:] if arg.startswith("-")])
