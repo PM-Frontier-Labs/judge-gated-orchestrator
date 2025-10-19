@@ -138,28 +138,27 @@ This file contains SHA256 hashes that prevent autonomous agents from modifying j
 
 ### Step 2: Start a Planning Conversation
 
-Point your AI assistant at this prompt:
+Kick off planning with your AI assistant using this prompt:
 
 ```
-Read LLM_PLANNING.md and help me create a plan.yaml for my project.
+Help me create a .repo/plan.yaml for my project.
 
 My project is: [describe your project]
 
 I want to: [describe your goal]
 
-Let's break this into phases with proper scope and gates.
+Let's break this into phases with clear scope and quality gates.
 ```
 
 **What happens:**
-1. AI reads LLM_PLANNING.md (planning guide for LLMs)
-2. AI proposes phases based on your goal
-3. You iterate together
-4. AI generates plan.yaml
-5. AI writes phase briefs
+1. The AI proposes phases based on your goal
+2. You iterate together
+3. The AI generates `plan.yaml`
+4. The AI writes phase briefs
 
 **Example conversation:**
 
-> **You:** "Read LLM_PLANNING.md and help me plan. I'm building a REST API for a todo app. I want authentication, CRUD endpoints, and tests."
+> **You:** "Help me plan. I'm building a REST API for a todo app. I want authentication, CRUD endpoints, and tests."
 
 > **AI:** "I'll help break this into phases. Based on best practices, I suggest:
 > - P01: Scaffold (project structure, dependencies)
@@ -588,7 +587,7 @@ python3 -c "from tools.lib.plan_validator import validate_plan_file; from pathli
 ./tools/phasectl.py review <phase-id>
 ```
 
-**Prevention:** Use LLM_PLANNING.md when creating plan.yaml - AI assistants will generate valid schemas.
+**Prevention:** Use the schema and examples here when creating plan.yaml; ensure your assistant validates the file.
 
 ---
 
@@ -807,8 +806,8 @@ Gives you clean rollback points.
 
 ### Now Go Build:
 
-1. **Plan your roadmap** with Claude using `LLM_PLANNING.md`
-2. **Execute phases** with Claude using `PROTOCOL.md`
+1. **Plan your roadmap** with your AI assistant and write `plan.yaml`
+2. **Execute phases** with `PROTOCOL.md`
 3. **Monitor progress** with `./orient.sh`
 4. **Ship quality code** with confidence
 
@@ -818,11 +817,7 @@ Gives you clean rollback points.
 
 **Documentation:**
 - `README.md` - Overview and philosophy
-- `LLM_PLANNING.md` - Planning guide (for Claude)
-- `PROTOCOL.md` - Execution manual (for Claude)
-- `MIGRATION_GUIDE.md` - Upgrade from older protocol
-- `EXAMPLES.md` - Practical end-to-end examples
-- `TESTME.md` - Validation guide (12 tests)
+- `PROTOCOL.md` - Execution manual (for AI assistants)
 
 **Quick commands:**
 ```bash

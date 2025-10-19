@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate COMPLETE_PACKAGE files containing the entire codebase.
+Generate bundled package text for the entire codebase.
 
 This bundles all documentation, code, tests, and configuration into
 single-file packages for easy sharing and review.
@@ -49,15 +49,13 @@ SECTION 1: DOCUMENTATION (HUMANS)
 --- GETTING_STARTED.md ---
 {read_file('GETTING_STARTED.md')}
 
---- TESTME.md ---
-{read_file('TESTME.md')}
+# (Validation guide removed from package)
 
 ===============================================================================
 SECTION 2: DOCUMENTATION (AI ASSISTANTS)
 ===============================================================================
 
---- LLM_PLANNING.md ---
-{read_file('LLM_PLANNING.md')}
+# (Planning guide removed from package)
 
 --- PROTOCOL.md ---
 {read_file('PROTOCOL.md')}
@@ -184,11 +182,7 @@ judge-gated-orchestrator/
 ├── orient.sh                    # Status in 10 seconds
 ├── README.md                    # Human-readable overview
 ├── GETTING_STARTED.md           # Human setup and usage guide
-├── LLM_PLANNING.md              # AI planning mode guide
 ├── PROTOCOL.md                  # AI execution mode manual
-├── TESTME.md                    # Validation guide (12 tests)
-├── COMPLETE_PACKAGE.txt         # Complete bundled codebase
-├── COMPLETE_PACKAGE.md          # Markdown version
 └── requirements.txt             # Python dependencies
 ```
 
@@ -243,12 +237,10 @@ pip install -r requirements.txt
 
 Run full validation suite:
 ```bash
-pytest tests/ -v          # Run all tests (21 tests)
+pytest tests/ -v          # Run all tests
 ruff check .              # Lint check
 ./tools/generate_manifest.py  # Regenerate hashes
 ```
-
-Follow TESTME.md for comprehensive validation (12 tests, 25-30 minutes).
 
 ## Protocol Integrity
 
@@ -280,12 +272,12 @@ def main():
     package = generate_package()
 
     # Write .txt version
-    txt_file = REPO_ROOT / "COMPLETE_PACKAGE.txt"
+    txt_file = REPO_ROOT / "PACKAGE_BUNDLE.txt"
     txt_file.write_text(package)
     print(f"✓ Generated {txt_file.relative_to(REPO_ROOT)}")
 
     # Write .md version (same content, markdown-friendly)
-    md_file = REPO_ROOT / "COMPLETE_PACKAGE.md"
+    md_file = REPO_ROOT / "PACKAGE_BUNDLE.md"
     md_file.write_text(package)
     print(f"✓ Generated {md_file.relative_to(REPO_ROOT)}")
 
