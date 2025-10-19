@@ -371,6 +371,142 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
     return issues
 
 
+def apply_learning_rewards(phase_id: str) -> Dict[str, Any]:
+    """Apply immediate rewards for learning behavior."""
+    rewards = {}
+    
+    # Pattern usage bonus
+    if _patterns_were_used(phase_id):
+        rewards["amendment_budget_bonus"] = 1
+        rewards["enhanced_brief_unlock"] = True
+    
+    # Micro-retrospective contribution bonus
+    if _micro_retrospective_contributed(phase_id):
+        rewards["advanced_patterns_unlock"] = True
+    
+    return rewards
+
+def _patterns_were_used(phase_id: str) -> bool:
+    """Check if patterns were used in this phase."""
+    return _count_pattern_checks(phase_id) > 0
+
+def _micro_retrospective_contributed(phase_id: str) -> bool:
+    """Check if micro-retrospective was contributed."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "log", "--oneline", "-10", "--grep", "retrospective"],
+            capture_output=True,
+            text=True
+        )
+        return "retrospective" in result.stdout.lower()
+    except Exception:
+        return False
+
+def show_learning_rewards(phase_id: str) -> str:
+    """Show learning rewards in critiques."""
+    rewards = apply_learning_rewards(phase_id)
+    
+    if rewards:
+        reward_text = "### 🎁 Learning Rewards\n"
+        for reward, value in rewards.items():
+            reward_text += f"- {reward}: {value}\n"
+        return reward_text
+    
+    return ""
+
+def track_learning_metrics(phase_id: str) -> Dict[str, Any]:
+    """Track learning behavior metrics."""
+    return {
+        "patterns_checked": _count_pattern_checks(phase_id),
+        "amendments_based_on_patterns": _count_pattern_based_amendments(phase_id),
+        "learning_score": _calculate_learning_score(phase_id)
+    }
+
+def _count_pattern_checks(phase_id: str) -> int:
+    """Count how many times patterns were checked in this phase."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "log", "--oneline", "-10", "--grep", "patterns"],
+            capture_output=True,
+            text=True
+        )
+        return len([line for line in result.stdout.split('\n') if 'patterns' in line.lower()])
+    except Exception:
+        return 0
+
+def _count_pattern_based_amendments(phase_id: str) -> int:
+    """Count amendments that reference patterns."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "log", "--oneline", "-10", "--grep", "pattern"],
+            capture_output=True,
+            text=True
+        )
+        return len([line for line in result.stdout.split('\n') if 'pattern' in line.lower()])
+    except Exception:
+        return 0
+
+def _calculate_learning_score(phase_id: str) -> int:
+    """Calculate learning score based on behavior."""
+    patterns_checked = _count_pattern_checks(phase_id)
+    pattern_amendments = _count_pattern_based_amendments(phase_id)
+    
+    # Simple scoring: 1 point per pattern check, 2 points per pattern-based amendment
+    score = patterns_checked + (pattern_amendments * 2)
+    return min(score, 10)  # Cap at 10
+
+def show_learning_progress(phase_id: str) -> str:
+    """Show learning progress in critiques."""
+    metrics = track_learning_metrics(phase_id)
+    
+    if metrics["learning_score"] > 0:
+        return f"""
+### 📚 Learning Progress
+- Patterns checked: {metrics['patterns_checked']}
+- Pattern-based amendments: {metrics['amendments_based_on_patterns']}
+- Learning score: {metrics['learning_score']}/10
+"""
+    return ""
+
+def check_learning_requirements(phase_id: str) -> List[str]:
+    """Check if agent engaged with collective intelligence."""
+    issues = []
+    
+    # Check if patterns were consulted (for drift issues)
+    if _has_drift_issues(phase_id) and not _patterns_were_checked(phase_id):
+        issues.append("Pattern checking required: ./tools/phasectl.py patterns list")
+    
+    return issues
+
+def _has_drift_issues(phase_id: str) -> bool:
+    """Check if current phase has drift issues."""
+    try:
+        critique_file = CRITIQUES_DIR / f"{phase_id}.md"
+        if critique_file.exists():
+            content = critique_file.read_text()
+            return "out-of-scope" in content.lower() or "drift" in content.lower()
+    except Exception:
+        pass
+    return False
+
+def _patterns_were_checked(phase_id: str) -> bool:
+    """Check if patterns were consulted in this phase."""
+    try:
+        # Check if patterns command was run recently
+        import subprocess
+        result = subprocess.run(
+            ["git", "log", "--oneline", "-10", "--grep", "patterns"],
+            capture_output=True,
+            text=True
+        )
+        return "patterns" in result.stdout.lower()
+    except Exception:
+        pass
+    return False
+
 def _analyze_failure_context(issues: List[str], gate_results: Dict[str, List[str]]) -> Dict[str, Any]:
     """Analyze what mechanisms are relevant for this failure."""
     context = {
@@ -387,27 +523,31 @@ def _generate_mechanism_resolution(context: Dict[str, Any], phase_id: str) -> st
     """Generate mechanism-aware resolution based on failure context."""
     
     if context["has_drift"]:
-        return f"""### 🚨 REQUIRED: Use Amendment System
+        return f"""### 🚨 REQUIRED: Pattern-Driven Amendment Process
 
-**DO NOT manually edit files. Use the amendment system:**
-
+**Step 1: Check available patterns (REQUIRED):**
 ```bash
-# Check available patterns (may suggest exact solution)
 ./tools/phasectl.py patterns list
+```
 
-# Propose scope expansion for legitimate changes
-./tools/phasectl.py amend propose add_scope "src/file.py" "Adding new feature"
+**Step 2: Propose amendment based on patterns:**
+```bash
+# If patterns suggest: add_scope for src/ files
+./tools/phasectl.py amend propose add_scope "src/file.py" "Following pattern: add_scope for Python files in src/"
 
-# Re-run review
+# If no patterns apply, explain why:
+./tools/phasectl.py amend propose add_scope "src/file.py" "No patterns apply - new scenario requiring scope expansion"
+```
+
+**Step 3: Re-run review:**
+```bash
 ./tools/phasectl.py review {phase_id}
 ```
 
-**Available budgets:** add_scope(2), set_test_cmd(1), note_baseline_shift(1)
-
-**💡 What happened:**
-- Protocol auto-approved legitimate changes (protocol tools, tests, docs, Python files in src/)
-- Blocked rogue changes (new files, frontend, scripts)
-- Use amendments for legitimate scope expansion"""
+**💡 Why this works:**
+- Patterns may suggest the exact amendment needed
+- Amendment system is the proper way to handle scope expansion
+- This teaches agents the protocol's collective intelligence capabilities"""
 
     elif context["has_plan_corruption"]:
         return f"""### 🚨 CRITICAL: Plan State Corruption
@@ -509,8 +649,19 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
     # Analyze failure context
     context = _analyze_failure_context(issues, gate_results)
     
+    # NEW: Check learning requirements
+    learning_issues = check_learning_requirements(phase_id)
+    if learning_issues:
+        issues.extend(learning_issues)
+    
     # Generate mechanism-aware resolution
     resolution = _generate_mechanism_resolution(context, phase_id)
+    
+    # NEW: Add learning progress
+    learning_progress = show_learning_progress(phase_id)
+    
+    # NEW: Add learning rewards
+    learning_rewards = show_learning_rewards(phase_id)
 
     # Markdown critique
     critique_content = f"""# Critique: {phase_id}
@@ -518,6 +669,9 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
 ## Issues Found
 
 {chr(10).join(f"- {issue}" for issue in issues)}
+
+{learning_progress}
+{learning_rewards}
 
 ## Resolution
 
