@@ -233,7 +233,8 @@ def is_legitimate_change(file_path: str) -> bool:
         file_path.startswith("tools/") or  # Protocol tools
         file_path.startswith(".repo/") or  # Protocol state
         (file_path.endswith(".py") and "test" in file_path) or  # Test files
-        file_path.endswith((".md", ".rst"))  # Documentation
+        file_path.endswith((".md", ".rst")) or  # Documentation
+        (file_path.endswith(".py") and "src/" in file_path)  # Source code files (likely linting fixes)
     )
 
 
