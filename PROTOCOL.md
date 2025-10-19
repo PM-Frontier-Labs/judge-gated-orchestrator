@@ -12,7 +12,7 @@ This document is for execution. For planning, collaborate with a human to draft 
 
 ```
 1. Orient:     ./orient.sh
-2. Read brief: cat .repo/briefs/<phase-id>.md (enhanced with hints and guardrails)
+2. Start:      ./tools/phasectl.py start <phase-id>  # Mandatory brief acknowledgment
 3. Implement:  Make changes within scope
 4. Review:     ./tools/phasectl.py review <phase-id>
    ├─> Auto-applies pending amendments
@@ -34,6 +34,12 @@ This document is for execution. For planning, collaborate with a human to draft 
 ```bash
 # Recover context (run this when lost)
 ./orient.sh
+
+# Start implementation phase (mandatory brief acknowledgment)
+./tools/phasectl.py start <phase-id>
+
+# Reset phase state (for plan transitions)
+./tools/phasectl.py reset <phase-id>
 
 # Check current phase
 cat .repo/briefs/CURRENT.json
@@ -517,6 +523,59 @@ Use this for files that require separate dedicated phases.
 
 ## Commands
 
+### `./tools/phasectl.py start <phase-id>`
+
+**Purpose:** Start implementation phase with mandatory brief acknowledgment
+
+**What it does:**
+1. Displays the complete brief content
+2. Extracts and shows scope boundaries (✅/❌)
+3. Requires explicit confirmation of understanding
+4. Updates `.repo/briefs/CURRENT.json` with implementation status
+5. Captures baseline SHA for consistent diffs
+
+**Exit codes:**
+- `0` - Phase started successfully
+- `1` - Brief not found or acknowledgment declined
+
+**Example:**
+```bash
+./tools/phasectl.py start P01-scaffold
+```
+
+**This command is MANDATORY** before any implementation work.
+
+---
+
+### `./tools/phasectl.py reset <phase-id>`
+
+**Purpose:** Reset phase state to match current plan (for plan transitions)
+
+**When to use:**
+- After creating a new plan with different phases
+- When getting "Plan changed mid-phase" errors
+- When CURRENT.json points to old baseline/plan
+
+**What it does:**
+1. Validates phase exists in current plan
+2. Captures current baseline SHA
+3. Computes current plan/manifest hashes
+4. Updates CURRENT.json with fresh state
+5. Provides next steps
+
+**Exit codes:**
+- `0` - Phase state reset successfully
+- `1` - Phase not found or git error
+
+**Example:**
+```bash
+./tools/phasectl.py reset P01-scaffold
+```
+
+**Use this when transitioning between different plans.**
+
+---
+
 ### `./orient.sh`
 
 **Purpose:** Recover full context in 10 seconds
@@ -663,19 +722,46 @@ cat .repo/briefs/<phase-id>.md  # What to do
 
 ---
 
-## Execution Best Practices
+### Plan Changed Mid-Phase
 
-### 1. Always Read the Brief First
+**Symptom:** "Plan changed mid-phase: .repo/plan.yaml" error
 
+**Root cause:** CURRENT.json points to old plan baseline, but current plan is different
+
+**Recovery:**
 ```bash
-cat .repo/briefs/<phase-id>.md
+# Reset phase state to match current plan
+./tools/phasectl.py reset <phase-id>
+
+# Then start implementation
+./tools/phasectl.py start <phase-id>
 ```
 
-Understand scope boundaries before writing any code.
+**This happens when:**
+- Creating new plan with different phases
+- Switching between different project plans
+- CURRENT.json wasn't updated after plan changes
+
+**Prevention:** Always run `reset` after creating new plans.
+
+---
+
+## Execution Best Practices
+
+### 1. Always Start with Brief Acknowledgment
+
+```bash
+./tools/phasectl.py start <phase-id>
+```
+
+This command is **mandatory** and ensures you:
+- Read the complete brief
+- Understand scope boundaries
+- Confirm your understanding before implementing
 
 ### 2. Check Scope Explicitly
 
-From the brief, identify:
+From the brief acknowledgment, identify:
 - ✅ Files you MAY touch
 - ❌ Files you must NOT touch
 - 🤔 Files that need separate phase

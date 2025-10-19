@@ -3,6 +3,8 @@
 Phasectl: Controller for gated phase protocol.
 
 Usage:
+  ./tools/phasectl.py start <PHASE_ID>   # Start implementation phase with brief acknowledgment
+  ./tools/phasectl.py reset <PHASE_ID>    # Reset phase state to match current plan (for plan transitions)
   ./tools/phasectl.py review <PHASE_ID>  # Submit phase for review
   ./tools/phasectl.py next                # Advance to next phase
 """
@@ -12,6 +14,7 @@ import json
 import time
 import subprocess
 import shlex
+import re
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -47,6 +50,65 @@ def load_plan():
     except yaml.YAMLError as e:
         print(f"❌ Error: Invalid YAML in {plan_file}: {e}")
         sys.exit(1)
+
+
+def detect_plan_mismatch() -> bool:
+    """Detect if current plan differs from stored plan SHA."""
+    if not CURRENT_FILE.exists():
+        return False
+    
+    try:
+        current = json.loads(CURRENT_FILE.read_text())
+        stored_plan_sha = current.get("plan_sha")
+        
+        if not stored_plan_sha:
+            return False
+        
+        # Compute current plan SHA
+        plan_path = REPO_DIR / "plan.yaml"
+        if not plan_path.exists():
+            return False
+        
+        import hashlib
+        current_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+        return current_plan_sha != stored_plan_sha
+        
+    except (json.JSONDecodeError, KeyError):
+        return False
+
+
+def extract_scope_from_brief(brief_path: Path) -> Dict[str, List[str]]:
+    """Extract scope from brief markdown."""
+    if not brief_path.exists():
+        return {"include": [], "exclude": []}
+    
+    content = brief_path.read_text()
+    
+    # Find scope section
+    scope_match = re.search(r'## Scope.*?(?=##|\Z)', content, re.DOTALL | re.IGNORECASE)
+    if not scope_match:
+        return {"include": [], "exclude": []}
+    
+    scope_section = scope_match.group(0)
+    
+    # Extract include items (✅) - look for lines starting with - after ✅ section
+    include_section = re.search(r'✅.*?(?=❌|\Z)', scope_section, re.DOTALL)
+    include_list = []
+    if include_section:
+        include_lines = re.findall(r'- `([^`]+)`', include_section.group(0))
+        include_list.extend(include_lines)
+    
+    # Extract exclude items (❌) - look for lines starting with - after ❌ section
+    exclude_section = re.search(r'❌.*?(?=🤔|\Z)', scope_section, re.DOTALL)
+    exclude_list = []
+    if exclude_section:
+        exclude_lines = re.findall(r'- `([^`]+)`', exclude_section.group(0))
+        exclude_list.extend(exclude_lines)
+    
+    return {
+        "include": [item.strip() for item in include_list],
+        "exclude": [item.strip() for item in exclude_list]
+    }
 
 
 def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
@@ -471,6 +533,173 @@ def _write_micro_retro(phase_id: str, applied_amendments: List[Dict[str, Any]]) 
     write_micro_retro(phase_id, execution_data)
 
 
+def reset_phase(phase_id: str):
+    """Reset phase state to match current plan (for plan transitions)."""
+    print(f"🔄 Resetting phase state for: {phase_id}")
+    print()
+    
+    # Check if brief exists
+    brief_path = BRIEFS_DIR / f"{phase_id}.md"
+    if not brief_path.exists():
+        print(f"❌ Error: Brief not found: {brief_path}")
+        return 1
+    
+    # Load current plan to validate phase exists
+    plan = load_plan()
+    phases = plan.get("plan", {}).get("phases", [])
+    phase = next((p for p in phases if p["id"] == phase_id), None)
+    
+    if not phase:
+        print(f"❌ Error: Phase {phase_id} not found in current plan")
+        print("   Available phases:")
+        for p in phases:
+            print(f"   - {p['id']}")
+        return 1
+    
+    # Get current baseline SHA
+    baseline_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True
+    )
+    baseline_sha = baseline_result.stdout.strip() if baseline_result.returncode == 0 else None
+    
+    if not baseline_sha:
+        print("❌ Error: Not in a git repository")
+        return 1
+    
+    # Compute current hashes
+    import hashlib
+    def sha256(filepath):
+        return hashlib.sha256(filepath.read_bytes()).hexdigest()
+    
+    plan_path = REPO_DIR / "plan.yaml"
+    manifest_path = REPO_DIR / "protocol_manifest.json"
+    
+    # Create new phase state
+    current_data = {
+        "phase_id": phase_id,
+        "brief_path": str(brief_path.relative_to(REPO_ROOT)),
+        "status": "active",
+        "started_at": time.time(),
+        "baseline_sha": baseline_sha
+    }
+    
+    # Add current hashes
+    if plan_path.exists():
+        current_data["plan_sha"] = sha256(plan_path)
+    if manifest_path.exists():
+        current_data["manifest_sha"] = sha256(manifest_path)
+    
+    # Update CURRENT.json
+    CURRENT_FILE.write_text(json.dumps(current_data, indent=2))
+    
+    print(f"✅ Phase state reset successfully!")
+    print(f"   Phase: {phase_id}")
+    print(f"   Baseline: {baseline_sha[:8]}...")
+    print(f"   Plan SHA: {current_data.get('plan_sha', 'N/A')[:8]}...")
+    print()
+    print("   Next steps:")
+    print(f"   1. Run: ./tools/phasectl.py start {phase_id}")
+    print(f"   2. Implement changes")
+    print(f"   3. Run: ./tools/phasectl.py review {phase_id}")
+    
+    return 0
+
+
+def start_phase(phase_id: str):
+    """Start implementation phase with mandatory brief acknowledgment."""
+    print(f"📋 Starting phase: {phase_id}")
+    print()
+    
+    # MINIMUM CHECK: Detect plan mismatch before starting
+    if detect_plan_mismatch():
+        print("⚠️  Plan State Mismatch Detected!")
+        print()
+        print("The current plan differs from the stored plan SHA.")
+        print("This usually happens when creating a new plan with different phases.")
+        print()
+        print("SOLUTION:")
+        print(f"   ./tools/phasectl.py reset {phase_id}")
+        print()
+        print("This will update the phase state to match your current plan.")
+        return 1
+    
+    # Check if brief exists
+    brief_path = BRIEFS_DIR / f"{phase_id}.md"
+    if not brief_path.exists():
+        print(f"❌ Error: Brief not found: {brief_path}")
+        return 1
+    
+    # Display brief content
+    print("📄 Brief Content:")
+    print("=" * 50)
+    brief_content = brief_path.read_text()
+    print(brief_content)
+    print("=" * 50)
+    print()
+    
+    # Extract and display scope
+    scope = extract_scope_from_brief(brief_path)
+    
+    print("🎯 Scope Summary:")
+    if scope["include"]:
+        print("✅ You MAY touch:")
+        for item in scope["include"]:
+            print(f"   - {item}")
+    else:
+        print("✅ No specific include patterns found")
+    
+    if scope["exclude"]:
+        print("❌ You must NOT touch:")
+        for item in scope["exclude"]:
+            print(f"   - {item}")
+    else:
+        print("❌ No specific exclude patterns found")
+    
+    print()
+    
+    # Require explicit acknowledgment
+    print("⚠️  Before proceeding, you must confirm you have read and understood the brief.")
+    response = input("Have you read and understood the brief? (yes/no): ")
+    
+    if response.lower() != "yes":
+        print("❌ Please read the brief first")
+        print("   You must understand the scope before implementing.")
+        return 1
+    
+    # Update current phase status
+    current_data = {
+        "phase_id": phase_id,
+        "brief_path": str(brief_path.relative_to(REPO_ROOT)),
+        "status": "implementation_started",
+        "started_at": time.time(),
+        "brief_acknowledged_at": time.time()
+    }
+    
+    # Get baseline SHA for consistent diffs throughout phase
+    baseline_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True
+    )
+    baseline_sha = baseline_result.stdout.strip() if baseline_result.returncode == 0 else None
+    
+    if baseline_sha:
+        current_data["baseline_sha"] = baseline_sha
+    
+    # Update CURRENT.json
+    CURRENT_FILE.write_text(json.dumps(current_data, indent=2))
+    
+    print(f"✅ Phase {phase_id} started successfully!")
+    print("   You may now implement changes within the specified scope.")
+    print("   When ready, run: ./tools/phasectl.py review {phase_id}")
+    
+    return 0
+
+
 def next_phase():
     """Advance to the next phase."""
     if not CURRENT_FILE.exists():
@@ -654,7 +883,19 @@ def main():
 
     command = sys.argv[1]
 
-    if command == "review":
+    if command == "start":
+        if len(sys.argv) < 3:
+            print("Usage: phasectl.py start <PHASE_ID>")
+            return 1
+        return start_phase(sys.argv[2])
+
+    elif command == "reset":
+        if len(sys.argv) < 3:
+            print("Usage: phasectl.py reset <PHASE_ID>")
+            return 1
+        return reset_phase(sys.argv[2])
+
+    elif command == "review":
         if len(sys.argv) < 3:
             print("Usage: phasectl.py review <PHASE_ID>")
             return 1
