@@ -236,10 +236,23 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
     if not changed_files:
         return []  # No changes or not a git repo
 
-    # Get scope patterns
+    # Get scope patterns from plan
     scope = phase.get("scope", {})
     include_patterns = scope.get("include", [])
     exclude_patterns = scope.get("exclude", [])
+
+    # Load runtime scope amendments
+    phase_id = phase.get("id")
+    if phase_id:
+        try:
+            from lib.state import load_phase_context
+            context = load_phase_context(phase_id, str(REPO_ROOT))
+            additional_scope = context.get("scope_cache", {}).get("additional", [])
+            if additional_scope:
+                include_patterns = include_patterns + additional_scope
+                print(f"  📍 Using runtime scope amendments: {len(additional_scope)} additional patterns")
+        except Exception:
+            pass  # Tolerate missing context or import errors
 
     if not include_patterns:
         return []  # No scope defined, can't check drift

@@ -374,10 +374,21 @@ def show_diff_summary(phase_id: str, plan: dict):
         print("📊 No changes detected")
         return
 
-    # Get scope patterns
+    # Get scope patterns from plan
     scope = phase.get("scope", {})
     include_patterns = scope.get("include", [])
     exclude_patterns = scope.get("exclude", [])
+
+    # Load runtime scope amendments
+    try:
+        from lib.state import load_phase_context
+        context = load_phase_context(phase_id, str(REPO_ROOT))
+        additional_scope = context.get("scope_cache", {}).get("additional", [])
+        if additional_scope:
+            include_patterns = include_patterns + additional_scope
+            print(f"  📍 Using runtime scope amendments: {len(additional_scope)} additional patterns")
+    except Exception:
+        pass  # Tolerate missing context or import errors
 
     if not include_patterns:
         print(f"📊 {len(changed_files)} files changed (no scope defined)")
