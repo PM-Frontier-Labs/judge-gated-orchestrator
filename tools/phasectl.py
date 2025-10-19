@@ -386,6 +386,30 @@ def review_phase(phase_id: str):
 
     # Load plan
     plan = load_plan()
+    
+    # CRITICAL: Validate plan state consistency before review
+    if CURRENT_FILE.exists():
+        try:
+            current = json.loads(CURRENT_FILE.read_text())
+            stored_plan_sha = current.get("plan_sha")
+            if stored_plan_sha:
+                import hashlib
+                plan_path = REPO_DIR / "plan.yaml"
+                if plan_path.exists():
+                    current_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+                    if current_plan_sha != stored_plan_sha:
+                        print("⚠️  Plan State Mismatch Detected!")
+                        print()
+                        print("The current plan differs from the stored plan SHA.")
+                        print("This indicates the plan was reverted externally.")
+                        print()
+                        print("SOLUTION:")
+                        print(f"   ./tools/phasectl.py reset {phase_id}")
+                        print()
+                        print("This will update the phase state to match your current plan.")
+                        return 1
+        except (json.JSONDecodeError, KeyError):
+            pass  # Tolerate missing or malformed CURRENT.json
 
     # Validate plan schema
     from lib.plan_validator import validate_plan
@@ -735,6 +759,25 @@ def next_phase():
 
     # Load plan
     plan = load_plan()
+    
+    # CRITICAL: Validate plan state consistency
+    stored_plan_sha = current.get("plan_sha")
+    if stored_plan_sha:
+        import hashlib
+        plan_path = REPO_DIR / "plan.yaml"
+        if plan_path.exists():
+            current_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+            if current_plan_sha != stored_plan_sha:
+                print("⚠️  Plan State Mismatch Detected!")
+                print()
+                print("The current plan differs from the stored plan SHA.")
+                print("This indicates the plan was reverted externally.")
+                print()
+                print("SOLUTION:")
+                print(f"   ./tools/phasectl.py reset {current_id}")
+                print()
+                print("This will update the phase state to match your current plan.")
+                return 1
 
     # Validate plan schema
     from lib.plan_validator import validate_plan
