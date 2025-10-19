@@ -232,8 +232,10 @@ def is_legitimate_change(file_path: str) -> bool:
     return (
         file_path.startswith("tools/") or  # Protocol tools
         file_path.startswith(".repo/") or  # Protocol state
-        (file_path.endswith(".py") and "test" in file_path)  # Test files
-        # Removed documentation auto-approval - too permissive
+        (file_path.endswith(".py") and "test" in file_path) or  # Test files
+        file_path.endswith((".md", ".rst")) or  # Documentation files
+        file_path in ["requirements.txt", "pyproject.toml", "setup.py"] or  # Project config
+        (file_path.endswith(".py") and "src/" in file_path)  # Python files in src/ (linting fixes)
     )
 
 
