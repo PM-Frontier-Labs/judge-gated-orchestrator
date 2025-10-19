@@ -140,11 +140,18 @@ def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_
         
         if test_paths:
             print(f"  📍 Test scope: Running {len(test_paths)} specific test files")
-            # Replace default test path with scoped paths
-            new_cmd = [test_cmd[0]]  # Keep pytest
-            new_cmd.extend(sorted(test_paths))
-            # Keep flags (e.g., -v)
-            new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+            
+            # Handle poetry run pytest commands
+            if len(test_cmd) >= 3 and test_cmd[0] == "poetry" and test_cmd[1] == "run" and test_cmd[2] == "pytest":
+                new_cmd = test_cmd[:3]  # Keep "poetry run pytest"
+                new_cmd.extend(sorted(test_paths))
+                new_cmd.extend([arg for arg in test_cmd[3:] if arg.startswith("-")])
+            else:
+                # Original logic for direct pytest commands
+                new_cmd = [test_cmd[0]]  # Keep pytest
+                new_cmd.extend(sorted(test_paths))
+                new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+            
             return new_cmd
         else:
             print("  ⚠️  No test files match scope patterns - running all tests")
@@ -173,9 +180,18 @@ def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_
         
         if test_paths:
             print(f"  📍 Test scope: Running {len(test_paths)} specific test files (fallback mode)")
-            new_cmd = [test_cmd[0]]
-            new_cmd.extend(sorted(test_paths))
-            new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+            
+            # Handle poetry run pytest commands
+            if len(test_cmd) >= 3 and test_cmd[0] == "poetry" and test_cmd[1] == "run" and test_cmd[2] == "pytest":
+                new_cmd = test_cmd[:3]  # Keep "poetry run pytest"
+                new_cmd.extend(sorted(test_paths))
+                new_cmd.extend([arg for arg in test_cmd[3:] if arg.startswith("-")])
+            else:
+                # Original logic for direct pytest commands
+                new_cmd = [test_cmd[0]]
+                new_cmd.extend(sorted(test_paths))
+                new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
+            
             return new_cmd
         
         return test_cmd
