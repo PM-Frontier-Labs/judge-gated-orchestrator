@@ -11,17 +11,18 @@ This document is for execution. For planning, collaborate with a human to draft 
 ## Core Loop
 
 ```
-1. Orient:     ./orient.sh
-2. Start:      ./tools/phasectl.py start <phase-id>  # Mandatory brief acknowledgment
+1. Orient:     ./orient.sh                    # Shows intelligence status
+2. Start:      ./tools/phasectl.py start <phase-id>  # Shows mechanism opportunities
 3. Implement:  Make changes within scope
 4. Review:     ./tools/phasectl.py review <phase-id>
+   ├─> Shows intelligence context
    ├─> Auto-applies pending amendments
    ├─> Auto-proposes amendments from patterns
    ├─> Learns from successful amendments
    └─> Writes micro-retrospectives
 5. Check:      If .repo/critiques/<phase-id>.OK exists → approved
                If .repo/critiques/<phase-id>.md exists → fix and re-review
-6. Advance:    ./tools/phasectl.py next (shows enhanced brief)
+6. Advance:    ./tools/phasectl.py next      # Shows intelligence summary
 7. Repeat from step 1
 ```
 
@@ -540,11 +541,12 @@ Use this for files that require separate dedicated phases.
 **Purpose:** Start implementation phase with mandatory brief acknowledgment
 
 **What it does:**
-1. Displays the complete brief content
-2. Extracts and shows scope boundaries (✅/❌)
-3. Requires explicit confirmation of understanding
-4. Updates `.repo/briefs/CURRENT.json` with implementation status
-5. Captures baseline SHA for consistent diffs
+1. Displays the complete brief content with intelligence context
+2. Shows mechanism opportunities and available patterns
+3. Extracts and shows scope boundaries (✅/❌)
+4. Requires explicit confirmation of understanding
+5. Updates `.repo/briefs/CURRENT.json` with implementation status
+6. Captures baseline SHA for consistent diffs
 
 **Exit codes:**
 - `0` - Phase started successfully
@@ -651,6 +653,7 @@ Use this for files that require separate dedicated phases.
 **Purpose:** Recover full context in 10 seconds
 
 **Shows:**
+- Intelligence status (patterns, amendments, mechanisms)
 - Current phase ID
 - Progress (X/Y phases complete)
 - Status (approved/needs-fixes/in-progress)
@@ -668,11 +671,12 @@ Use this for files that require separate dedicated phases.
 **Purpose:** Submit phase for judge review
 
 **What it does:**
-1. Shows diff summary (in-scope vs out-of-scope files)
-2. Runs test command from plan.yaml
-3. Saves results to `.repo/traces/last_tests.txt`
-4. Invokes judge to check all gates
-5. Produces either `.repo/critiques/<phase-id>.md` or `.repo/critiques/<phase-id>.OK`
+1. Shows intelligence context and mechanism opportunities
+2. Shows diff summary (in-scope vs out-of-scope files)
+3. Runs test command from plan.yaml
+4. Saves results to `.repo/traces/last_tests.txt`
+5. Invokes judge to check all gates
+6. Produces either `.repo/critiques/<phase-id>.md` or `.repo/critiques/<phase-id>.OK`
 
 **Exit codes:**
 - `0` - Approved (`.OK` file created)
@@ -693,8 +697,9 @@ Use this for files that require separate dedicated phases.
 **What it does:**
 1. Checks current phase is approved (`.OK` file exists)
 2. Finds next phase in plan.yaml
-3. Updates `.repo/briefs/CURRENT.json` to point to next phase
-4. Shows path to next brief
+3. Shows intelligence summary and learning opportunities
+4. Updates `.repo/briefs/CURRENT.json` to point to next phase
+5. Shows path to next brief
 
 **Exit codes:**
 - `0` - Advanced successfully or all phases complete
@@ -918,31 +923,29 @@ The protocol protects critical files from modification:
 
 ---
 
-## Learning Requirements & Incentives
+## Intelligence Features
 
-The protocol now includes **learning requirements** and **incentive alignment** to build strong outer loop behavior:
+The protocol includes intelligence features that help agents learn and improve:
 
-### Learning Requirements
-- **Pattern checking is REQUIRED** for drift issues
-- Agents must run `./tools/phasectl.py patterns list` before proposing amendments
-- This forces engagement with collective intelligence
+### Pattern System
+- **Check patterns**: `./tools/phasectl.py patterns list` shows stored patterns from previous phases
+- **Learn from patterns**: Patterns may suggest exact solutions for common problems
+- **Required for drift issues**: Must check patterns before proposing amendments
 
-### Learning Metrics
-- **Learning progress** is tracked and displayed in critiques
-- Metrics: patterns checked, pattern-based amendments, learning score
-- **Learning score** calculated from pattern usage (1 point per check, 2 points per pattern-based amendment)
+### Amendment System
+- **Propose amendments**: `./tools/phasectl.py amend propose` for runtime adjustments
+- **Budget limits**: Each amendment type has usage limits to prevent abuse
+- **Auto-application**: Amendments are applied automatically during review
 
-### Learning Rewards
-- **Immediate benefits** for learning behavior:
-  - Amendment budget bonus for pattern usage
-  - Enhanced brief unlock for pattern usage
-  - Advanced patterns unlock for micro-retrospective contributions
-- **Learning rewards** are shown in critiques to motivate continued learning
+### Intelligence Dashboard
+- **Status overview**: `./orient.sh` shows intelligence status (patterns, amendments, mechanisms)
+- **Mechanism opportunities**: Commands surface available mechanisms during normal operation
+- **Learning guidance**: Continuous guidance on available intelligence features
 
-### Expected Agent Behavior
-- **Before**: Agents optimized for speed, avoided learning
-- **After**: Agents optimize for learning because it's required for success and provides immediate benefits
-- **Result**: Strong outer loop behavior with active collective intelligence engagement
+### Intelligence Rewards
+- **Pattern usage**: Using patterns provides amendment budget bonuses
+- **Learning behavior**: Learning unlocks enhanced capabilities
+- **Collective intelligence**: Contributing improves future phases
 
 ---
 
