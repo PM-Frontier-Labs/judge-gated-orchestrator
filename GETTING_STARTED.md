@@ -813,7 +813,65 @@ Gives you clean rollback points.
 
 ---
 
-## Getting Help
+## Starting a New Plan
+
+When you complete one plan and want to start fresh with a new project:
+
+### Step 1: Clean Up Old Plan State
+
+```bash
+# Remove old phase briefs and state
+rm -rf .repo/briefs/P*.md
+rm -f .repo/briefs/CURRENT.json
+rm -rf .repo/critiques/
+rm -rf .repo/traces/
+rm -rf .repo/state/
+rm -rf .repo/amendments/
+rm -rf .repo/collective_intelligence/
+
+# Create fresh directory structure
+mkdir -p .repo/briefs .repo/critiques .repo/traces .repo/state .repo/amendments/pending .repo/amendments/applied .repo/collective_intelligence
+```
+
+### Step 2: Create New Plan
+
+Work with your AI assistant to create a new `plan.yaml`:
+
+```
+Help me create a new .repo/plan.yaml for my next project.
+
+My new project is: [describe your new project]
+I want to: [describe your new goal]
+
+Let's break this into phases with clear scope and quality gates.
+```
+
+### Step 3: Generate New Protocol Manifest
+
+```bash
+./tools/generate_manifest.py
+```
+
+### Step 4: Initialize First Phase
+
+```bash
+echo '{
+  "phase_id": "P01-scaffold",
+  "brief_path": ".repo/briefs/P01-scaffold.md",
+  "status": "active",
+  "started_at": '$(date +%s.%N)'
+}' > .repo/briefs/CURRENT.json
+```
+
+### Step 5: Verify Clean State
+
+```bash
+./orient.sh
+```
+
+**Key insight:** Each plan is independent. Old state doesn't carry over to new plans.
+
+---
 
 **Documentation:**
 - `README.md` - Overview and philosophy
