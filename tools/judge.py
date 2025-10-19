@@ -533,11 +533,25 @@ def judge_phase(phase_id: str):
             gate_results["llm_review"] = llm_issues
             all_issues.extend(llm_issues)
 
+    # Fun UI sequence before verdict
+    print("\n⚖️  Judge is deliberating...")
+    time.sleep(1)
+    print("🔍 Examining evidence...")
+    time.sleep(0.5)
+    print("🧪 Checking tests...")
+    time.sleep(0.5)
+    print("📋 Reviewing scope compliance...")
+    time.sleep(0.5)
+
     # Verdict (write functions handle cleanup atomically)
     if all_issues:
+        print("😤 VERDICT: REJECTED! 😤")
+        print("   'Issues found. Please address and resubmit.'")
         write_critique(phase_id, all_issues, gate_results)
         return 1
     else:
+        print("🎉 VERDICT: APPROVED! 🎉")
+        print("   'Excellent work! Proceed to next phase.'")
         write_approval(phase_id)
         return 0
 
