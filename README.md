@@ -62,6 +62,9 @@ cd judge-gated-orchestrator
 # Install
 pip install -r requirements.txt
 
+# Optional: Install LLM features for enhanced code review
+pip install -r requirements-llm.txt
+
 # See status
 ./orient.sh
 
@@ -69,6 +72,8 @@ pip install -r requirements.txt
 ./tools/phasectl.py review P02-impl-feature
 # → Shows diff summary, runs tests, invokes judge, shows result
 ```
+
+**Note:** `tools/phasectl.py` is the only supported CLI. Other tools in `tools/` are internal implementation details.
 
 **What you'll see:** System catches out-of-scope changes, enforces gates, provides clear feedback.
 

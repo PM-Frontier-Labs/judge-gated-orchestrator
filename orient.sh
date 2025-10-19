@@ -87,5 +87,5 @@ fi
 echo ""
 
 echo "════════════════════════════════════════════════════════════════"
-echo "📚 Docs: START_HERE.md | README.md"
+echo "📚 Docs: GETTING_STARTED.md | README.md"
 echo "════════════════════════════════════════════════════════════════"

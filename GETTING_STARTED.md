@@ -14,12 +14,18 @@
 git clone https://github.com/PM-Frontier-Labs/judge-gated-orchestrator.git
 cd judge-gated-orchestrator
 pip install -r requirements.txt
+
+# Optional: Install LLM features for enhanced code review
+pip install -r requirements-llm.txt
 ```
 
 **Requirements:**
 - Python 3.8+
 - Git
 - Your preferred AI coding assistant (Claude Code, Cursor, Windsurf, etc.)
+
+**Optional:**
+- Anthropic API key (for LLM code review features)
 
 ### 2. Try the Demo
 

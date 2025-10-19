@@ -17,17 +17,11 @@ def run_command_with_trace(
     """
     Run command and save trace. Returns exit code or None if tool missing.
     """
-    # Check if tool exists
-    tool_name = command[0]
-    version_cmd = ["ruff", "--version"] if tool_name == "ruff" else [tool_name, "--version"]
-
+    # Run command directly, catch FileNotFoundError if tool missing
     try:
-        subprocess.run(version_cmd, capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        result = subprocess.run(command, cwd=repo_root, capture_output=True, text=True)
+    except FileNotFoundError:
         return None
-
-    # Run command
-    result = subprocess.run(command, cwd=repo_root, capture_output=True, text=True)
 
     # Save trace
     traces_dir.mkdir(parents=True, exist_ok=True)

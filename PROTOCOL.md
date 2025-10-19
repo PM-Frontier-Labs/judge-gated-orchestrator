@@ -60,6 +60,8 @@ cat .repo/traces/last_tests.txt
 git diff --name-only HEAD
 ```
 
+**Note:** `tools/phasectl.py` is the only supported CLI. `tools/judge.py` and other tools are internal implementation details.
+
 ---
 
 ## File Specifications

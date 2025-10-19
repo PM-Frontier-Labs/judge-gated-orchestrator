@@ -70,6 +70,9 @@ Respond in JSON format:
         
         return json.loads(response.content[0].text)
         
+    except ImportError:
+        print("⚠️ LLM critic requires anthropic package. Run: pip install anthropic")
+        return {"must_fix": [], "proposed_amendments": []}
     except Exception as e:
         print(f"⚠️ LLM critic failed: {e}")
         return {"must_fix": [], "proposed_amendments": []}
