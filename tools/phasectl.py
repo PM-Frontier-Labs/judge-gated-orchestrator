@@ -71,13 +71,13 @@ def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_
                 if include_spec.match_file(rel_path):
                     # Check if not excluded
                     if not exclude_spec or not exclude_spec.match_file(rel_path):
-                        # Add parent directory for better pytest organization
-                        test_dir = str(test_file.parent.relative_to(REPO_ROOT))
-                        if test_dir.startswith("tests"):
-                            test_paths.add(test_dir)
+                        # Add specific test file for precise testing
+                        test_path = str(test_file.relative_to(REPO_ROOT))
+                        if test_path.startswith("tests"):
+                            test_paths.add(test_path)
         
         if test_paths:
-            print(f"  📍 Test scope: Running tests in {len(test_paths)} directories")
+            print(f"  📍 Test scope: Running {len(test_paths)} specific test files")
             # Replace default test path with scoped paths
             new_cmd = [test_cmd[0]]  # Keep pytest
             new_cmd.extend(sorted(test_paths))
@@ -92,16 +92,27 @@ def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_
         # Fallback to simple string matching if pathspec not available
         print("  ⚠️  pathspec not available - using simple pattern matching")
         test_paths = []
-        for pattern in scope_patterns:
-            if pattern.startswith("tests/"):
-                base_path = pattern.split("*")[0].rstrip("/")
-                if base_path not in test_paths:
-                    test_paths.append(base_path)
+        tests_dir = REPO_ROOT / "tests"
+        if tests_dir.exists():
+            for test_file in tests_dir.rglob("test_*.py"):
+                rel_path = str(test_file.relative_to(REPO_ROOT))
+                # Simple pattern matching
+                for pattern in scope_patterns:
+                    if pattern.endswith("*"):
+                        # Directory pattern
+                        if rel_path.startswith(pattern.rstrip("*")):
+                            test_paths.append(rel_path)
+                            break
+                    elif pattern.endswith(".py"):
+                        # Specific file pattern
+                        if rel_path == pattern:
+                            test_paths.append(rel_path)
+                            break
         
         if test_paths:
-            print(f"  📍 Test scope: Running tests in {len(test_paths)} directories (fallback mode)")
+            print(f"  📍 Test scope: Running {len(test_paths)} specific test files (fallback mode)")
             new_cmd = [test_cmd[0]]
-            new_cmd.extend(test_paths)
+            new_cmd.extend(sorted(test_paths))
             new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
             return new_cmd
         
