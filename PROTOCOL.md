@@ -41,6 +41,12 @@ This document is for execution. For planning, collaborate with a human to draft 
 # Reset phase state (for plan transitions)
 ./tools/phasectl.py reset <phase-id>
 
+# Recover from plan state corruption
+./tools/phasectl.py recover
+
+# Check available patterns (required for drift issues)
+./tools/phasectl.py patterns list
+
 # Check current phase
 cat .repo/briefs/CURRENT.json
 
@@ -426,6 +432,12 @@ gates:
 
 **Fails if:** More out-of-scope changes than allowed
 
+**NEW: Intelligent Drift Classification:**
+- **Legitimate changes** are auto-approved (protocol tools, tests, docs, Python files in src/)
+- **Rogue changes** are blocked (new files, frontend, scripts)
+- **Git diff analysis** distinguishes modifications from new file additions
+- **Only rogue changes** count against the allowed limit
+
 **See:** "Scope Rules" section below
 
 ---
@@ -573,6 +585,64 @@ Use this for files that require separate dedicated phases.
 ```
 
 **Use this when transitioning between different plans.**
+
+---
+
+### `./tools/phasectl.py recover`
+
+**Purpose:** Detect and recover from plan state corruption
+
+**When to use:**
+- When getting "Plan changed mid-phase" errors
+- When protocol state seems inconsistent
+- After external plan modifications (git checkout, etc.)
+- When CURRENT.json doesn't match current plan
+
+**What it does:**
+1. Detects plan state corruption (SHA mismatches)
+2. Provides recovery guidance
+3. Shows current vs expected state
+4. Guides user to appropriate recovery commands
+
+**Exit codes:**
+- `0` - No corruption detected
+- `1` - Corruption detected, recovery needed
+
+**Example:**
+```bash
+./tools/phasectl.py recover
+```
+
+**Use this when protocol state seems corrupted.**
+
+---
+
+### `./tools/phasectl.py patterns list`
+
+**Purpose:** Show available patterns for collective intelligence
+
+**When to use:**
+- **REQUIRED** when drift issues occur
+- Before proposing amendments
+- To learn from successful patterns
+- To understand collective intelligence
+
+**What it does:**
+1. Shows stored patterns from successful amendments
+2. Displays pattern usage statistics
+3. Provides guidance for current situation
+4. Enables learning from collective intelligence
+
+**Exit codes:**
+- `0` - Patterns displayed successfully
+- `1` - No patterns available or error
+
+**Example:**
+```bash
+./tools/phasectl.py patterns list
+```
+
+**This is now REQUIRED for drift issues - agents must check patterns before proposing amendments.**
 
 ---
 
@@ -845,6 +915,34 @@ The protocol protects critical files from modification:
 3. Make fixes in that dedicated phase
 4. Run `./tools/generate_manifest.py`
 5. Complete maintenance phase
+
+---
+
+## Learning Requirements & Incentives
+
+The protocol now includes **learning requirements** and **incentive alignment** to build strong outer loop behavior:
+
+### Learning Requirements
+- **Pattern checking is REQUIRED** for drift issues
+- Agents must run `./tools/phasectl.py patterns list` before proposing amendments
+- This forces engagement with collective intelligence
+
+### Learning Metrics
+- **Learning progress** is tracked and displayed in critiques
+- Metrics: patterns checked, pattern-based amendments, learning score
+- **Learning score** calculated from pattern usage (1 point per check, 2 points per pattern-based amendment)
+
+### Learning Rewards
+- **Immediate benefits** for learning behavior:
+  - Amendment budget bonus for pattern usage
+  - Enhanced brief unlock for pattern usage
+  - Advanced patterns unlock for micro-retrospective contributions
+- **Learning rewards** are shown in critiques to motivate continued learning
+
+### Expected Agent Behavior
+- **Before**: Agents optimized for speed, avoided learning
+- **After**: Agents optimize for learning because it's required for success and provides immediate benefits
+- **Result**: Strong outer loop behavior with active collective intelligence engagement
 
 ---
 
