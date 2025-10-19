@@ -7,6 +7,7 @@ Usage:
   ./tools/phasectl.py reset <PHASE_ID>    # Reset phase state to match current plan (for plan transitions)
   ./tools/phasectl.py review <PHASE_ID>  # Submit phase for review
   ./tools/phasectl.py next                # Advance to next phase
+  ./tools/phasectl.py recover             # Recover from plan state corruption
 """
 
 import sys
@@ -830,9 +831,9 @@ def next_phase():
                 print("This indicates the plan was reverted externally.")
                 print()
                 print("SOLUTION:")
-                print(f"   ./tools/phasectl.py reset {current_id}")
+                print(f"   ./tools/phasectl.py recover")
                 print()
-                print("This will update the phase state to match your current plan.")
+                print("This will attempt to recover from plan state corruption.")
                 return 1
 
     # Validate plan schema
@@ -924,6 +925,79 @@ def next_phase():
     _display_enhanced_brief(next_id, next_brief.read_text())
     
     return 0
+
+
+def recover_from_corruption():
+    """Recover from plan state corruption caused by upgrade process."""
+    print("🔄 Attempting to recover from plan state corruption...")
+    print()
+    
+    # Check if we're in a corrupted state
+    if not CURRENT_FILE.exists():
+        print("❌ Error: No CURRENT.json found - cannot recover")
+        return 1
+    
+    try:
+        current = json.loads(CURRENT_FILE.read_text())
+    except json.JSONDecodeError as e:
+        print(f"❌ Error: CURRENT.json corrupted: {e}")
+        return 1
+    
+    # Check for plan SHA mismatch (indicates corruption)
+    stored_plan_sha = current.get("plan_sha")
+    if not stored_plan_sha:
+        print("⚠️  No stored plan SHA - cannot detect corruption")
+        return 0
+    
+    plan_path = REPO_DIR / "plan.yaml"
+    if not plan_path.exists():
+        print("❌ Error: Plan file missing - cannot recover")
+        return 1
+    
+    import hashlib
+    current_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+    
+    if current_plan_sha == stored_plan_sha:
+        print("✅ No corruption detected - plan state is consistent")
+        return 0
+    
+    print("🚨 Plan state corruption detected!")
+    print(f"   Stored SHA: {stored_plan_sha[:8]}...")
+    print(f"   Current SHA: {current_plan_sha[:8]}...")
+    print()
+    
+    # Try to find a backup or recent commit with correct state
+    print("🔍 Looking for recovery options...")
+    
+    # Check git history for recent commits with plan changes
+    result = subprocess.run(
+        ["git", "log", "--oneline", "-10", "--", ".repo/plan.yaml"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True
+    )
+    
+    if result.returncode == 0 and result.stdout.strip():
+        print("📋 Recent plan changes found:")
+        for line in result.stdout.strip().split('\n'):
+            print(f"   {line}")
+        print()
+        print("💡 Recovery options:")
+        print("   1. Checkout a recent commit with correct plan:")
+        print("      git checkout <commit-hash> -- .repo/plan.yaml")
+        print("   2. Reset phase state to match current plan:")
+        print(f"      ./tools/phasectl.py reset {current.get('phase_id', 'PHASE_ID')}")
+        print("   3. Manually restore plan from backup if available")
+    else:
+        print("❌ No recent plan changes found in git history")
+        print()
+        print("💡 Manual recovery required:")
+        print("   1. Restore plan from backup if available")
+        print("   2. Recreate plan manually")
+        print("   3. Reset phase state:")
+        print(f"      ./tools/phasectl.py reset {current.get('phase_id', 'PHASE_ID')}")
+    
+    return 1
 
 
 def _display_enhanced_brief(phase_id: str, base_brief: str) -> None:
@@ -1018,6 +1092,9 @@ def main():
 
     elif command == "next":
         return next_phase()
+    
+    elif command == "recover":
+        return recover_from_corruption()
     
     elif command == "amend":
         if len(sys.argv) < 4:
