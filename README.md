@@ -28,9 +28,9 @@ AI agents often drift off-task, skip tests, ignore scope boundaries, and require
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
 ✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
-✅ **IC9 spine intelligence** - Replay gate → budget shaping → auto-capture/inject patterns → two-tier scope → attribution
-✅ **Opt-out cost** - Pattern rejection costs budget if replay performance degrades
-✅ **Safe-to-auto amendments** - Only pre-approved amendments applied automatically
+✅ **Intelligent learning** - System automatically learns from successful phases and applies patterns
+✅ **Economics-based enforcement** - Choices are priced via budget (scope expansion, pattern opt-out)
+✅ **Automatic intelligence extraction** - Patterns captured, amendments suggested, attribution tracked
 
 ## Usage
 

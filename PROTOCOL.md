@@ -30,6 +30,34 @@ This document is for execution. For planning, collaborate with a human to draft 
 
 ---
 
+## How It Works (IC9 Spine)
+
+The protocol automatically learns and improves through these mechanisms:
+
+### **Replay Gate**
+After phase approval, runs a bounded test on a similar task. Measures how well you generalize to similar problems.
+
+### **Budget Shaping** 
+Your replay score determines your next phase budget:
+- **High performance** (≥0.8): +25% tool budget, 5 scope expansion points
+- **Medium performance** (≥0.5): +10% tool budget, 3 scope expansion points  
+- **Low performance** (<0.5): Baseline budget, 1 scope expansion point
+
+### **Pattern Auto-Injection**
+When you start a phase, relevant patterns from previous successful phases are automatically injected into your brief. You can opt out, but if replay performance degrades, your next phase budget is reduced.
+
+### **Two-Tier Scope**
+- **Inner scope** (free): Files explicitly included in phase scope
+- **Outer scope** (costed): Files outside scope cost 1 budget point each
+
+### **Safe-to-Auto Amendments**
+When errors occur, the system suggests amendments. Only pre-approved "safe-to-auto" amendments are applied automatically (test command simplification, lint command simplification, test quarantine).
+
+### **Attribution Tracking**
+System tracks which mechanisms (patterns, amendments, scope expansion) helped replay success, enabling continuous learning.
+
+---
+
 ## Quick Command Reference (IC9 Spine)
 
 ```bash
