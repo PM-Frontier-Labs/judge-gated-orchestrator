@@ -6,38 +6,6 @@ echo "  Judge-Gated Orchestration - Status"
 echo "════════════════════════════════════════════════════════════════"
 echo ""
 
-# Intelligence status
-echo "🧠 INTELLIGENCE STATUS"
-echo "────────────────────────────────────────────────────────────────"
-if [ -n "$PHASE_ID" ]; then
-    # Check for patterns
-    PATTERNS_FILE=".repo/collective_intelligence/patterns.jsonl"
-    if [ -f "$PATTERNS_FILE" ]; then
-        PATTERN_COUNT=$(wc -l < "$PATTERNS_FILE" 2>/dev/null || echo "0")
-        echo "📚 Stored patterns: $PATTERN_COUNT"
-    else
-        echo "📚 Stored patterns: 0"
-    fi
-    
-    # Check for amendments
-    AMENDMENTS_DIR=".repo/amendments/pending"
-    if [ -d "$AMENDMENTS_DIR" ]; then
-        AMENDMENT_COUNT=$(ls "$AMENDMENTS_DIR"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
-        echo "📝 Pending amendments: $AMENDMENT_COUNT"
-    else
-        echo "📝 Pending amendments: 0"
-    fi
-    
-    # Show mechanism opportunities
-    echo "🎯 Available mechanisms:"
-    echo "   - ./tools/phasectl.py patterns list (check patterns)"
-    echo "   - ./tools/phasectl.py amend propose (propose amendments)"
-    echo "   - ./tools/phasectl.py recover (recover from corruption)"
-else
-    echo "⚠️  No active phase - run ./tools/phasectl.py start <phase-id>"
-fi
-echo ""
-
 # Current phase
 echo "📍 CURRENT PHASE"
 echo "────────────────────────────────────────────────────────────────"
@@ -80,6 +48,48 @@ if [ -n "$PHASE_ID" ]; then
         echo "⏳ No review yet - ready to implement or submit"
         echo "   Run: ./tools/phasectl.py review $PHASE_ID"
     fi
+fi
+echo ""
+
+# Automatic Intelligence Status
+echo "🧠 AUTOMATIC INTELLIGENCE STATUS"
+echo "────────────────────────────────────────────────────────────────"
+if [ -n "$PHASE_ID" ]; then
+    # Check for patterns
+    PATTERNS_FILE=".repo/collective_intelligence/patterns.jsonl"
+    if [ -f "$PATTERNS_FILE" ]; then
+        PATTERN_COUNT=$(wc -l < "$PATTERNS_FILE" 2>/dev/null || echo "0")
+        echo "📚 Auto-captured patterns: $PATTERN_COUNT"
+    else
+        echo "📚 Auto-captured patterns: 0"
+    fi
+    
+    # Check for attribution data
+    ATTRIBUTION_FILE=".repo/state/attribution.jsonl"
+    if [ -f "$ATTRIBUTION_FILE" ]; then
+        ATTRIBUTION_COUNT=$(wc -l < "$ATTRIBUTION_FILE" 2>/dev/null || echo "0")
+        echo "📊 Attribution records: $ATTRIBUTION_COUNT"
+    else
+        echo "📊 Attribution records: 0"
+    fi
+    
+    # Check for generalization scores
+    GEN_FILE=".repo/state/generalization.json"
+    if [ -f "$GEN_FILE" ]; then
+        echo "🎯 Generalization scores: Available"
+    else
+        echo "🎯 Generalization scores: None yet"
+    fi
+    
+    # Check for budget shaping
+    BUDGET_FILE=".repo/state/next_budget.json"
+    if [ -f "$BUDGET_FILE" ]; then
+        echo "💰 Budget shaping: Active"
+    else
+        echo "💰 Budget shaping: Default"
+    fi
+else
+    echo "⚠️  No active phase - run ./tools/phasectl.py start <phase-id>"
 fi
 echo ""
 

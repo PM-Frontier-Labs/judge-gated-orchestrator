@@ -32,10 +32,10 @@ Any tool that follows these conventions can participate. This repo includes a re
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
 ✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
-✅ **Collective Intelligence** - Learn from execution patterns and provide intelligent guidance
-✅ **Amendment System** - Bounded mutability for runtime adjustments
-✅ **Enhanced Briefs** - Hints and guardrails for intelligent execution
-✅ **Outer Loop Learning** - Micro-retrospectives and continuous improvement
+✅ **Automatic intelligence extraction** - Patterns auto-captured, amendments auto-suggested, learning built into phase completion
+✅ **Generalization-gated judge** - Measures learning effectiveness through replay evaluation
+✅ **Attribution tracking** - System learns what works and reinforces successful behaviors
+✅ **Two-tier scope system** - Inner scope free, outer scope costed with budget integration
 
 ## When to Use
 

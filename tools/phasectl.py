@@ -757,86 +757,64 @@ def reset_phase(phase_id: str):
     return 0
 
 
-def enhance_brief_with_intelligence(brief_content: str, phase_id: str) -> str:
-    """Enhance brief with intelligence context and mechanism guidance."""
-    enhanced_brief = brief_content
-    
-    # Add intelligence context section
-    intelligence_section = """
+
+
+def inject_patterns_into_brief(phase_id: str, brief_content: str) -> str:
+    """Inject relevant patterns into brief by default - agent must opt out."""
+    try:
+        # Load relevant patterns
+        patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+        if not patterns_file.exists():
+            return brief_content
+        
+        patterns = []
+        with open(patterns_file) as f:
+            for line in f:
+                if line.strip():
+                    pattern = json.loads(line)
+                    if pattern.get("phase_id") != phase_id:  # Don't include self
+                        patterns.append(pattern)
+        
+        if not patterns:
+            return brief_content
+        
+        # Get top 3 most recent patterns
+        top_patterns = sorted(patterns, key=lambda x: x.get("timestamp", 0), reverse=True)[:3]
+        
+        # Inject patterns section
+        patterns_section = """
 ---
 
-## 🧠 Intelligence Context
+## 🧠 Collective Intelligence (Auto-Injected)
 
-### Available Mechanisms
-- **Patterns**: Check stored patterns for similar scenarios
-  ```bash
-  ./tools/phasectl.py patterns list
-  ```
-- **Amendments**: Propose runtime adjustments within budget
-  ```bash
-  ./tools/phasectl.py amend propose add_scope "file.py" "Adding new feature"
-  ```
-- **Recovery**: Detect and recover from plan state corruption
-  ```bash
-  ./tools/phasectl.py recover
-  ```
-
-### Learning Opportunities
-- Check patterns before implementing to learn from previous phases
-- Propose amendments for legitimate scope changes
-- Contribute to collective intelligence through successful amendments
-
-### Intelligence Rewards
-- Pattern usage provides amendment budget bonuses
-- Learning behavior unlocks enhanced capabilities
-- Collective intelligence contribution improves future phases
+The following patterns were automatically identified as relevant to this phase:
 
 """
-    
-    # Insert intelligence section before the end of the brief
-    if "---" in enhanced_brief:
-        # Insert before the last "---" if it exists
-        parts = enhanced_brief.split("---")
-        if len(parts) > 1:
-            enhanced_brief = "---".join(parts[:-1]) + intelligence_section + "---" + parts[-1]
-        else:
-            enhanced_brief += intelligence_section
-    else:
-        enhanced_brief += intelligence_section
-    
-    return enhanced_brief
+        
+        for i, pattern in enumerate(top_patterns, 1):
+            patterns_section += f"{i}. **From {pattern.get('phase_id', 'previous phase')}**: {pattern.get('text', '')}\n"
+        
+        patterns_section += """
+**Note**: These patterns are automatically injected based on successful previous phases. If you believe they are not relevant, you may opt out by adding a comment explaining why.
 
-def show_mechanism_opportunities(phase_id: str):
-    """Show relevant mechanism opportunities during phase start."""
-    print("🧠 Intelligence Opportunities:")
-    print("=" * 50)
-    
-    # Check for available patterns
-    patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
-    if patterns_file.exists():
-        pattern_count = len(patterns_file.read_text().strip().split('\n')) if patterns_file.read_text().strip() else 0
-        print(f"📚 Available patterns: {pattern_count}")
-        print("   Run: ./tools/phasectl.py patterns list")
-    else:
-        print("📚 Available patterns: 0 (none stored yet)")
-    
-    # Check for pending amendments
-    amendments_dir = REPO_ROOT / ".repo" / "amendments" / "pending"
-    if amendments_dir.exists():
-        amendment_files = list(amendments_dir.glob("*.yaml"))
-        print(f"📝 Pending amendments: {len(amendment_files)}")
-        if amendment_files:
-            print("   Run: ./tools/phasectl.py review <phase-id> to apply")
-    else:
-        print("📝 Pending amendments: 0")
-    
-    # Show mechanism opportunities
-    print("🎯 Mechanism opportunities:")
-    print("   - Check patterns before implementing (./tools/phasectl.py patterns list)")
-    print("   - Propose amendments for scope changes (./tools/phasectl.py amend propose)")
-    print("   - Use recovery commands if needed (./tools/phasectl.py recover)")
-    
-    print()
+"""
+        
+        # Insert patterns section before the end of the brief
+        if "---" in brief_content:
+            # Insert before the last "---" if it exists
+            parts = brief_content.split("---")
+            if len(parts) > 1:
+                enhanced_brief = "---".join(parts[:-1]) + patterns_section + "---" + parts[-1]
+            else:
+                enhanced_brief = brief_content + patterns_section
+        else:
+            enhanced_brief = brief_content + patterns_section
+        
+        return enhanced_brief
+        
+    except Exception as e:
+        print(f"  ⚠️  Error injecting patterns: {e}")
+        return brief_content
 
 def start_phase(phase_id: str):
     """Start implementation phase with mandatory brief acknowledgment."""
@@ -862,13 +840,13 @@ def start_phase(phase_id: str):
         print(f"❌ Error: Brief not found: {brief_path}")
         return 1
     
-    # Display brief content
+    # Display brief content with auto-injected patterns
     print("📄 Brief Content:")
     print("=" * 50)
     brief_content = brief_path.read_text()
     
-    # Enhance brief with intelligence context
-    enhanced_brief = enhance_brief_with_intelligence(brief_content, phase_id)
+    # Auto-inject patterns (default on, agent must opt out)
+    enhanced_brief = inject_patterns_into_brief(phase_id, brief_content)
     print(enhanced_brief)
     print("=" * 50)
     print()
@@ -892,9 +870,6 @@ def start_phase(phase_id: str):
         print("❌ No specific exclude patterns found")
     
     print()
-    
-    # Show mechanism opportunities
-    show_mechanism_opportunities(phase_id)
     
     # Require explicit acknowledgment
     print("⚠️  Before proceeding, you must confirm you have read and understood the brief.")

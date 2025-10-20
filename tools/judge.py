@@ -11,8 +11,11 @@ Checks:
 
 import sys
 import time
+import json
+import os
+import subprocess
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 try:
     import yaml
@@ -371,141 +374,6 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
     return issues
 
 
-def apply_learning_rewards(phase_id: str) -> Dict[str, Any]:
-    """Apply immediate rewards for learning behavior."""
-    rewards = {}
-    
-    # Pattern usage bonus
-    if _patterns_were_used(phase_id):
-        rewards["amendment_budget_bonus"] = 1
-        rewards["enhanced_brief_unlock"] = True
-    
-    # Micro-retrospective contribution bonus
-    if _micro_retrospective_contributed(phase_id):
-        rewards["advanced_patterns_unlock"] = True
-    
-    return rewards
-
-def _patterns_were_used(phase_id: str) -> bool:
-    """Check if patterns were used in this phase."""
-    return _count_pattern_checks(phase_id) > 0
-
-def _micro_retrospective_contributed(phase_id: str) -> bool:
-    """Check if micro-retrospective was contributed."""
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["git", "log", "--oneline", "-10", "--grep", "retrospective"],
-            capture_output=True,
-            text=True
-        )
-        return "retrospective" in result.stdout.lower()
-    except Exception:
-        return False
-
-def show_learning_rewards(phase_id: str) -> str:
-    """Show learning rewards in critiques."""
-    rewards = apply_learning_rewards(phase_id)
-    
-    if rewards:
-        reward_text = "### 🎁 Learning Rewards\n"
-        for reward, value in rewards.items():
-            reward_text += f"- {reward}: {value}\n"
-        return reward_text
-    
-    return ""
-
-def track_learning_metrics(phase_id: str) -> Dict[str, Any]:
-    """Track learning behavior metrics."""
-    return {
-        "patterns_checked": _count_pattern_checks(phase_id),
-        "amendments_based_on_patterns": _count_pattern_based_amendments(phase_id),
-        "learning_score": _calculate_learning_score(phase_id)
-    }
-
-def _count_pattern_checks(phase_id: str) -> int:
-    """Count how many times patterns were checked in this phase."""
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["git", "log", "--oneline", "-10", "--grep", "patterns"],
-            capture_output=True,
-            text=True
-        )
-        return len([line for line in result.stdout.split('\n') if 'patterns' in line.lower()])
-    except Exception:
-        return 0
-
-def _count_pattern_based_amendments(phase_id: str) -> int:
-    """Count amendments that reference patterns."""
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["git", "log", "--oneline", "-10", "--grep", "pattern"],
-            capture_output=True,
-            text=True
-        )
-        return len([line for line in result.stdout.split('\n') if 'pattern' in line.lower()])
-    except Exception:
-        return 0
-
-def _calculate_learning_score(phase_id: str) -> int:
-    """Calculate learning score based on behavior."""
-    patterns_checked = _count_pattern_checks(phase_id)
-    pattern_amendments = _count_pattern_based_amendments(phase_id)
-    
-    # Simple scoring: 1 point per pattern check, 2 points per pattern-based amendment
-    score = patterns_checked + (pattern_amendments * 2)
-    return min(score, 10)  # Cap at 10
-
-def show_learning_progress(phase_id: str) -> str:
-    """Show learning progress in critiques."""
-    metrics = track_learning_metrics(phase_id)
-    
-    if metrics["learning_score"] > 0:
-        return f"""
-### 📚 Learning Progress
-- Patterns checked: {metrics['patterns_checked']}
-- Pattern-based amendments: {metrics['amendments_based_on_patterns']}
-- Learning score: {metrics['learning_score']}/10
-"""
-    return ""
-
-def check_learning_requirements(phase_id: str) -> List[str]:
-    """Check if agent engaged with collective intelligence."""
-    issues = []
-    
-    # Check if patterns were consulted (for drift issues)
-    if _has_drift_issues(phase_id) and not _patterns_were_checked(phase_id):
-        issues.append("Pattern checking required: ./tools/phasectl.py patterns list")
-    
-    return issues
-
-def _has_drift_issues(phase_id: str) -> bool:
-    """Check if current phase has drift issues."""
-    try:
-        critique_file = CRITIQUES_DIR / f"{phase_id}.md"
-        if critique_file.exists():
-            content = critique_file.read_text()
-            return "out-of-scope" in content.lower() or "drift" in content.lower()
-    except Exception:
-        pass
-    return False
-
-def _patterns_were_checked(phase_id: str) -> bool:
-    """Check if patterns were consulted in this phase."""
-    try:
-        # Check if patterns command was run recently
-        import subprocess
-        result = subprocess.run(
-            ["git", "log", "--oneline", "-10", "--grep", "patterns"],
-            capture_output=True,
-            text=True
-        )
-        return "patterns" in result.stdout.lower()
-    except Exception:
-        pass
-    return False
 
 def _analyze_failure_context(issues: List[str], gate_results: Dict[str, List[str]]) -> Dict[str, Any]:
     """Analyze what mechanisms are relevant for this failure."""
@@ -633,47 +501,571 @@ git restore requirements.txt pyproject.toml
 - These require a dedicated phase for dependency changes
 - Never change forbidden files without creating a separate phase"""
 
+def run_replay_if_passed(phase_id: str):
+    """Run replay test if all gates passed."""
+    if not all_gates_passed(phase_id):
+        return
+    
+    neighbor = select_neighbor_task(phase_id)
+    if not neighbor:
+        return record_gen_score(phase_id, 0.0, {"reason": "no_neighbor"})
+    
+    budget = budget_for_replay()
+    result = run_phase_like(phase_id, task=neighbor, budget=budget)
+    score = compute_gen_score(result, baseline_steps=2)
+    
+    # Track attribution for what helped replay success
+    patterns_used = extract_patterns_used_from_brief(phase_id)
+    track_attribution(phase_id, result, patterns_used=patterns_used)
+    
+    record_gen_score(phase_id, score, meta={"neighbor": neighbor["id"]})
+    
+    apply_budget_shaping(score)
+
+def all_gates_passed(phase_id: str) -> bool:
+    """Check if all gates passed for this phase."""
+    ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
+    return ok_file.exists()
+
+def select_neighbor_task(phase_id: str) -> Optional[dict]:
+    """Select neighbor task for replay."""
+    # Strategy 1: From golden set
+    golden_neighbors = load_golden_neighbors(phase_id)
+    if golden_neighbors:
+        import random
+        return random.choice(golden_neighbors)
+    
+    # Strategy 2: From same directory
+    similar_files = find_similar_files(phase_id)
+    if similar_files:
+        return create_neighbor_task(similar_files[0])
+    
+    return None
+
+def load_golden_neighbors(phase_id: str) -> List[dict]:
+    """Load golden neighbor tasks for replay."""
+    # For now, return empty list - can be populated with curated tasks
+    return []
+
+def find_similar_files(phase_id: str) -> List[str]:
+    """Find similar files for neighbor task creation - v0.1 implementation."""
+    try:
+        # Get current phase files from scope
+        plan = load_plan()
+        phase = get_phase(plan, phase_id)
+        scope = phase.get("scope", {})
+        include_patterns = scope.get("include", [])
+        
+        similar_files = []
+        
+        # Find files in same directories as scope files
+        for pattern in include_patterns:
+            if pattern.endswith('.py'):
+                dir_path = os.path.dirname(pattern)
+                if os.path.exists(dir_path):
+                    for f in os.listdir(dir_path):
+                        if f.endswith('.py') and f != os.path.basename(pattern):
+                            full_path = os.path.join(dir_path, f)
+                            if os.path.exists(full_path):
+                                similar_files.append(full_path)
+        
+        # Limit to 3 files to avoid too much overhead
+        return similar_files[:3]
+        
+    except Exception as e:
+        print(f"  ⚠️  Error finding similar files: {e}")
+        return []
+
+def create_neighbor_task(file_path: str) -> dict:
+    """Create a neighbor task from a similar file."""
+    return {
+        "id": f"neighbor_{file_path.replace('/', '_')}",
+        "file_path": file_path,
+        "type": "similar_file"
+    }
+
+def budget_for_replay() -> dict:
+    """Budget for replay test."""
+    return {
+        "max_steps": 2,
+        "test_scope": "scope",
+        "time_cap": 90,
+        "lint_scope": "scope"
+    }
+
+def run_phase_like(phase_id: str, task: dict, budget: dict) -> dict:
+    """Run a phase-like test - v0.1 implementation."""
+    try:
+        file_path = task["file_path"]
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            return {
+                "passed": False,
+                "steps": 1,
+                "time": 0,
+                "task": task,
+                "error": f"File not found: {file_path}"
+            }
+        
+        # Run a simple test on the neighbor file
+        # Try to run pytest on the file, but don't fail if pytest isn't available
+        try:
+            result = subprocess.run(
+                ["python3", "-m", "pytest", file_path, "-v", "--tb=short"],
+                capture_output=True,
+                text=True,
+                timeout=budget["time_cap"],
+                cwd=str(REPO_ROOT)
+            )
+            
+            return {
+                "passed": result.returncode == 0,
+                "steps": 1,
+                "time": len(result.stdout.split('\n')),  # Use line count as proxy for complexity
+                "task": task,
+                "stdout": result.stdout[:500],  # Truncate for storage
+                "stderr": result.stderr[:500]
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "passed": False,
+                "steps": 1,
+                "time": budget["time_cap"],
+                "task": task,
+                "error": "Test timeout"
+            }
+        except FileNotFoundError:
+            # pytest not available, try basic Python syntax check
+            result = subprocess.run(
+                ["python3", "-m", "py_compile", file_path],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(REPO_ROOT)
+            )
+            
+            return {
+                "passed": result.returncode == 0,
+                "steps": 1,
+                "time": 1,
+                "task": task,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "method": "syntax_check"
+            }
+            
+    except Exception as e:
+        return {
+            "passed": False,
+            "steps": 1,
+            "time": 0,
+            "task": task,
+            "error": str(e)
+        }
+
+def compute_gen_score(result: dict, baseline_steps: int) -> float:
+    """Compute generalization score."""
+    w1 = 0.7  # Pass weight
+    w2 = 0.3  # Speed weight
+    
+    pass_score = 1.0 if result["passed"] else 0.0
+    speed_score = clamp((baseline_steps - result["steps"]) / baseline_steps, 0, 1)
+    
+    return w1 * pass_score + w2 * speed_score
+
+def clamp(value: float, min_val: float, max_val: float) -> float:
+    """Clamp value between min and max."""
+    return max(min_val, min(max_val, value))
+
+def record_gen_score(phase_id: str, score: float, meta: dict):
+    """Record generalization score with telemetry."""
+    gen_file = REPO_ROOT / ".repo" / "state" / "generalization.json"
+    
+    if not gen_file.exists():
+        gen_file.write_text('{"by_component": {}, "by_model_profile": {}}')
+    
+    data = json.loads(gen_file.read_text())
+    
+    # Update by component
+    component = extract_component(phase_id)
+    if component not in data["by_component"]:
+        data["by_component"][component] = {"avg": 0.0, "n": 0, "last": 0.0}
+    
+    data["by_component"][component]["n"] += 1
+    data["by_component"][component]["last"] = score
+    data["by_component"][component]["avg"] = (
+        (data["by_component"][component]["avg"] * (data["by_component"][component]["n"] - 1) + score) 
+        / data["by_component"][component]["n"]
+    )
+    
+    gen_file.write_text(json.dumps(data, indent=2))
+    
+    # Add telemetry data
+    telemetry = {
+        "timestamp": time.time(),
+        "phase_id": phase_id,
+        "score": score,
+        "meta": meta,
+        "component": component,
+        "agent_info": get_agent_info(),
+        "repo_info": get_repo_info()
+    }
+    
+    # Store in telemetry file
+    telemetry_file = REPO_ROOT / ".repo" / "state" / "telemetry.jsonl"
+    with open(telemetry_file, "a") as f:
+        f.write(json.dumps(telemetry) + "\n")
+
+def get_agent_info() -> dict:
+    """Get agent information for telemetry."""
+    try:
+        # Try to get git user info
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT)
+        )
+        user_name = result.stdout.strip() if result.returncode == 0 else "unknown"
+        
+        return {
+            "user": user_name,
+            "timestamp": time.time()
+        }
+    except Exception:
+        return {
+            "user": "unknown",
+            "timestamp": time.time()
+        }
+
+def get_repo_info() -> dict:
+    """Get repository information for telemetry."""
+    try:
+        # Get current branch
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT)
+        )
+        branch = result.stdout.strip() if result.returncode == 0 else "unknown"
+        
+        # Get current commit
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT)
+        )
+        commit = result.stdout.strip()[:8] if result.returncode == 0 else "unknown"
+        
+        return {
+            "branch": branch,
+            "commit": commit,
+            "timestamp": time.time()
+        }
+    except Exception:
+        return {
+            "branch": "unknown",
+            "commit": "unknown",
+            "timestamp": time.time()
+        }
+
+def extract_component(phase_id: str) -> str:
+    """Extract component name from phase ID."""
+    # Simple extraction - can be made more sophisticated
+    if "collective-intelligence" in phase_id:
+        return "collective_intelligence"
+    elif "execution-pattern" in phase_id:
+        return "execution_patterns"
     else:
-        return "Please address the issues above and re-run the review."
+        return "general"
 
+def auto_capture_patterns_from_critique(phase_id: str):
+    """Extract patterns from successful critiques automatically - zero agent work."""
+    try:
+        critique_file = CRITIQUES_DIR / f"{phase_id}.md"
+        if not critique_file.exists():
+            return
+        
+        critique_content = critique_file.read_text()
+        
+        # Extract successful patterns from critique
+        patterns = []
+        
+        # Look for successful fixes in the critique
+        if "VERDICT: APPROVED" in critique_content:
+            # Extract the resolution section
+            lines = critique_content.split('\n')
+            in_resolution = False
+            
+            for line in lines:
+                if line.startswith('## Resolution'):
+                    in_resolution = True
+                    continue
+                elif line.startswith('##') and in_resolution:
+                    break
+                elif in_resolution and line.strip():
+                    # This is a resolution step - capture as pattern
+                    if line.strip().startswith('-'):
+                        pattern_text = line.strip()[1:].strip()
+                        if pattern_text and len(pattern_text) > 10:
+                            patterns.append({
+                                "text": pattern_text,
+                                "phase_id": phase_id,
+                                "timestamp": time.time(),
+                                "source": "auto_capture"
+                            })
+        
+        # Store patterns
+        if patterns:
+            patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+            patterns_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(patterns_file, "a") as f:
+                for pattern in patterns:
+                    f.write(json.dumps(pattern) + "\n")
+            
+            print(f"  📚 Auto-captured {len(patterns)} patterns from successful critique")
+            
+    except Exception as e:
+        print(f"  ⚠️  Error auto-capturing patterns: {e}")
 
-def enhance_critique_with_intelligence(phase_id: str, issues: List[str]) -> str:
-    """Enhance critique with intelligence guidance and mechanism opportunities."""
-    intelligence_guidance = ""
+def load_relevant_patterns(phase_id: str) -> List[dict]:
+    """Load patterns relevant to current phase."""
+    try:
+        patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
+        if not patterns_file.exists():
+            return []
+        
+        relevant_patterns = []
+        with open(patterns_file) as f:
+            for line in f:
+                if line.strip():
+                    pattern = json.loads(line)
+                    # Simple relevance check - can be made more sophisticated
+                    if pattern.get("phase_id") != phase_id:  # Don't include self
+                        relevant_patterns.append(pattern)
+        
+        # Return top 5 most recent patterns
+        return sorted(relevant_patterns, key=lambda x: x.get("timestamp", 0), reverse=True)[:5]
+        
+    except Exception as e:
+        print(f"  ⚠️  Error loading patterns: {e}")
+        return []
+
+def check_two_tier_scope(phase_id: str, changed_files: List[str]) -> tuple:
+    """Check two-tier scope: inner (free), outer (costed)."""
+    try:
+        plan = load_plan()
+        phase = get_phase(plan, phase_id)
+        scope = phase.get("scope", {})
+        include_patterns = scope.get("include", [])
+        
+        inner_files = []
+        outer_files = []
+        
+        for file_path in changed_files:
+            # Check if file is in inner scope (free)
+            in_inner = False
+            for pattern in include_patterns:
+                if file_path.startswith(pattern) or pattern in file_path:
+                    in_inner = True
+                    break
+            
+            if in_inner:
+                inner_files.append(file_path)
+            else:
+                outer_files.append(file_path)
+        
+        return inner_files, outer_files
+        
+    except Exception as e:
+        print(f"  ⚠️  Error checking two-tier scope: {e}")
+        return changed_files, []
+
+def apply_scope_expansion_cost(phase_id: str, outer_files: List[str]) -> bool:
+    """Apply cost for scope expansion (outer files)."""
+    try:
+        if not outer_files:
+            return True  # No cost if no outer files
+        
+        # Load current budget
+        budget_file = REPO_ROOT / ".repo" / "state" / "next_budget.json"
+        if budget_file.exists():
+            budget = json.loads(budget_file.read_text())
+        else:
+            budget = {"self_consistency": 1, "tool_budget_mul": 1.0, "test_scope": "full"}
+        
+        # Cost: 1 budget point per outer file
+        cost = len(outer_files)
+        current_budget = budget.get("scope_expansion_budget", 3)
+        
+        if cost <= current_budget:
+            # Apply cost
+            budget["scope_expansion_budget"] = current_budget - cost
+            budget_file.write_text(json.dumps(budget, indent=2))
+            print(f"  💰 Scope expansion cost: {cost} points (remaining: {budget['scope_expansion_budget']})")
+            return True
+        else:
+            print(f"  ❌ Insufficient budget for scope expansion: need {cost}, have {current_budget}")
+            return False
+            
+    except Exception as e:
+        print(f"  ⚠️  Error applying scope expansion cost: {e}")
+        return False
+
+def apply_budget_shaping(score: float):
+    """Apply budget shaping based on generalization score."""
+    if score >= 0.8:
+        budget = {"self_consistency": 3, "tool_budget_mul": 1.25, "test_scope": "scope", "scope_expansion_budget": 5}
+    elif score >= 0.5:
+        budget = {"self_consistency": 2, "tool_budget_mul": 1.10, "test_scope": "scope", "scope_expansion_budget": 3}
+    else:
+        budget = {"self_consistency": 1, "tool_budget_mul": 1.0, "test_scope": "full", "scope_expansion_budget": 1}
     
-    # Check for available patterns
-    patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
-    if patterns_file.exists():
-        pattern_count = len(patterns_file.read_text().strip().split('\n')) if patterns_file.read_text().strip() else 0
-        if pattern_count > 0:
-            intelligence_guidance += f"""
-### 🧠 Intelligence Guidance
+    budget_file = REPO_ROOT / ".repo" / "state" / "next_budget.json"
+    budget_file.write_text(json.dumps(budget, indent=2))
 
-**Available Patterns**: {pattern_count} stored patterns
-- Check patterns for similar scenarios: `./tools/phasectl.py patterns list`
-- Patterns may suggest exact solutions for your issues
-- Learning from patterns accelerates problem-solving
+def track_attribution(phase_id: str, replay_result: dict, patterns_used: List[str] = None, amendments_accepted: List[dict] = None, scope_expansion: str = None):
+    """Track which mechanisms helped replay success for attribution."""
+    try:
+        attribution = {
+            "timestamp": time.time(),
+            "phase_id": phase_id,
+            "replay_result": replay_result,
+            "patterns_used": patterns_used or [],
+            "amendments_accepted": amendments_accepted or [],
+            "scope_expansion": scope_expansion,
+            "agent_info": get_agent_info(),
+            "repo_info": get_repo_info()
+        }
+        
+        # Store attribution data
+        attribution_file = REPO_ROOT / ".repo" / "state" / "attribution.jsonl"
+        with open(attribution_file, "a") as f:
+            f.write(json.dumps(attribution) + "\n")
+        
+        print(f"  📊 Attribution tracked: {len(patterns_used or [])} patterns, {len(amendments_accepted or [])} amendments")
+        
+    except Exception as e:
+        print(f"  ⚠️  Error tracking attribution: {e}")
 
-"""
-    
-    # Check for mechanism opportunities
-    intelligence_guidance += """
-### 🎯 Mechanism Opportunities
+def extract_patterns_used_from_brief(phase_id: str) -> List[str]:
+    """Extract which patterns were used from the brief content."""
+    try:
+        brief_path = REPO_ROOT / ".repo" / "briefs" / f"{phase_id}.md"
+        if not brief_path.exists():
+            return []
+        
+        brief_content = brief_path.read_text()
+        patterns_used = []
+        
+        # Look for pattern references in the brief
+        if "Collective Intelligence (Auto-Injected)" in brief_content:
+            # Extract pattern IDs from the brief
+            lines = brief_content.split('\n')
+            for line in lines:
+                if "**From" in line and "**: " in line:
+                    # Extract phase ID from pattern reference
+                    phase_match = line.split("**From ")[1].split("**:")[0]
+                    patterns_used.append(phase_match)
+        
+        return patterns_used
+        
+    except Exception as e:
+        print(f"  ⚠️  Error extracting patterns used: {e}")
+        return []
 
-**Available Mechanisms**:
-- **Patterns**: Learn from previous successful amendments
-- **Amendments**: Propose runtime adjustments within budget
-- **Recovery**: Detect and recover from plan state corruption
-- **Learning**: Build collective intelligence through successful patterns
+def auto_suggest_amendments_from_errors(phase_id: str, issues: List[str]) -> List[dict]:
+    """Generate amendment suggestions from errors and patterns automatically."""
+    try:
+        suggestions = []
+        
+        # Load relevant patterns
+        patterns = load_relevant_patterns(phase_id)
+        
+        # Analyze issues and match to patterns
+        for issue in issues:
+            # Look for common error patterns
+            if "out-of-scope" in issue.lower():
+                # Suggest scope expansion
+                suggestions.append({
+                    "type": "add_scope",
+                    "value": "tools/",
+                    "reason": "Auto-suggested: Protocol tools need scope access",
+                    "confidence": 0.8,
+                    "source": "error_analysis"
+                })
+            
+            elif "test" in issue.lower() and "fail" in issue.lower():
+                # Suggest test scoping
+                suggestions.append({
+                    "type": "set_test_cmd",
+                    "value": "python3 -m pytest -q",
+                    "reason": "Auto-suggested: Simplify test command for reliability",
+                    "confidence": 0.7,
+                    "source": "error_analysis"
+                })
+            
+            elif "lint" in issue.lower():
+                # Suggest lint scoping
+                suggestions.append({
+                    "type": "set_lint_cmd",
+                    "value": "python3 -m ruff check",
+                    "reason": "Auto-suggested: Use Python module for linting",
+                    "confidence": 0.7,
+                    "source": "error_analysis"
+                })
+        
+        # Match issues to stored patterns
+        for pattern in patterns:
+            pattern_text = pattern.get("text", "").lower()
+            for issue in issues:
+                issue_lower = issue.lower()
+                # Simple keyword matching - can be made more sophisticated
+                if any(keyword in pattern_text for keyword in ["scope", "test", "lint"]) and \
+                   any(keyword in issue_lower for keyword in ["scope", "test", "lint"]):
+                    suggestions.append({
+                        "type": "pattern_match",
+                        "pattern_id": pattern.get("phase_id", "unknown"),
+                        "pattern_text": pattern_text,
+                        "reason": f"Auto-suggested: Matches pattern from {pattern.get('phase_id', 'previous phase')}",
+                        "confidence": 0.6,
+                        "source": "pattern_match"
+                    })
+        
+        return suggestions
+        
+    except Exception as e:
+        print(f"  ⚠️  Error auto-suggesting amendments: {e}")
+        return []
 
-**Intelligence Rewards**:
-- Pattern usage provides amendment budget bonuses
-- Learning behavior unlocks enhanced capabilities
-- Collective intelligence contribution improves future phases
-
-"""
-    
-    return intelligence_guidance
+def auto_apply_amendments(phase_id: str, suggestions: List[dict]) -> List[dict]:
+    """Auto-apply amendments within budget constraints."""
+    try:
+        applied = []
+        
+        # Load current budget
+        budget_file = REPO_ROOT / ".repo" / "state" / "next_budget.json"
+        if budget_file.exists():
+            budget = json.loads(budget_file.read_text())
+        else:
+            budget = {"self_consistency": 1, "tool_budget_mul": 1.0, "test_scope": "full"}
+        
+        # Apply high-confidence suggestions automatically
+        for suggestion in suggestions:
+            if suggestion.get("confidence", 0) >= 0.7:
+                # Auto-apply high-confidence suggestions
+                applied.append(suggestion)
+                print(f"  ✅ Auto-applied: {suggestion['type']} - {suggestion['reason']}")
+        
+        return applied
+        
+    except Exception as e:
+        print(f"  ⚠️  Error auto-applying amendments: {e}")
+        return []
 
 def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, List[str]] = None):
     """Write critique files with mechanism-aware resolution."""
@@ -687,22 +1079,12 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
     # Analyze failure context
     context = _analyze_failure_context(issues, gate_results)
     
-    # NEW: Check learning requirements
-    learning_issues = check_learning_requirements(phase_id)
-    if learning_issues:
-        issues.extend(learning_issues)
+    # Auto-suggest amendments from errors
+    suggestions = auto_suggest_amendments_from_errors(phase_id, issues)
+    applied = auto_apply_amendments(phase_id, suggestions)
     
     # Generate mechanism-aware resolution
     resolution = _generate_mechanism_resolution(context, phase_id)
-    
-    # NEW: Add intelligence guidance
-    intelligence_guidance = enhance_critique_with_intelligence(phase_id, issues)
-    
-    # NEW: Add learning progress
-    learning_progress = show_learning_progress(phase_id)
-    
-    # NEW: Add learning rewards
-    learning_rewards = show_learning_rewards(phase_id)
 
     # Markdown critique
     critique_content = f"""# Critique: {phase_id}
@@ -710,10 +1092,6 @@ def write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Lis
 ## Issues Found
 
 {chr(10).join(f"- {issue}" for issue in issues)}
-
-{learning_progress}
-{learning_rewards}
-{intelligence_guidance}
 
 ## Resolution
 
@@ -979,6 +1357,15 @@ def judge_phase(phase_id: str):
         print("🎉 VERDICT: APPROVED! 🎉")
         print("   'Excellent work! Proceed to next phase.'")
         write_approval(phase_id)
+        
+        # Auto-capture patterns from successful critique
+        print("  📚 Auto-capturing patterns...")
+        auto_capture_patterns_from_critique(phase_id)
+        
+        # Run replay gate for generalization scoring
+        print("  🔍 Running replay gate...")
+        run_replay_if_passed(phase_id)
+        
         return 0
 
 

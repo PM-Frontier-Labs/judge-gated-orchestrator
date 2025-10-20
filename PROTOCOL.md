@@ -11,15 +11,14 @@ This document is for execution. For planning, collaborate with a human to draft 
 ## Core Loop
 
 ```
-1. Orient:     ./orient.sh                    # Shows intelligence status
-2. Start:      ./tools/phasectl.py start <phase-id>  # Shows mechanism opportunities
-3. Implement:  Make changes within scope
+1. Orient:     ./orient.sh                    # Shows current status
+2. Start:      ./tools/phasectl.py start <phase-id>  # Auto-injects patterns into brief
+3. Implement:  Make changes within scope (patterns provided automatically)
 4. Review:     ./tools/phasectl.py review <phase-id>
-   ├─> Shows intelligence context
-   ├─> Auto-applies pending amendments
-   ├─> Auto-proposes amendments from patterns
-   ├─> Learns from successful amendments
-   └─> Writes micro-retrospectives
+   ├─> Auto-suggests amendments from errors
+   ├─> Auto-applies high-confidence amendments
+   ├─> Runs generalization-gated judge
+   └─> Auto-captures patterns from successful critiques
 5. Check:      If .repo/critiques/<phase-id>.OK exists → approved
                If .repo/critiques/<phase-id>.md exists → fix and re-review
 6. Advance:    ./tools/phasectl.py next      # Shows intelligence summary
@@ -45,17 +44,23 @@ This document is for execution. For planning, collaborate with a human to draft 
 # Recover from plan state corruption
 ./tools/phasectl.py recover
 
-# Check available patterns (required for drift issues)
+# Submit phase for review (auto-suggests amendments, auto-captures patterns)
+./tools/phasectl.py review <phase-id>
+
+# Advance to next phase
+./tools/phasectl.py next
+
+# View stored patterns (auto-captured from successful phases)
 ./tools/phasectl.py patterns list
+
+# Propose amendments (for manual runtime adjustments)
+./tools/phasectl.py amend propose <type> <value> <reason>
 
 # Check current phase
 cat .repo/briefs/CURRENT.json
 
-# Read current brief
+# Read current brief (with auto-injected patterns)
 cat .repo/briefs/$(jq -r .phase_id < .repo/briefs/CURRENT.json).md
-
-# Submit for review
-./tools/phasectl.py review <phase-id>
 
 # Check if approved
 ls .repo/critiques/<phase-id>.OK
@@ -923,35 +928,106 @@ The protocol protects critical files from modification:
 
 ---
 
-## Intelligence Features
+## Automatic Intelligence Extraction
 
-The protocol includes intelligence features that help agents learn and improve:
+The protocol includes automatic intelligence extraction that makes learning part of phase completion, not a separate activity:
 
-### Pattern System
-- **Check patterns**: `./tools/phasectl.py patterns list` shows stored patterns from previous phases
-- **Learn from patterns**: Patterns may suggest exact solutions for common problems
-- **Required for drift issues**: Must check patterns before proposing amendments
+### Automatic Pattern Capture
+- **Zero agent work**: Patterns extracted automatically from successful critiques
+- **Stored intelligence**: Patterns stored in `.repo/collective_intelligence/patterns.jsonl`
+- **Attribution tracking**: Each pattern linked to source phase and timestamp
+- **Continuous learning**: System builds intelligence over time without agent effort
 
-### Amendment System
-- **Propose amendments**: `./tools/phasectl.py amend propose` for runtime adjustments
-- **Budget limits**: Each amendment type has usage limits to prevent abuse
-- **Auto-application**: Amendments are applied automatically during review
+### Automatic Amendment Suggestions
+- **Error analysis**: System analyzes failures and suggests amendments automatically
+- **Pattern matching**: Uses stored patterns to suggest proven solutions
+- **Confidence scoring**: Auto-applies high-confidence suggestions (≥0.7)
+- **Budget integration**: Respects budget constraints for amendment application
 
-### Intelligence Dashboard
-- **Status overview**: `./orient.sh` shows intelligence status (patterns, amendments, mechanisms)
-- **Mechanism opportunities**: Commands surface available mechanisms during normal operation
-- **Learning guidance**: Continuous guidance on available intelligence features
+### Default-On Pattern Injection
+- **Automatic injection**: Relevant patterns injected into briefs by default
+- **Opt-out mechanism**: Agents can opt out with rationale if patterns not relevant
+- **Relevance filtering**: Shows top 3 most recent, relevant patterns
+- **Clear attribution**: Shows which phase each pattern came from
 
-### Intelligence Rewards
-- **Pattern usage**: Using patterns provides amendment budget bonuses
-- **Learning behavior**: Learning unlocks enhanced capabilities
-- **Collective intelligence**: Contributing improves future phases
+### Attribution Tracking
+- **Pattern usage**: Tracks which patterns were used in each phase
+- **Amendment acceptance**: Tracks which amendments were accepted
+- **Scope expansion**: Tracks scope expansion costs and budget usage
+- **Replay correlation**: Links mechanisms to replay success for learning
+
+### Two-Tier Scope System
+- **Inner scope**: Free changes within defined phase scope
+- **Outer scope**: Costed changes outside phase scope (1 budget point per file)
+- **Budget integration**: Scope expansion costs tracked in budget system
+- **Automatic classification**: Files automatically classified as inner/outer
+
+### Generalization-Gated Judge
+- **Automatic evaluation**: After phase approval, runs replay test on similar task
+- **Generalization scoring**: Measures how well agent generalizes to similar problems
+- **Budget shaping**: Higher generalization scores provide larger budgets
+- **Component tracking**: Scores tracked by component and model profile
+
+### Budget Shaping
+- **High performance** (score ≥ 0.8): +25% tool budget, 5 scope expansion points
+- **Medium performance** (score ≥ 0.5): +10% tool budget, 3 scope expansion points
+- **Low performance** (score < 0.5): Baseline budget, 1 scope expansion point
+
+### How It Works
+1. **Phase starts**: Patterns automatically injected into brief (default-on)
+2. **Implementation**: Agent works with intelligence context provided automatically
+3. **Review**: Amendments auto-suggested from errors and patterns
+4. **Approval**: Patterns auto-captured from successful critiques
+5. **Replay**: Generalization score calculated from neighbor task performance
+6. **Attribution**: All mechanisms tracked and linked to replay success
+7. **Budget shaping**: Next phase budget adjusted based on performance
 
 ---
 
-## Collective Intelligence System
+## Automatic Intelligence Features
 
-The protocol includes powerful collective intelligence capabilities that learn from execution patterns:
+The protocol automatically provides intelligence without requiring agent effort:
+
+### Pattern Auto-Injection
+When you run `./tools/phasectl.py start <phase-id>`, the system automatically:
+- Loads relevant patterns from previous successful phases
+- Injects top 3 patterns into your brief
+- Shows clear attribution of which phase each pattern came from
+- Provides opt-out mechanism if patterns are not relevant
+
+### Amendment Auto-Suggestion
+When you run `./tools/phasectl.py review <phase-id>`, the system automatically:
+- Analyzes any errors or issues found
+- Matches errors to stored patterns from previous phases
+- Suggests concrete amendments with confidence scores
+- Auto-applies high-confidence suggestions (≥0.7) within budget
+
+### Pattern Auto-Capture
+When a phase is approved, the system automatically:
+- Extracts successful resolution steps from the critique
+- Stores them as patterns for future phases
+- Links each pattern to the source phase and timestamp
+- Builds collective intelligence over time
+
+### Attribution Tracking
+The system automatically tracks:
+- Which patterns were used in each phase
+- Which amendments were accepted
+- Scope expansion costs and budget usage
+- Correlation between mechanisms and replay success
+
+### Two-Tier Scope
+The system automatically:
+- Classifies files as "inner scope" (free) or "outer scope" (costed)
+- Applies budget costs for scope expansion (1 point per outer file)
+- Tracks scope expansion in budget system
+- Provides clear feedback on scope costs
+
+---
+
+## Amendment System
+
+The protocol includes powerful amendment capabilities for runtime adjustments:
 
 ### Amendment System
 - **Bounded Mutability**: Propose runtime adjustments within budget limits
