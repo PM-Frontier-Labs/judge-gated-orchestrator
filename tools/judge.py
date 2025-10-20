@@ -44,6 +44,16 @@ CRITIQUES_DIR = REPO_DIR / "critiques"
 TRACES_DIR = REPO_DIR / "traces"
 
 
+def is_experimental_enabled(feature: str) -> bool:
+    """Check if experimental feature is enabled in plan."""
+    try:
+        plan = load_plan()
+        exp_features = plan.get("plan", {}).get("experimental_features", {})
+        return exp_features.get(feature, False)
+    except Exception:
+        return False
+
+
 def load_plan() -> Dict[str, Any]:
     """Load plan.yaml and validate."""
     plan_file = REPO_DIR / "plan.yaml"
@@ -666,7 +676,11 @@ def apply_opt_out_cost(phase_id: str, replay_score: float) -> None:
         print(f"  ⚠️  Error applying opt-out cost: {e}")
 
 def run_replay_if_passed(phase_id: str):
-    """Run replay test if all gates passed with guardrails (neutral fallback, smoothing, normalization)."""
+    """Run replay test if all gates passed with guardrails (experimental feature)."""
+    # Check if experimental features are enabled
+    if not is_experimental_enabled("replay_budget"):
+        return
+    
     if not all_gates_passed(phase_id):
         return
 
@@ -1631,9 +1645,12 @@ def judge_phase(phase_id: str):
         print("  📚 Auto-capturing patterns...")
         auto_capture_patterns_from_critique(phase_id)
         
-        # Run replay gate for generalization scoring
-        print("  🔍 Running replay gate...")
-        run_replay_if_passed(phase_id)
+        # Run replay gate for generalization scoring (experimental)
+        if is_experimental_enabled("replay_budget"):
+            print("  🔍 Running replay gate...")
+            run_replay_if_passed(phase_id)
+        else:
+            print("  ⚠️  Replay gate disabled (experimental feature)")
         
         return 0
 

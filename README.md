@@ -30,6 +30,8 @@ AI agents often drift off-task, skip tests, ignore scope boundaries, and require
 ✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
 ✅ **Intelligent learning** - System automatically learns from successful phases and applies patterns
 ✅ **Economics-based enforcement** - Choices are priced via budget (scope expansion, pattern opt-out, bounded maintenance burst)
+
+✅ **Experimental features** - Replay gate and budget shaping are opt-in via `experimental_features.replay_budget: true`
 ✅ **Automatic intelligence extraction** - Patterns captured, amendments suggested, attribution tracked
 
 ## Usage

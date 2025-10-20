@@ -240,6 +240,32 @@ What to accomplish
 
 ---
 
+## Experimental Features
+
+Some protocol features are experimental and require explicit opt-in:
+
+```yaml
+plan:
+  experimental_features:
+    replay_budget: true  # Enable replay gate and budget shaping
+```
+
+**Experimental Features (opt-in):**
+- **Replay Gate** - Generalization scoring via neighbor task replay
+- **Budget Shaping** - Score-based budget adjustments for next phase
+- **Pattern Auto-Injection** - Default-on pattern injection with opt-out costs
+- **Attribution Tracking** - Track which mechanisms helped replay success
+
+**Proven Features (always-on):**
+- ✅ Intelligent drift classification (legitimate vs rogue)
+- ✅ Runtime scope amendments (`add_scope`, `set_test_cmd`, etc.)
+- ✅ Auto-capture patterns from critiques
+- ✅ Auto-suggest amendments from errors
+- ✅ Safe-to-auto amendment application
+- ✅ Mechanism-aware critique generation
+
+---
+
 ### `.repo/critiques/<phase-id>.md`
 
 Judge feedback when phase needs revision.

@@ -49,6 +49,14 @@ def _validate_top_level(plan: Dict[str, Any]) -> List[str]:
         elif isinstance(lc, dict) and "command" not in lc:
             errors.append("plan.lint_command dict must have 'command' key")
     
+    # Validate experimental_features (optional)
+    if "experimental_features" in plan_config:
+        exp = plan_config["experimental_features"]
+        if not isinstance(exp, dict):
+            errors.append("plan.experimental_features must be a dict")
+        elif "replay_budget" in exp and not isinstance(exp["replay_budget"], bool):
+            errors.append("plan.experimental_features.replay_budget must be a boolean")
+    
     return errors
 
 

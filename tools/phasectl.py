@@ -723,8 +723,29 @@ def reset_phase(phase_id: str):
 
 
 
+def is_experimental_enabled(feature: str) -> bool:
+    """Check if experimental feature is enabled in plan."""
+    try:
+        plan_file = REPO_DIR / "plan.yaml"
+        if not plan_file.exists():
+            return False
+        
+        import yaml
+        with plan_file.open() as f:
+            plan = yaml.safe_load(f)
+        
+        exp_features = plan.get("plan", {}).get("experimental_features", {})
+        return exp_features.get(feature, False)
+    except Exception:
+        return False
+
+
 def inject_patterns_into_brief(phase_id: str, brief_content: str) -> str:
-    """Inject relevant patterns into brief by default - agent must opt out."""
+    """Inject relevant patterns into brief by default - agent must opt out (experimental feature)."""
+    # Check if experimental features are enabled
+    if not is_experimental_enabled("replay_budget"):
+        return brief_content
+    
     try:
         # Load relevant patterns
         patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
@@ -817,12 +838,15 @@ def start_phase(phase_id: str):
     print("=" * 50)
     print()
     
-    # Track pattern opt-out for replay correlation
-    try:
-        from tools.judge import track_pattern_opt_out
-        track_pattern_opt_out(phase_id, enhanced_brief)
-    except Exception as e:
-        print(f"  ⚠️  Error tracking pattern opt-out: {e}")
+    # Track pattern opt-out for replay correlation (experimental)
+    if is_experimental_enabled("replay_budget"):
+        try:
+            from tools.judge import track_pattern_opt_out
+            track_pattern_opt_out(phase_id, enhanced_brief)
+        except Exception as e:
+            print(f"  ⚠️  Error tracking pattern opt-out: {e}")
+    else:
+        print("  ⚠️  Pattern opt-out tracking disabled (experimental feature)")
     
     # Extract and display scope
     scope = extract_scope_from_brief(brief_path)
