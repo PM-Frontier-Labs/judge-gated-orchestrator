@@ -1017,13 +1017,12 @@ The system automatically tracks:
 - Correlation between mechanisms and replay success
 
 ### Two-Tier Scope
-The system provides functions for:
-- Classifying files as "inner scope" (free) or "outer scope" (costed)
-- Applying budget costs for scope expansion (1 point per outer file)
-- Tracking scope expansion in budget system
-- Providing clear feedback on scope costs
-
-**Note**: Two-tier scope classification functions are implemented but not yet integrated into the drift checking process.
+The system automatically:
+- Classifies files as "inner scope" (free) or "outer scope" (costed)
+- Applies budget costs for scope expansion (1 point per outer file)
+- Tracks scope expansion in budget system
+- Provides clear feedback on scope costs
+- Integrates with intelligent drift classification
 
 ---
 

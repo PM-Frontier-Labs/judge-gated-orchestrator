@@ -332,13 +332,18 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
     if not include_patterns:
         return []  # No scope defined, can't check drift
 
-    # Classify files using shared utility
-    in_scope, out_of_scope = classify_files(
-        changed_files,
-        include_patterns,
-        exclude_patterns
-    )
-
+    # Two-tier scope classification: inner (free), outer (costed)
+    inner_files, outer_files = check_two_tier_scope(phase_id, changed_files)
+    
+    # Apply scope expansion cost for outer files
+    if outer_files:
+        if not apply_scope_expansion_cost(phase_id, outer_files):
+            issues.append("Insufficient budget for scope expansion:")
+            for f in outer_files:
+                issues.append(f"  - {f}")
+            issues.append("")
+            return issues  # Stop here if budget insufficient
+    
     # Check forbidden patterns using shared utility
     drift_rules = phase.get("drift_rules", {})
     forbid_patterns = drift_rules.get("forbid_changes", [])
@@ -351,15 +356,15 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
         issues.extend(_generate_forbidden_remediation(forbidden_files, baseline_sha, REPO_ROOT))
         issues.append("")
 
-    # NEW: Intelligent drift classification
-    if out_of_scope:
+    # NEW: Intelligent drift classification for outer files
+    if outer_files:
         legitimate_changes, rogue_changes = classify_drift_intelligence(
-            out_of_scope, phase_id, str(REPO_ROOT)
+            outer_files, phase_id, str(REPO_ROOT)
         )
         
         # Log legitimate changes for transparency
         if legitimate_changes:
-            print(f"✅ Auto-approved {len(legitimate_changes)} legitimate changes")
+            print(f"✅ Auto-approved {len(legitimate_changes)} legitimate outer scope changes")
         
         # Apply intelligent limits - only count rogue changes against the limit
         allowed_drift = drift_gate.get("allowed_out_of_scope_changes", 0)
@@ -370,6 +375,22 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
                 issues.append(f"  - {f}")
             issues.append("")
             issues.extend(_generate_drift_remediation(rogue_changes, baseline_sha, phase_id, REPO_ROOT))
+        else:
+            print(f"✅ Scope expansion within budget: {len(outer_files)} files (cost: {len(outer_files)} points)")
+            
+            # Store scope expansion info for attribution tracking
+            scope_info = {
+                "inner_files": len(inner_files),
+                "outer_files": len(outer_files),
+                "scope_cost": len(outer_files)
+            }
+            # Store in phase context for later attribution
+            try:
+                from lib.state import save_phase_context
+                context = {"scope_expansion": scope_info}
+                save_phase_context(phase_id, context, str(REPO_ROOT))
+            except Exception:
+                pass  # Tolerate missing context
 
     return issues
 
@@ -516,7 +537,19 @@ def run_replay_if_passed(phase_id: str):
     
     # Track attribution for what helped replay success
     patterns_used = extract_patterns_used_from_brief(phase_id)
-    track_attribution(phase_id, result, patterns_used=patterns_used)
+    
+    # Load scope expansion info from phase context
+    scope_expansion = None
+    try:
+        from lib.state import load_phase_context
+        context = load_phase_context(phase_id, str(REPO_ROOT))
+        scope_info = context.get("scope_expansion")
+        if scope_info:
+            scope_expansion = f"inner:{scope_info['inner_files']},outer:{scope_info['outer_files']},cost:{scope_info['scope_cost']}"
+    except Exception:
+        pass  # Tolerate missing context
+    
+    track_attribution(phase_id, result, patterns_used=patterns_used, scope_expansion=scope_expansion)
     
     record_gen_score(phase_id, score, meta={"neighbor": neighbor["id"]})
     
