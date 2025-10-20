@@ -96,7 +96,7 @@ def check_artifacts(phase: Dict[str, Any]) -> List[str]:
 
 
 
-def check_docs(phase: Dict[str, Any], changed_files: List[str] = None) -> List[str]:
+def check_docs(phase: Dict[str, Any], changed_files: List[str]) -> List[str]:
     """Check that documentation was actually updated in this phase."""
     issues = []
     docs_gate = phase.get("gates", {}).get("docs", {})
@@ -105,8 +105,17 @@ def check_docs(phase: Dict[str, Any], changed_files: List[str] = None) -> List[s
     if not must_update:
         return issues
 
-    if changed_files is None:
-        changed_files = []
+    # Defensive check for empty changed_files
+    if not changed_files:
+        issues.append(
+            "Documentation gate failed: No changed files detected\n"
+            "   This usually means:\n"
+            "   - Files are not committed yet (run 'git add' and 'git commit')\n"
+            "   - Baseline SHA is incorrect\n"
+            "   - No files were actually modified\n"
+            f"   Required documentation: {', '.join(must_update)}"
+        )
+        return issues
 
     # Check each required doc
     for doc in must_update:
@@ -127,9 +136,15 @@ def check_docs(phase: Dict[str, Any], changed_files: List[str] = None) -> List[s
 
         # CRITICAL: Check if doc was actually changed in this phase
         if doc_path not in changed_files:
+            # Show what files WERE detected for debugging
+            detected_files = changed_files[:5]  # Show first 5 files
+            more_files = f" and {len(changed_files) - 5} more" if len(changed_files) > 5 else ""
+            
             issues.append(
                 f"Documentation not updated in this phase: {doc_path}\n"
-                f"   This file must be modified as part of {phase['id']}"
+                f"   This file must be modified as part of {phase['id']}\n"
+                f"   Files detected as changed: {', '.join(detected_files)}{more_files}\n"
+                f"   To fix: Modify {doc_path} and ensure changes are committed"
             )
             continue
 
@@ -1352,6 +1367,15 @@ def judge_phase(phase_id: str):
     )
 
     print("  🔍 Checking documentation...")
+    # Ensure changed_files is never None when calling check_docs
+    if changed_files is None:
+        print("  ⚠️  Warning: changed_files is None, re-fetching...")
+        changed_files = get_changed_files(
+            REPO_ROOT,
+            include_committed=True,
+            base_branch=base_branch,
+            baseline_sha=baseline_sha
+        )
     docs_issues = check_docs(phase, changed_files)
     gate_results["docs"] = docs_issues
     all_issues.extend(docs_issues)
