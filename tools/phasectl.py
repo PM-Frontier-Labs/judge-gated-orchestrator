@@ -42,7 +42,7 @@ CURRENT_FILE = BRIEFS_DIR / "CURRENT.json"
 def check_protocol_version():
     """Check if protocol tools are up to date."""
     # Check if we have latest commands by looking for discover command
-    return has_command("discover")
+    return has_command("discover_plan")
 
 
 def has_command(command_name: str) -> bool:
