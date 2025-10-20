@@ -13,13 +13,9 @@ Like Git tracks code changes through `.git/`, `HEAD`, and commit messages, this 
 
 Any tool that follows these conventions can participate. This repo includes a reference implementation in Python, but you could rewrite it in Bash, Rust, or Make.
 
-## Why It Matters
+## Purpose
 
-**The problem:** AI agents drift off-task, skip tests, ignore scope boundaries, and require constant supervision.
-
-**The solution:** Define phases with quality gates. Judge blocks progression until all gates pass. Agent iterates until approved, then advances autonomously.
-
-**Result:** You define a 6-week roadmap, go to sleep, wake up to 2-3 completed phases with tests passing and docs updated.
+AI agents often drift off-task, skip tests, ignore scope boundaries, and require constant supervision. This protocol defines phases with quality gates. The judge blocks progression until all gates pass. The agent iterates until approved, then advances autonomously.
 
 ## Key Features
 
@@ -37,22 +33,20 @@ Any tool that follows these conventions can participate. This repo includes a re
 ✅ **Attribution tracking** - System learns what works and reinforces successful behaviors
 ✅ **Two-tier scope system** - Inner scope free, outer scope costed with budget integration
 
-## When to Use
+## Usage
 
-✅ **Multi-phase projects** - Breaking work into 3+ sequential phases
-✅ **Overnight autonomous work** - Agent executes while you sleep
-✅ **Quality-critical code** - Need tests + docs enforced automatically
-✅ **AI-assisted development** - Claude Code, Cursor, Windsurf, etc.
-✅ **Scope control** - Prevent drift and "drive-by" changes
+**Multi-phase projects** - Breaking work into 3+ sequential phases
+**Quality-critical code** - Need tests + docs enforced automatically
+**AI-assisted development** - Claude Code, Cursor, Windsurf, etc.
+**Scope control** - Prevent drift and "drive-by" changes
 
-## When NOT to Use
+**Not suitable for:**
+- Single tasks (just prompt Claude directly)
+- No quality requirements (gates add overhead)
+- Exploratory coding (rigid phases slow down discovery)
+- Non-git projects (drift prevention requires git)
 
-❌ **Single tasks** - Just prompt Claude directly
-❌ **No quality requirements** - Gates add overhead
-❌ **Exploratory coding** - Rigid phases slow down discovery
-❌ **Non-git projects** - Drift prevention requires git
-
-## Quick Demo (30 Seconds)
+## Setup
 
 ```bash
 # Clone
@@ -70,30 +64,23 @@ pip install -r requirements-llm.txt
 
 # Try the review flow
 ./tools/phasectl.py review P02-impl-feature
-# → Shows diff summary, runs tests, invokes judge, shows result
 ```
 
 **Note:** `tools/phasectl.py` is the only supported CLI. Other tools in `tools/` are internal implementation details.
 
-**What you'll see:** System catches out-of-scope changes, enforces gates, provides clear feedback.
-
-## How It Compares
+## Comparison
 
 | Feature | This Protocol | Aider | LangGraph | Manual Prompting |
 |---------|---------------|-------|-----------|------------------|
-| **Quality gates** | ✅ Enforced | ❌ | ❌ | ❌ |
-| **Drift prevention** | ✅ Enforced | ❌ | ❌ | ❌ |
-| **Context-window proof** | ✅ File-based | ⚠️ Partial | ❌ | ❌ |
-| **Autonomous multi-phase** | ✅ Built-in | ❌ | ⚠️ Complex | ❌ |
-| **Language-agnostic** | ✅ Protocol | ✅ | ❌ Python | ✅ |
+| **Quality gates** | Enforced | No | No | No |
+| **Drift prevention** | Enforced | No | No | No |
+| **Context-window proof** | File-based | Partial | No | No |
+| **Autonomous multi-phase** | Built-in | No | Complex | No |
+| **Language-agnostic** | Protocol | Yes | Python only | Yes |
 | **Setup time** | 5 min | 2 min | 30 min | 0 min |
-| **Overnight execution** | ✅ Proven | ❌ | ⚠️ Possible | ❌ |
+| **Overnight execution** | Supported | No | Possible | No |
 
-**Unique position:** Only solution that enforces quality gates + prevents drift + works autonomously across context windows.
-
-## What Gets Enforced
-
-**Implemented gates:**
+## Implemented Gates
 
 | Gate | What It Checks | Example |
 |------|----------------|---------|
@@ -104,15 +91,15 @@ pip install -r requirements-llm.txt
 | **drift** | Scope boundaries | Only `src/mvp/**` can change |
 | **llm_review** | Semantic quality | Claude reviews architecture |
 
-**Test scoping (Phase 2.5):**
-- `test_scope: "scope"` - Only run tests matching phase scope (fast, focused)
-- `quarantine: [...]` - Skip specific tests with documented reasons (flaky APIs, legacy tests)
+**Test scoping:**
+- `test_scope: "scope"` - Only run tests matching phase scope
+- `quarantine: [...]` - Skip specific tests with documented reasons
 
-Gates are configurable per phase. Enforce what matters for your project.
+Gates are configurable per phase.
 
-## Collective Intelligence Features
+## Automatic Intelligence Features
 
-The protocol includes powerful collective intelligence capabilities that learn from execution patterns:
+The protocol includes automatic intelligence capabilities:
 
 ### Amendment System
 - **Bounded Mutability**: Propose runtime adjustments within budget limits
@@ -260,9 +247,7 @@ fi
 
 You don't install it, you follow it. You don't import classes, you write files that match the conventions. You don't learn an API, you run shell commands.
 
-Like Git doesn't tell you how to write code—just how to track changes—this protocol doesn't tell you what to build, just how to enforce quality during autonomous execution.
-
-**The protocol is the spec. This repo is one way to implement it.**
+Like Git tracks code changes, this protocol tracks autonomous work execution. The protocol defines file conventions for quality-gated phases.
 
 ## Get Started
 
