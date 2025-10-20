@@ -149,7 +149,12 @@ def check_docs(phase: Dict[str, Any], changed_files: List[str]) -> List[str]:
             continue
 
         # CRITICAL: Check if doc was actually changed in this phase
-        if doc_path not in changed_files:
+        # Handle both files and directories (prefix matching for directories)
+        doc_was_changed = (
+            doc_path in changed_files or  # Exact file match
+            any(f.startswith(doc_path) for f in changed_files)  # Directory prefix match
+        )
+        if not doc_was_changed:
             # Show what files WERE detected for debugging
             detected_files = changed_files[:5]  # Show first 5 files
             more_files = f" and {len(changed_files) - 5} more" if len(changed_files) > 5 else ""
