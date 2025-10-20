@@ -16,6 +16,7 @@ import time
 import subprocess
 import shlex
 import re
+import os
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -36,6 +37,58 @@ CRITIQUES_DIR = REPO_DIR / "critiques"
 TRACES_DIR = REPO_DIR / "traces"
 BRIEFS_DIR = REPO_DIR / "briefs"
 CURRENT_FILE = BRIEFS_DIR / "CURRENT.json"
+
+
+def check_protocol_version():
+    """Check if protocol tools are up to date."""
+    # Check if we have latest commands by looking for discover command
+    return has_command("discover")
+
+
+def has_command(command_name: str) -> bool:
+    """Check if a command exists in the current protocol tools."""
+    try:
+        # Check if the command function exists
+        return command_name in globals()
+    except Exception:
+        return False
+
+
+def can_update():
+    """Check if auto-update is possible."""
+    return (
+        Path("../judge-gated-orchestrator/install-protocol.sh").exists() and
+        os.access("tools", os.W_OK) and
+        Path(".git").exists()
+    )
+
+
+def auto_update_protocol():
+    """Auto-update protocol tools if outdated."""
+    try:
+        if not can_update():
+            print("❌ Auto-update failed - manual update required")
+            print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
+            return False
+        
+        print("🔄 Protocol tools outdated - attempting auto-update...")
+        
+        result = subprocess.run([
+            "../judge-gated-orchestrator/install-protocol.sh"
+        ], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print("✅ Protocol tools updated successfully")
+            return True
+        else:
+            print(f"❌ Auto-update failed: {result.stderr}")
+            print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Auto-update error: {e}")
+        print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
+        return False
 
 
 def load_plan():
@@ -1248,6 +1301,14 @@ def recover_from_corruption():
 
 
 def main():
+    # Check and auto-update protocol tools if needed
+    if not check_protocol_version():
+        if not auto_update_protocol():
+            print("⚠️  Using outdated protocol tools")
+            print("   Some features may not work correctly")
+            print("   Update manually: ../judge-gated-orchestrator/install-protocol.sh")
+            print()
+    
     if len(sys.argv) < 2:
         print(__doc__)
         return 1

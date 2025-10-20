@@ -1,0 +1,139 @@
+plan:
+  id: PROMPT-LAB-IMPLEMENTATION
+  summary: "Implement the complete Prompt Lab feature - an intelligent prompt optimization system with situation-aware configuration, A/B testing, and agent-aware optimization"
+  base_branch: "main"
+  test_command: "pytest tests/ -v"
+  
+  llm_review_config:
+    model: "claude-sonnet-4-20250514"
+    max_tokens: 2000
+    temperature: 0
+    budget_usd: 2.0
+    fail_on_transport_error: false
+    llm_review_scope: "scope"
+    include_extensions: [".py", ".tsx", ".ts", ".md"]
+    exclude_patterns:
+      - "tests/**"
+      - "**/__pycache__/**"
+      - "runs/**"
+      - ".repo/**"
+
+  phases:
+    - id: P01-prompt-backend-foundation
+      description: "Build the foundational backend infrastructure for the Prompt Lab feature, including prompt template management, variant system, and API endpoints"
+      scope:
+        include:
+          - "app/prompts/"
+          - "app/api/prompt_routes.py"
+          - "app/schemas/prompt_schemas.py"
+          - "app/services/prompt_service.py"
+          - "tests/test_prompt_service.py"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 1
+
+    - id: P02-situation-classification-engine
+      description: "Implement the intelligent situation detection and prompt routing engine based on the 10 spectra"
+      scope:
+        include:
+          - "app/prompts/situation_classifier.py"
+          - "app/prompts/spectra_detector.py"
+          - "app/prompts/runtime_levers.py"
+          - "app/prompts/policy_engine.py"
+          - "app/schemas/situation_schemas.py"
+          - "tests/test_situation_classifier.py"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 1
+
+    - id: P03-frontend-prompt-lab-ui
+      description: "Develop the React components for the Prompt Lab user interface, including composer, spectra panel, and variant selection"
+      scope:
+        include:
+          - "frontend/src/components/prompt-lab/"
+          - "frontend/src/hooks/usePromptLab.ts"
+          - "frontend/src/services/promptApi.ts"
+          - "frontend/src/components/navigation/PrimaryNav.tsx"
+          - "frontend/app/prompts/"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: false
+        drift:
+          allowed_out_of_scope_changes: 2
+
+    - id: P04-agent-aware-optimization
+      description: "Implement agent-aware prompt optimization with AI-powered prompt generation and agent-specific analysis"
+      scope:
+        include:
+          - "app/prompts/agent_aware_classifier.py"
+          - "app/prompts/ai_prompt_generator.py"
+          - "frontend/src/components/prompt-lab/AgentSelector.tsx"
+          - "frontend/src/components/prompt-lab/OptimizationResults.tsx"
+          - "tests/test_agent_aware_optimization.py"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 1
+
+    - id: P05-ab-testing-experiments
+      description: "Enable multi-variant testing and performance analytics for prompt optimization"
+      scope:
+        include:
+          - "app/prompts/experiment_engine.py"
+          - "frontend/src/components/prompt-lab/ExperimentRunner.tsx"
+          - "frontend/src/components/prompt-lab/ResultsCompare.tsx"
+          - "tests/test_experiment_engine.py"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 1
+
+    - id: P06-advanced-features-integration
+      description: "Integrate advanced reasoning scaffolds, multi-agent coordination, and enterprise governance features"
+      scope:
+        include:
+          - "app/prompts/reasoning_scaffolds.py"
+          - "app/prompts/multi_agent_coordinator.py"
+          - "app/prompts/governance.py"
+          - "tests/test_advanced_prompts.py"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 1
+
+    - id: P07-testing-documentation
+      description: "Add comprehensive testing (unit, integration, E2E) and complete documentation (user, API, developer guides) for the Prompt Lab"
+      scope:
+        include:
+          - "tests/prompt_lab/"
+          - "tests/integration/test_prompt_lab_integration.py"
+          - "tests/e2e/test_prompt_lab_e2e.py"
+          - "docs/guides/Prompt_Lab_Guide.md"
+          - "docs/reference/Prompt_API.md"
+          - "docs/architecture/Prompt_Lab_Architecture.md"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 3
