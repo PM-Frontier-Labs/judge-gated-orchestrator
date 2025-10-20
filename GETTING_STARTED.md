@@ -8,9 +8,28 @@
 
 ## Quick Start (5 Minutes)
 
-### 1. Install
+### Option 1: Install Protocol Tools in Your Project (Recommended)
 
 ```bash
+# Clone protocol tools repository
+git clone https://github.com/PM-Frontier-Labs/judge-gated-orchestrator.git
+
+# Install protocol tools in your project
+cd your-project
+../judge-gated-orchestrator/install-protocol.sh
+
+# Create your project plan
+touch .repo/plan.yaml
+
+# Discover and generate briefs
+./tools/phasectl.py discover
+./tools/phasectl.py generate-briefs
+```
+
+### Option 2: Use as Example Project
+
+```bash
+# Clone and use as example
 git clone https://github.com/PM-Frontier-Labs/judge-gated-orchestrator.git
 cd judge-gated-orchestrator
 pip install -r requirements.txt
@@ -27,14 +46,14 @@ pip install -r requirements-llm.txt
 **Optional:**
 - Anthropic API key (for LLM code review features)
 
-### 2. Try the Demo
+### Try the Demo
 
 ```bash
 # See current status
 ./orient.sh
 
 # Try review flow with existing phases
-./tools/phasectl.py review P02-impl-feature
+./tools/phasectl.py review P01-scaffold
 ```
 
 **What you'll see:**

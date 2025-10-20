@@ -1,6 +1,6 @@
 plan:
-  id: JUDGE-PROTOCOL-ENHANCEMENT
-  summary: "Enhance Judge-Gated Protocol with advanced features, documentation, and production readiness"
+  id: EXAMPLE-PROJECT
+  summary: "Example project using Judge-Gated Protocol - replace with your project details"
   base_branch: "main"
   test_command: "pytest tests/ -v"
   
@@ -19,65 +19,29 @@ plan:
       - "*.pyc"
 
   phases:
-    - id: P01-protocol-core-enhancement
-      description: "Enhance core protocol functionality with advanced features and improved reliability"
+    - id: P01-scaffold
+      description: "Set up project scaffolding and basic structure"
       scope:
         include:
-          - "tools/judge.py"
-          - "tools/phasectl.py"
-          - "tools/lib/"
-          - "tests/test_judge.py"
-          - "tests/test_phasectl.py"
-      gates:
-        tests:
-          must_pass: true
-        llm_review:
-          enabled: true
-        drift:
-          allowed_out_of_scope_changes: 1
-
-    - id: P02-documentation-completion
-      description: "Complete comprehensive documentation including user guides, API reference, and examples"
-      scope:
-        include:
-          - "README.md"
-          - "PROTOCOL.md"
-          - "GETTING_STARTED.md"
-          - "docs/"
-          - "examples/"
-      gates:
-        tests:
-          must_pass: true
-        llm_review:
-          enabled: true
-        drift:
-          allowed_out_of_scope_changes: 2
-
-    - id: P03-testing-infrastructure
-      description: "Build comprehensive testing infrastructure with unit, integration, and E2E tests"
-      scope:
-        include:
+          - "src/"
           - "tests/"
-          - "tests/integration/"
-          - "tests/e2e/"
-          - "conftest.py"
-      gates:
-        tests:
-          must_pass: true
-        llm_review:
-          enabled: true
-        drift:
-          allowed_out_of_scope_changes: 1
-
-    - id: P04-production-readiness
-      description: "Prepare protocol for production deployment with monitoring, error handling, and performance optimization"
-      scope:
-        include:
-          - "tools/"
           - "requirements.txt"
-          - "requirements-llm.txt"
-          - "orient.sh"
-          - "scripts/"
+          - "README.md"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 2
+
+    - id: P02-core-feature
+      description: "Implement core project functionality"
+      scope:
+        include:
+          - "src/main.py"
+          - "src/core/"
+          - "tests/test_core.py"
       gates:
         tests:
           must_pass: true
@@ -86,35 +50,33 @@ plan:
         drift:
           allowed_out_of_scope_changes: 1
 
-    - id: P05-integration-examples
-      description: "Create comprehensive examples and integration guides for different use cases"
+    - id: P03-integration
+      description: "Add integration features and external dependencies"
       scope:
         include:
-          - "examples/"
-          - "src/mvp/"
-          - "templates/"
-          - "docs/examples/"
-      gates:
-        tests:
-          must_pass: true
-        llm_review:
-          enabled: false
-        drift:
-          allowed_out_of_scope_changes: 2
-
-    - id: P06-final-validation
-      description: "Final validation, performance testing, and release preparation"
-      scope:
-        include:
-          - "tools/"
-          - "tests/"
-          - "docs/"
-          - "CHANGELOG.md"
-          - "VERSION"
+          - "src/integrations/"
+          - "tests/test_integration.py"
+          - "config/"
       gates:
         tests:
           must_pass: true
         llm_review:
           enabled: true
         drift:
-          allowed_out_of_scope_changes: 0
+          allowed_out_of_scope_changes: 1
+
+    - id: P04-documentation
+      description: "Complete project documentation and examples"
+      scope:
+        include:
+          - "docs/"
+          - "examples/"
+          - "README.md"
+          - "API.md"
+      gates:
+        tests:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 2

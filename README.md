@@ -49,12 +49,32 @@ AI agents often drift off-task, skip tests, ignore scope boundaries, and require
 
 ## Setup
 
+### Option 1: Use as Protocol Tools (Recommended)
+
 ```bash
-# Clone
+# Clone protocol tools repository
+git clone https://github.com/PM-Frontier-Labs/judge-gated-orchestrator.git
+
+# Install protocol tools in your project
+cd your-project
+../judge-gated-orchestrator/install-protocol.sh
+
+# Create your project plan
+touch .repo/plan.yaml
+
+# Discover and generate briefs
+./tools/phasectl.py discover
+./tools/phasectl.py generate-briefs
+```
+
+### Option 2: Use as Example Project
+
+```bash
+# Clone and use as example
 git clone https://github.com/PM-Frontier-Labs/judge-gated-orchestrator.git
 cd judge-gated-orchestrator
 
-# Install
+# Install dependencies
 pip install -r requirements.txt
 
 # Optional: Install LLM features for enhanced code review
@@ -67,10 +87,10 @@ pip install -r requirements-llm.txt
 ./tools/phasectl.py discover
 
 # Try the review flow
-./tools/phasectl.py review P02-impl-feature
+./tools/phasectl.py review P01-scaffold
 ```
 
-**Note:** `tools/phasectl.py` is the only supported CLI. Other tools in `tools/` are internal implementation details.
+**Important:** The protocol tools are designed to be shared across projects. Each project should have its own `.repo/plan.yaml` file that defines project-specific phases and scope.
 
 ## Comparison
 
