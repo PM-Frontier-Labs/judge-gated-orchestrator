@@ -1,5 +1,5 @@
 #!/bin/bash
-# install-protocol.sh - IC9 minimal protocol installation
+# install-protocol.sh - Minimal protocol installation
 # 
 # This script installs only protocol tools, preserving project-specific configuration.
 # It prevents the critical bug where protocol updates overwrite project plans.
