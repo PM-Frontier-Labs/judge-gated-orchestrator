@@ -8,34 +8,35 @@ This document is for execution. For planning, collaborate with a human to draft 
 
 ---
 
-## Core Loop
+## Core Loop (IC9 Spine)
 
 ```
 1. Orient:     ./orient.sh                    # Shows current status
-2. Start:      ./tools/phasectl.py start <phase-id>  # Auto-injects patterns into brief
+2. Start:      ./tools/phasectl.py start <phase-id>  # Auto-injects patterns (opt-out costs budget)
 3. Implement:  Make changes within scope (patterns provided automatically)
 4. Review:     ./tools/phasectl.py review <phase-id>
-   ├─> Auto-suggests amendments from errors
-   ├─> Auto-applies high-confidence amendments
-   ├─> Runs generalization-gated judge
+   ├─> Auto-suggests amendments (safe-to-auto applied automatically)
+   ├─> Runs generalization-gated judge (replay → score → budget)
    └─> Auto-captures patterns from successful critiques
 5. Check:      If .repo/critiques/<phase-id>.OK exists → approved
                If .repo/critiques/<phase-id>.md exists → fix and re-review
-6. Advance:    ./tools/phasectl.py next      # Shows intelligence summary
+6. Advance:    ./tools/phasectl.py next      # Shows next phase
 7. Repeat from step 1
 ```
+
+**Win-function**: Pass now and pass a near-neighbor faster under a bounded replay; your replay score directly buys you more budget next phase.
 
 **All state lives in files.** No memory required. Recover full context anytime via `./orient.sh`.
 
 ---
 
-## Quick Command Reference
+## Quick Command Reference (IC9 Spine)
 
 ```bash
 # Recover context (run this when lost)
 ./orient.sh
 
-# Start implementation phase (mandatory brief acknowledgment)
+# Start implementation phase (auto-injects patterns, opt-out costs budget)
 ./tools/phasectl.py start <phase-id>
 
 # Reset phase state (for plan transitions)
@@ -44,7 +45,7 @@ This document is for execution. For planning, collaborate with a human to draft 
 # Recover from plan state corruption
 ./tools/phasectl.py recover
 
-# Submit phase for review (auto-suggests amendments, auto-captures patterns)
+# Submit phase for review (safe-to-auto amendments applied automatically)
 ./tools/phasectl.py review <phase-id>
 
 # Advance to next phase

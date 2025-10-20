@@ -537,6 +537,81 @@ git restore requirements.txt pyproject.toml
 - These require a dedicated phase for dependency changes
 - Never change forbidden files without creating a separate phase"""
 
+def track_pattern_opt_out(phase_id: str, brief_content: str) -> bool:
+    """Track if agent opted out of pattern injection (IC9 spine: opt-out cost)."""
+    try:
+        # Check if patterns were injected
+        if "Collective Intelligence (Auto-Injected)" not in brief_content:
+            return False  # No patterns injected, no opt-out possible
+        
+        # Check if agent opted out (look for opt-out comments)
+        opt_out_indicators = [
+            "not relevant",
+            "opt out", 
+            "skip patterns",
+            "ignore patterns",
+            "not applicable"
+        ]
+        
+        brief_lower = brief_content.lower()
+        opted_out = any(indicator in brief_lower for indicator in opt_out_indicators)
+        
+        if opted_out:
+            # Store opt-out for replay correlation
+            opt_out_file = REPO_ROOT / ".repo" / "state" / "pattern_opt_outs.jsonl"
+            opt_out_data = {
+                "timestamp": time.time(),
+                "phase_id": phase_id,
+                "agent_info": get_agent_info(),
+                "repo_info": get_repo_info()
+            }
+            
+            with open(opt_out_file, "a") as f:
+                f.write(json.dumps(opt_out_data) + "\n")
+            
+            print(f"  📝 Pattern opt-out tracked for phase {phase_id}")
+        
+        return opted_out
+        
+    except Exception as e:
+        print(f"  ⚠️  Error tracking pattern opt-out: {e}")
+        return False
+
+def apply_opt_out_cost(phase_id: str, replay_score: float) -> None:
+    """Apply cost for pattern opt-out if replay performance degraded (IC9 spine)."""
+    try:
+        # Check if agent opted out
+        opt_out_file = REPO_ROOT / ".repo" / "state" / "pattern_opt_outs.jsonl"
+        if not opt_out_file.exists():
+            return
+        
+        # Check if this phase had an opt-out
+        opted_out = False
+        with open(opt_out_file) as f:
+            for line in f:
+                if line.strip():
+                    data = json.loads(line)
+                    if data.get("phase_id") == phase_id:
+                        opted_out = True
+                        break
+        
+        if not opted_out:
+            return
+        
+        # Apply cost if replay performance was poor
+        if replay_score < 0.5:  # Poor replay performance
+            # Reduce next phase budget
+            budget_file = REPO_ROOT / ".repo" / "state" / "next_budget.json"
+            if budget_file.exists():
+                budget = json.loads(budget_file.read_text())
+                # Reduce tool budget multiplier
+                budget["tool_budget_mul"] = max(0.8, budget.get("tool_budget_mul", 1.0) * 0.9)
+                budget_file.write_text(json.dumps(budget, indent=2))
+                print(f"  💰 Opt-out cost applied: Budget reduced due to poor replay performance")
+        
+    except Exception as e:
+        print(f"  ⚠️  Error applying opt-out cost: {e}")
+
 def run_replay_if_passed(phase_id: str):
     """Run replay test if all gates passed."""
     if not all_gates_passed(phase_id):
@@ -567,6 +642,9 @@ def run_replay_if_passed(phase_id: str):
     track_attribution(phase_id, result, patterns_used=patterns_used, scope_expansion=scope_expansion)
     
     record_gen_score(phase_id, score, meta={"neighbor": neighbor["id"]})
+    
+    # Apply opt-out cost if patterns were rejected and replay suffered
+    apply_opt_out_cost(phase_id, score)
     
     apply_budget_shaping(score)
 
@@ -1027,7 +1105,7 @@ def extract_patterns_used_from_brief(phase_id: str) -> List[str]:
         return []
 
 def auto_suggest_amendments_from_errors(phase_id: str, issues: List[str]) -> List[dict]:
-    """Generate amendment suggestions from errors and patterns automatically."""
+    """Generate amendment suggestions from errors and patterns (IC9 spine: binary classification)."""
     try:
         suggestions = []
         
@@ -1038,32 +1116,32 @@ def auto_suggest_amendments_from_errors(phase_id: str, issues: List[str]) -> Lis
         for issue in issues:
             # Look for common error patterns
             if "out-of-scope" in issue.lower():
-                # Suggest scope expansion
+                # Suggest scope expansion (needs approval)
                 suggestions.append({
                     "type": "add_scope",
                     "value": "tools/",
                     "reason": "Auto-suggested: Protocol tools need scope access",
-                    "confidence": 0.8,
+                    "safe_to_auto": False,
                     "source": "error_analysis"
                 })
             
             elif "test" in issue.lower() and "fail" in issue.lower():
-                # Suggest test scoping
+                # Suggest test scoping (safe-to-auto)
                 suggestions.append({
                     "type": "set_test_cmd",
                     "value": "python3 -m pytest -q",
                     "reason": "Auto-suggested: Simplify test command for reliability",
-                    "confidence": 0.7,
+                    "safe_to_auto": True,
                     "source": "error_analysis"
                 })
             
             elif "lint" in issue.lower():
-                # Suggest lint scoping
+                # Suggest lint scoping (safe-to-auto)
                 suggestions.append({
                     "type": "set_lint_cmd",
                     "value": "python3 -m ruff check",
                     "reason": "Auto-suggested: Use Python module for linting",
-                    "confidence": 0.7,
+                    "safe_to_auto": True,
                     "source": "error_analysis"
                 })
         
@@ -1091,23 +1169,24 @@ def auto_suggest_amendments_from_errors(phase_id: str, issues: List[str]) -> Lis
         return []
 
 def auto_apply_amendments(phase_id: str, suggestions: List[dict]) -> List[dict]:
-    """Auto-apply amendments within budget constraints."""
+    """Auto-apply only safe-to-auto amendments (IC9 spine: minimal auto-apply)."""
     try:
         applied = []
         
-        # Load current budget
-        budget_file = REPO_ROOT / ".repo" / "state" / "next_budget.json"
-        if budget_file.exists():
-            budget = json.loads(budget_file.read_text())
-        else:
-            budget = {"self_consistency": 1, "tool_budget_mul": 1.0, "test_scope": "full"}
+        # Safe-to-auto catalog (pre-approved by Security/Owners)
+        safe_to_auto_types = {
+            "set_test_cmd": "Test command simplification",
+            "set_lint_cmd": "Lint command simplification", 
+            "quarantine_test": "Test quarantine for known issues"
+        }
         
-        # Apply high-confidence suggestions automatically
+        # Apply only safe-to-auto suggestions
         for suggestion in suggestions:
-            if suggestion.get("confidence", 0) >= 0.7:
-                # Auto-apply high-confidence suggestions
+            if suggestion.get("safe_to_auto", False):
                 applied.append(suggestion)
-                print(f"  ✅ Auto-applied: {suggestion['type']} - {suggestion['reason']}")
+                print(f"  ✅ Auto-applied (safe-to-auto): {suggestion['type']} - {suggestion['reason']}")
+            else:
+                print(f"  📝 Suggestion (needs approval): {suggestion['type']} - {suggestion['reason']}")
         
         return applied
         

@@ -17,7 +17,7 @@ Any tool that follows these conventions can participate. This repo includes a re
 
 AI agents often drift off-task, skip tests, ignore scope boundaries, and require constant supervision. This protocol defines phases with quality gates. The judge blocks progression until all gates pass. The agent iterates until approved, then advances autonomously.
 
-## Key Features
+## Key Features (IC9 Spine)
 
 ✅ **Autonomous execution** - Agent works through phases without supervision
 ✅ **Quality enforcement** - Tests, docs, drift prevention, optional LLM review
@@ -28,10 +28,9 @@ AI agents often drift off-task, skip tests, ignore scope boundaries, and require
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
 ✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
-✅ **Automatic intelligence extraction** - Patterns auto-captured, amendments auto-suggested, learning built into phase completion
-✅ **Generalization-gated judge** - Measures learning effectiveness through replay evaluation
-✅ **Attribution tracking** - System learns what works and reinforces successful behaviors
-✅ **Two-tier scope system** - Inner scope free, outer scope costed with budget integration
+✅ **IC9 spine intelligence** - Replay gate → budget shaping → auto-capture/inject patterns → two-tier scope → attribution
+✅ **Opt-out cost** - Pattern rejection costs budget if replay performance degrades
+✅ **Safe-to-auto amendments** - Only pre-approved amendments applied automatically
 
 ## Usage
 

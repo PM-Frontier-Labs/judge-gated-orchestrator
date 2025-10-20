@@ -1,0 +1,14 @@
+{
+  "phase": "P01-collective-intelligence-foundation",
+  "timestamp": 1760917797.350226,
+  "passed": false,
+  "issues": [],
+  "total_issue_count": 2,
+  "context": {
+    "has_drift": false,
+    "has_test_failures": false,
+    "has_plan_corruption": true,
+    "has_lint_failures": false,
+    "has_forbidden_files": false
+  }
+}

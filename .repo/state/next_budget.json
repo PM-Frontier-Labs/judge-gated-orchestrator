@@ -1,0 +1,6 @@
+{
+  "self_consistency": 1,
+  "tool_budget_mul": 0.9,
+  "test_scope": "full",
+  "scope_expansion_budget": 2
+}

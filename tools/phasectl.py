@@ -452,46 +452,10 @@ def show_diff_summary(phase_id: str, plan: dict):
         print()
 
 
-def show_intelligence_context(phase_id: str):
-    """Show intelligence context before judge runs."""
-    print("🧠 Intelligence Context:")
-    print("=" * 50)
-    
-    # Check for available patterns
-    patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
-    if patterns_file.exists():
-        pattern_count = len(patterns_file.read_text().strip().split('\n')) if patterns_file.read_text().strip() else 0
-        print(f"📚 Available patterns: {pattern_count}")
-        if pattern_count > 0:
-            print("   💡 Consider checking patterns before proposing amendments")
-    else:
-        print("📚 Available patterns: 0")
-    
-    # Check for pending amendments
-    amendments_dir = REPO_ROOT / ".repo" / "amendments" / "pending"
-    if amendments_dir.exists():
-        amendment_files = list(amendments_dir.glob("*.yaml"))
-        print(f"📝 Pending amendments: {len(amendment_files)}")
-        if amendment_files:
-            print("   ✅ Amendments will be applied automatically")
-    else:
-        print("📝 Pending amendments: 0")
-    
-    # Show mechanism opportunities
-    print("🎯 Mechanism opportunities:")
-    print("   - Check patterns: ./tools/phasectl.py patterns list")
-    print("   - Propose amendments: ./tools/phasectl.py amend propose")
-    print("   - Recovery: ./tools/phasectl.py recover")
-    
-    print()
-
 def review_phase(phase_id: str):
     """Submit phase for review and block until judge provides feedback."""
     print(f"📋 Submitting phase {phase_id} for review...")
     print()
-    
-    # Show intelligence context
-    show_intelligence_context(phase_id)
 
     # Load plan
     plan = load_plan()
@@ -797,6 +761,8 @@ The following patterns were automatically identified as relevant to this phase:
         patterns_section += """
 **Note**: These patterns are automatically injected based on successful previous phases. If you believe they are not relevant, you may opt out by adding a comment explaining why.
 
+**⚠️  Opt-out cost**: If you opt out and replay performance degrades, your next phase budget will be reduced.
+
 """
         
         # Insert patterns section before the end of the brief
@@ -850,6 +816,13 @@ def start_phase(phase_id: str):
     print(enhanced_brief)
     print("=" * 50)
     print()
+    
+    # Track pattern opt-out for replay correlation (IC9 spine)
+    try:
+        from tools.judge import track_pattern_opt_out
+        track_pattern_opt_out(phase_id, enhanced_brief)
+    except Exception as e:
+        print(f"  ⚠️  Error tracking pattern opt-out: {e}")
     
     # Extract and display scope
     scope = extract_scope_from_brief(brief_path)
@@ -910,36 +883,6 @@ def start_phase(phase_id: str):
     
     return 0
 
-
-def show_intelligence_summary(phase_id: str):
-    """Show intelligence summary during phase advancement."""
-    print("🧠 Intelligence Summary:")
-    print("=" * 50)
-    
-    # Check for available patterns
-    patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
-    if patterns_file.exists():
-        pattern_count = len(patterns_file.read_text().strip().split('\n')) if patterns_file.read_text().strip() else 0
-        print(f"📚 Total patterns stored: {pattern_count}")
-    else:
-        print("📚 Total patterns stored: 0")
-    
-    # Check for amendments used in this phase
-    amendments_dir = REPO_ROOT / ".repo" / "amendments" / "pending"
-    if amendments_dir.exists():
-        amendment_files = list(amendments_dir.glob("*.yaml"))
-        print(f"📝 Amendments used this phase: {len(amendment_files)}")
-    else:
-        print("📝 Amendments used this phase: 0")
-    
-    # Show intelligence opportunities for next phase
-    print("🎯 Next phase intelligence opportunities:")
-    print("   - Check patterns before implementing")
-    print("   - Propose amendments for legitimate scope changes")
-    print("   - Contribute to collective intelligence")
-    print("   - Build learning velocity")
-    
-    print()
 
 def next_phase():
     """Advance to the next phase."""
@@ -1065,12 +1008,6 @@ def next_phase():
     print(f"➡️  Advanced to phase {next_id}")
     print(f"📄 Brief: {next_brief.relative_to(REPO_ROOT)}")
     
-    # Show intelligence summary
-    show_intelligence_summary(next_id)
-    
-    # Show enhanced brief with hints and guardrails
-    _display_enhanced_brief(next_id, next_brief.read_text())
-    
     return 0
 
 
@@ -1145,71 +1082,6 @@ def recover_from_corruption():
         print(f"      ./tools/phasectl.py reset {current.get('phase_id', 'PHASE_ID')}")
     
     return 1
-
-
-def _display_enhanced_brief(phase_id: str, base_brief: str) -> None:
-    """Display brief enhanced with hints and guardrails."""
-    from lib.traces import get_phase_hints
-    from lib.state import load_phase_context
-    
-    # Get hints from recent executions
-    hints = get_phase_hints(phase_id, lookback_count=3)
-    
-    # Get current state for guardrails
-    context = load_phase_context(phase_id)
-    guardrails = _generate_guardrails(phase_id, context)
-    
-    # Only display if we have enhancements
-    if not hints and not guardrails:
-        return
-    
-    # Build enhanced brief
-    enhanced_sections = []
-    
-    if hints:
-        hints_section = "## 🧠 Collective Intelligence Hints\n\n"
-        for hint in hints:
-            hints_section += f"- {hint}\n"
-        enhanced_sections.append(hints_section)
-    
-    if guardrails:
-        guardrails_section = "## 🛡️ Execution Guardrails\n\n"
-        for guardrail in guardrails:
-            guardrails_section += f"- {guardrail}\n"
-        enhanced_sections.append(guardrails_section)
-    
-    # Display enhanced content
-    print("\n🧠 Enhanced Brief:")
-    print("=" * 50)
-    print(base_brief)
-    print("\n".join(enhanced_sections))
-    print("=" * 50)
-
-
-def _generate_guardrails(phase_id: str, context: Dict[str, Any]) -> List[str]:
-    """Generate guardrails based on current state."""
-    guardrails = []
-    
-    mode = context.get("mode", "EXPLORE")
-    amendments_used = context.get("amendments_used", {})
-    amendments_budget = context.get("amendments_budget", {})
-    
-    if mode == "EXPLORE":
-        guardrails.append("EXPLORE mode: You may propose amendments within budget")
-        
-        for amendment_type, budget in amendments_budget.items():
-            used = amendments_used.get(amendment_type, 0)
-            remaining = budget - used
-            if remaining <= 1:
-                guardrails.append(f"⚠️ {amendment_type} budget nearly exhausted ({remaining} remaining)")
-    
-    elif mode == "LOCK":
-        guardrails.append("LOCK mode: Amendments closed (except baseline shifts)")
-    
-    guardrails.append("Never modify .repo/plan.yaml directly")
-    guardrails.append("Always check scope before making changes")
-    
-    return guardrails
 
 
 def main():
