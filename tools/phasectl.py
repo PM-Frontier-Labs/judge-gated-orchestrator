@@ -303,9 +303,15 @@ def run_tests(plan, phase=None):
 
 
 def _resolve_lint_scope(lint_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
-    """Resolve lint scope patterns to specific file paths."""
+    """Resolve lint scope patterns to specific file paths (only changed files)."""
     try:
         import pathspec
+        
+        # Get changed files first (only lint what was actually changed)
+        changed_files = get_changed_files(REPO_ROOT, include_committed=True)
+        if not changed_files:
+            print("  ⚠️  No changed files detected - running on all files")
+            return lint_cmd
         
         # Create pathspec for include patterns
         include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
@@ -313,16 +319,13 @@ def _resolve_lint_scope(lint_cmd: List[str], scope_patterns: List[str], exclude_
         if exclude_patterns:
             exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
         
-        # Find all Python files matching scope patterns
+        # Find only changed Python files matching scope patterns
         lint_paths = set()
-        for pattern in scope_patterns:
-            # Convert glob pattern to actual file paths
-            for file_path in REPO_ROOT.rglob("*"):
-                if file_path.is_file() and file_path.suffix == '.py':
-                    rel_path = str(file_path.relative_to(REPO_ROOT))
-                    if include_spec.match_file(rel_path):
-                        if not exclude_spec or not exclude_spec.match_file(rel_path):
-                            lint_paths.add(rel_path)
+        for file_path in changed_files:
+            if file_path.endswith('.py'):
+                if include_spec.match_file(file_path):
+                    if not exclude_spec or not exclude_spec.match_file(file_path):
+                        lint_paths.add(file_path)
         
         if lint_paths:
             print(f"  📍 Lint scope: Running on {len(lint_paths)} specific files")
