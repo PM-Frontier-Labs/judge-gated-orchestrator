@@ -746,6 +746,67 @@ def is_experimental_enabled(feature: str) -> bool:
         return False
 
 
+def generate_briefs():
+    """Generate empty brief files from plan phases (IC9 minimal)."""
+    print("🔍 Generating brief templates from plan.yaml...")
+    print()
+    
+    # Load plan
+    plan_file = REPO_DIR / "plan.yaml"
+    if not plan_file.exists():
+        print("❌ Error: No plan.yaml found")
+        return 1
+    
+    try:
+        import yaml
+        with plan_file.open() as f:
+            plan = yaml.safe_load(f)
+    except Exception as e:
+        print(f"❌ Error: Invalid plan.yaml: {e}")
+        return 1
+    
+    phases = plan.get("plan", {}).get("phases", [])
+    if not phases:
+        print("❌ Error: No phases found in plan.yaml")
+        return 1
+    
+    generated_count = 0
+    print(f"📋 Found {len(phases)} phases:")
+    
+    for phase in phases:
+        phase_id = phase.get("id")
+        if not phase_id:
+            print("   ❌ Phase missing 'id' field")
+            continue
+            
+        brief_path = BRIEFS_DIR / f"{phase_id}.md"
+        status = "✅" if brief_path.exists() else "✅"
+        
+        if not brief_path.exists():
+            # IC9 minimal: Generate basic template
+            brief_content = f"""# Phase {phase_id}
+
+## Objective
+{phase.get('description', 'TBD')}
+
+## Scope
+TBD
+
+## Implementation Steps
+TBD
+"""
+            brief_path.write_text(brief_content)
+            generated_count += 1
+            status = "✅"
+        
+        print(f"   {status} {phase_id}")
+    
+    print()
+    print(f"✅ Generated {generated_count} brief templates")
+    print("💡 Briefs contain basic structure - edit as needed")
+    return 0
+
+
 def discover_plan():
     """Discover and validate plan structure - mandatory first step."""
     print("🔍 Plan Discovery Mode")
@@ -1195,6 +1256,8 @@ def main():
 
     if command == "discover":
         return discover_plan()
+    elif command == "generate-briefs":
+        return generate_briefs()
     elif command == "start":
         if len(sys.argv) < 3:
             print("Usage: phasectl.py start <PHASE_ID>")
