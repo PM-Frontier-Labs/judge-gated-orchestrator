@@ -817,7 +817,7 @@ def start_phase(phase_id: str):
     print("=" * 50)
     print()
     
-    # Track pattern opt-out for replay correlation (IC9 spine)
+    # Track pattern opt-out for replay correlation
     try:
         from tools.judge import track_pattern_opt_out
         track_pattern_opt_out(phase_id, enhanced_brief)

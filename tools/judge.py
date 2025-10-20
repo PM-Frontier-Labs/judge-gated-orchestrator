@@ -538,7 +538,7 @@ git restore requirements.txt pyproject.toml
 - Never change forbidden files without creating a separate phase"""
 
 def track_pattern_opt_out(phase_id: str, brief_content: str) -> bool:
-    """Track if agent opted out of pattern injection (IC9 spine: opt-out cost)."""
+    """Track if agent opted out of pattern injection (opt-out cost)."""
     try:
         # Check if patterns were injected
         if "Collective Intelligence (Auto-Injected)" not in brief_content:
@@ -578,7 +578,7 @@ def track_pattern_opt_out(phase_id: str, brief_content: str) -> bool:
         return False
 
 def apply_opt_out_cost(phase_id: str, replay_score: float) -> None:
-    """Apply cost for pattern opt-out if replay performance degraded (IC9 spine)."""
+    """Apply cost for pattern opt-out if replay performance degraded."""
     try:
         # Check if agent opted out
         opt_out_file = REPO_ROOT / ".repo" / "state" / "pattern_opt_outs.jsonl"
@@ -1105,7 +1105,7 @@ def extract_patterns_used_from_brief(phase_id: str) -> List[str]:
         return []
 
 def auto_suggest_amendments_from_errors(phase_id: str, issues: List[str]) -> List[dict]:
-    """Generate amendment suggestions from errors and patterns (IC9 spine: binary classification)."""
+    """Generate amendment suggestions from errors and patterns (binary classification)."""
     try:
         suggestions = []
         
@@ -1169,7 +1169,7 @@ def auto_suggest_amendments_from_errors(phase_id: str, issues: List[str]) -> Lis
         return []
 
 def auto_apply_amendments(phase_id: str, suggestions: List[dict]) -> List[dict]:
-    """Auto-apply only safe-to-auto amendments (IC9 spine: minimal auto-apply)."""
+    """Auto-apply only safe-to-auto amendments (minimal auto-apply)."""
     try:
         applied = []
         
