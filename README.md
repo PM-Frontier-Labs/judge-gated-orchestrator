@@ -29,7 +29,7 @@ AI agents often drift off-task, skip tests, ignore scope boundaries, and require
 ✅ **Language-agnostic** - File-based protocol works for any language
 ✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
 ✅ **Intelligent learning** - System automatically learns from successful phases and applies patterns
-✅ **Economics-based enforcement** - Choices are priced via budget (scope expansion, pattern opt-out)
+✅ **Economics-based enforcement** - Choices are priced via budget (scope expansion, pattern opt-out, bounded maintenance burst)
 ✅ **Automatic intelligence extraction** - Patterns captured, amendments suggested, attribution tracked
 
 ## Usage

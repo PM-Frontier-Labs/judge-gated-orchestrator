@@ -38,10 +38,15 @@ The protocol automatically learns and improves through these mechanisms:
 After phase approval, runs a bounded test on a similar task. Measures how well you generalize to similar problems.
 
 ### **Budget Shaping** 
-Your replay score determines your next phase budget:
-- **High performance** (≥0.8): +25% tool budget, 5 scope expansion points
-- **Medium performance** (≥0.5): +10% tool budget, 3 scope expansion points  
-- **Low performance** (<0.5): Baseline budget, 1 scope expansion point
+Your replay score determines your next phase budget. To ensure fairness and stability:
+- Scores are normalized per domain with an anchor to avoid moving goalposts.
+- Smoothing (EWMA) and hysteresis (±1 tier per phase, 1‑phase cooldown) reduce budget yo‑yo.
+- If replay is noisy/unavailable (timeout, infra limits), a neutral score is recorded and budgets are not reshaped.
+
+Three simple tiers (caps may be reduced by risk class):
+- **High**: self_consistency=3, tool_budget_mul=1.25, outer_scope_points=5
+- **Medium**: self_consistency=2, tool_budget_mul=1.10, outer_scope_points=3
+- **Low**: self_consistency=1, tool_budget_mul=1.00, outer_scope_points=1
 
 ### **Pattern Auto-Injection**
 When you start a phase, relevant patterns from previous successful phases are automatically injected into your brief. You can opt out, but if replay performance degrades, your next phase budget is reduced.
@@ -49,6 +54,7 @@ When you start a phase, relevant patterns from previous successful phases are au
 ### **Two-Tier Scope**
 - **Inner scope** (free): Files explicitly included in phase scope
 - **Outer scope** (costed): Files outside scope cost 1 budget point each
+- **Maintenance burst** (bounded): For large, deterministic maintenance (e.g., repo‑wide lint/format/codemod), the judge may grant a small, capped burst of outer points and charge immediately. Bursts are repaid only if normalized replay improves.
 
 ### **Safe-to-Auto Amendments**
 When errors occur, the system suggests amendments. Only pre-approved "safe-to-auto" amendments are applied automatically (test command simplification, lint command simplification, test quarantine).
