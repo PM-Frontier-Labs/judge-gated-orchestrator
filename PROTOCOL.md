@@ -602,6 +602,57 @@ Use this for files that require separate dedicated phases.
 
 ## Commands
 
+### `./tools/phasectl.py discover`
+
+**Purpose:** Discover and validate plan structure - mandatory first step
+
+**When to use:**
+- **ALWAYS** when starting a new project or switching plans
+- When you get "Brief not found" errors
+- To see what phases and briefs are needed
+- To validate plan structure before implementation
+
+**What it does:**
+1. Loads and validates plan.yaml structure
+2. Lists all phases with brief status (✅ found / ❌ MISSING)
+3. Identifies missing briefs with clear guidance
+4. Provides next steps for implementation
+
+**Exit codes:**
+- `0` - All briefs found, ready for implementation
+- `1` - Missing briefs detected, guidance provided
+
+**Example:**
+```bash
+./tools/phasectl.py discover
+```
+
+**Output:**
+```
+🔍 Plan Discovery Mode
+
+📋 Found 3 phases:
+   ❌ MISSING P01-scaffold
+   ❌ MISSING P02-feature
+   ✅ P03-docs
+
+⚠️  Missing briefs: P01-scaffold, P02-feature
+
+Create briefs before starting implementation:
+   touch .repo/briefs/P01-scaffold.md
+   touch .repo/briefs/P02-feature.md
+
+💡 Each brief should contain:
+   - Phase objective and scope
+   - Required artifacts
+   - Gate requirements
+   - Implementation steps
+```
+
+**This is the FIRST command to run when starting any project.**
+
+---
+
 ### `./tools/phasectl.py start <phase-id>`
 
 **Purpose:** Start implementation phase with mandatory brief acknowledgment

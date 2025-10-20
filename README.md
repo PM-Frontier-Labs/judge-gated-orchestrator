@@ -63,6 +63,9 @@ pip install -r requirements-llm.txt
 # See status
 ./orient.sh
 
+# Try the discovery flow
+./tools/phasectl.py discover
+
 # Try the review flow
 ./tools/phasectl.py review P02-impl-feature
 ```
