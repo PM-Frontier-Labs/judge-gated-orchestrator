@@ -1,3 +1,0 @@
-{"text": "Fixed the scope issue by adding tools/ to scope", "phase_id": "test-phase", "timestamp": 1760919894.4622772, "source": "auto_capture"}
-{"text": "Updated test command to use python3 -m pytest", "phase_id": "test-phase", "timestamp": 1760919894.4622788, "source": "auto_capture"}
-{"text": "Applied linting fixes", "phase_id": "test-phase", "timestamp": 1760919894.46228, "source": "auto_capture"}
