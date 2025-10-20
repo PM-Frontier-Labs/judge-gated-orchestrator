@@ -655,6 +655,12 @@ def reset_phase(phase_id: str):
     brief_path = BRIEFS_DIR / f"{phase_id}.md"
     if not brief_path.exists():
         print(f"❌ Error: Brief not found: {brief_path}")
+        print()
+        print("💡 Run 'discover' first to see all missing briefs:")
+        print("   ./tools/phasectl.py discover")
+        print()
+        print("Then create the missing brief:")
+        print(f"   touch .repo/briefs/{phase_id}.md")
         return 1
     
     # Load current plan to validate phase exists
@@ -738,6 +744,72 @@ def is_experimental_enabled(feature: str) -> bool:
         return exp_features.get(feature, False)
     except Exception:
         return False
+
+
+def discover_plan():
+    """Discover and validate plan structure - mandatory first step."""
+    print("🔍 Plan Discovery Mode")
+    print()
+    
+    # Load and validate plan
+    plan_file = REPO_DIR / "plan.yaml"
+    if not plan_file.exists():
+        print("❌ Error: No plan.yaml found")
+        print("   Create a plan.yaml file first:")
+        print("   touch .repo/plan.yaml")
+        return 1
+    
+    try:
+        import yaml
+        with plan_file.open() as f:
+            plan = yaml.safe_load(f)
+    except Exception as e:
+        print(f"❌ Error: Invalid plan.yaml: {e}")
+        return 1
+    
+    phases = plan.get("plan", {}).get("phases", [])
+    if not phases:
+        print("❌ Error: No phases found in plan.yaml")
+        return 1
+    
+    print(f"📋 Found {len(phases)} phases:")
+    missing_briefs = []
+    
+    for phase in phases:
+        phase_id = phase.get("id")
+        if not phase_id:
+            print("   ❌ Phase missing 'id' field")
+            continue
+            
+        brief_path = BRIEFS_DIR / f"{phase_id}.md"
+        status = "✅" if brief_path.exists() else "❌ MISSING"
+        print(f"   {status} {phase_id}")
+        
+        if not brief_path.exists():
+            missing_briefs.append(phase_id)
+    
+    print()
+    
+    if missing_briefs:
+        print(f"⚠️  Missing briefs: {', '.join(missing_briefs)}")
+        print()
+        print("Create briefs before starting implementation:")
+        for phase_id in missing_briefs:
+            print(f"   touch .repo/briefs/{phase_id}.md")
+        print()
+        print("💡 Each brief should contain:")
+        print("   - Phase objective and scope")
+        print("   - Required artifacts")
+        print("   - Gate requirements")
+        print("   - Implementation steps")
+        return 1
+    
+    print("✅ All briefs found - ready for implementation")
+    print()
+    print("Next steps:")
+    print("   1. Review briefs: cat .repo/briefs/<phase-id>.md")
+    print("   2. Start implementation: ./tools/phasectl.py start <phase-id>")
+    return 0
 
 
 def inject_patterns_into_brief(phase_id: str, brief_content: str) -> str:
@@ -825,6 +897,12 @@ def start_phase(phase_id: str):
     brief_path = BRIEFS_DIR / f"{phase_id}.md"
     if not brief_path.exists():
         print(f"❌ Error: Brief not found: {brief_path}")
+        print()
+        print("💡 Run 'discover' first to see all missing briefs:")
+        print("   ./tools/phasectl.py discover")
+        print()
+        print("Then create the missing brief:")
+        print(f"   touch .repo/briefs/{phase_id}.md")
         return 1
     
     # Display brief content with auto-injected patterns
@@ -1115,9 +1193,17 @@ def main():
 
     command = sys.argv[1]
 
-    if command == "start":
+    if command == "discover":
+        return discover_plan()
+    elif command == "start":
         if len(sys.argv) < 3:
             print("Usage: phasectl.py start <PHASE_ID>")
+            return 1
+        # Add discovery check before start
+        if discover_plan() != 0:
+            print()
+            print("💡 Fix missing briefs first, then run:")
+            print(f"   ./tools/phasectl.py start {sys.argv[2]}")
             return 1
         return start_phase(sys.argv[2])
 
