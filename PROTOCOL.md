@@ -8,7 +8,7 @@ This document is for execution. For planning, collaborate with a human to draft 
 
 ---
 
-## Core Loop (IC9 Spine)
+## Core Loop
 
 ```
 1. Orient:     ./orient.sh                    # Shows current status
@@ -30,7 +30,7 @@ This document is for execution. For planning, collaborate with a human to draft 
 
 ---
 
-## How It Works (IC9 Spine)
+## How It Works
 
 The protocol automatically learns and improves through these mechanisms:
 
@@ -58,7 +58,7 @@ System tracks which mechanisms (patterns, amendments, scope expansion) helped re
 
 ---
 
-## Quick Command Reference (IC9 Spine)
+## Quick Command Reference
 
 ```bash
 # Recover context (run this when lost)

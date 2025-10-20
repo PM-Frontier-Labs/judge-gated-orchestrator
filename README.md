@@ -17,7 +17,7 @@ Any tool that follows these conventions can participate. This repo includes a re
 
 AI agents often drift off-task, skip tests, ignore scope boundaries, and require constant supervision. This protocol defines phases with quality gates. The judge blocks progression until all gates pass. The agent iterates until approved, then advances autonomously.
 
-## Key Features (IC9 Spine)
+## Key Features
 
 ✅ **Autonomous execution** - Agent works through phases without supervision
 ✅ **Quality enforcement** - Tests, docs, drift prevention, optional LLM review
