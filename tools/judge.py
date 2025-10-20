@@ -33,6 +33,10 @@ from lib.llm_pipeline import review_phase_with_llm
 
 # Import LLM judge (optional)
 try:
+    import sys
+    from pathlib import Path
+    tools_dir = Path(__file__).parent
+    sys.path.insert(0, str(tools_dir))
     from llm_judge import llm_code_review
     LLM_JUDGE_AVAILABLE = True
 except ImportError:
