@@ -94,6 +94,18 @@ pip install -r requirements-llm.txt
 
 **Important:** The protocol tools are designed to be shared across projects. Each project should have its own `.repo/plan.yaml` file that defines project-specific phases and scope.
 
+## Requirements
+
+- Python 3.8+
+- `pathspec` (for scope resolution)
+- `pyyaml` (for plan parsing)
+- `anthropic` (optional, for LLM review)
+
+Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
 ## Comparison
 
 | Feature | This Protocol | Aider | LangGraph | Manual Prompting |

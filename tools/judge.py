@@ -29,7 +29,6 @@ from lib.scope import classify_files, check_forbidden_files
 from lib.traces import check_gate_trace
 from lib.protocol_guard import verify_protocol_lock, verify_phase_binding
 from lib.state import load_phase_context
-from lib.llm_pipeline import review_phase_with_llm
 
 # Import LLM judge (optional)
 try:

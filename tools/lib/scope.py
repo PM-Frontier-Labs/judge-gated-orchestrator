@@ -4,26 +4,19 @@ from typing import List, Tuple
 
 try:
     import pathspec
-    PATHSPEC_AVAILABLE = True
 except ImportError:
-    PATHSPEC_AVAILABLE = False
-    # Fallback to fnmatch (limited globstar support)
-    import fnmatch
+    raise ImportError(
+        "pathspec is required for scope resolution. "
+        "Install with: pip install pathspec"
+    )
 
 
 def matches_pattern(path: str, patterns: List[str]) -> bool:
     """
-    Check if path matches any glob pattern.
-
-    Uses pathspec (gitignore-style) if available, otherwise falls back to fnmatch.
+    Check if path matches any glob pattern using pathspec.
     """
-    if PATHSPEC_AVAILABLE:
-        # Use pathspec for proper ** globstar support
-        spec = pathspec.PathSpec.from_lines('gitwildmatch', patterns)
-        return spec.match_file(path)
-    else:
-        # Fallback: fnmatch (limited ** support)
-        return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
+    spec = pathspec.PathSpec.from_lines('gitwildmatch', patterns)
+    return spec.match_file(path)
 
 
 def classify_files(
@@ -40,29 +33,18 @@ def classify_files(
     in_scope = []
     out_of_scope = []
 
-    if PATHSPEC_AVAILABLE:
-        # Use pathspec for accurate matching
-        include_spec = pathspec.PathSpec.from_lines('gitwildmatch', include_patterns)
-        exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns) if exclude_patterns else None
+    # Use pathspec for accurate matching
+    include_spec = pathspec.PathSpec.from_lines('gitwildmatch', include_patterns)
+    exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns) if exclude_patterns else None
 
-        for file_path in changed_files:
-            included = include_spec.match_file(file_path)
-            excluded = exclude_spec.match_file(file_path) if exclude_spec else False
+    for file_path in changed_files:
+        included = include_spec.match_file(file_path)
+        excluded = exclude_spec.match_file(file_path) if exclude_spec else False
 
-            if included and not excluded:
-                in_scope.append(file_path)
-            else:
-                out_of_scope.append(file_path)
-    else:
-        # Fallback to fnmatch (limited ** support)
-        for file_path in changed_files:
-            included = matches_pattern(file_path, include_patterns)
-            excluded = matches_pattern(file_path, exclude_patterns)
-
-            if included and not excluded:
-                in_scope.append(file_path)
-            else:
-                out_of_scope.append(file_path)
+        if included and not excluded:
+            in_scope.append(file_path)
+        else:
+            out_of_scope.append(file_path)
 
     return in_scope, out_of_scope
 

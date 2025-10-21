@@ -1,4 +1,14 @@
-pytest>=7.0.0
+# Judge-Gated Protocol Requirements
+# Core dependencies for protocol operation
+
+# Pattern matching for scope resolution
+pathspec>=0.10.0
+
+# YAML parsing for plan configuration
 pyyaml>=6.0
-ruff>=0.1.0
-pathspec>=0.11.0
+
+# LLM API client (optional, for LLM review)
+anthropic>=0.7.0
+
+# File locking for concurrent access
+# Note: fcntl is built into Python on Unix systems
