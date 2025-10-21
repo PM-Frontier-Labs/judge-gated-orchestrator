@@ -49,7 +49,7 @@ AI agents often drift off-task, skip tests, ignore scope boundaries, and require
 
 ## Setup
 
-### Option 1: Use as Protocol Tools (Recommended)
+### Option 1: GitHub Setup (Recommended)
 
 ```bash
 # Clone protocol tools repository
@@ -66,6 +66,8 @@ touch .repo/plan.yaml
 ./tools/phasectl.py discover
 ./tools/phasectl.py generate-briefs
 ```
+
+**For detailed GitHub setup instructions, see [GITHUB_SETUP.md](GITHUB_SETUP.md)**
 
 ### Option 2: Use as Example Project
 

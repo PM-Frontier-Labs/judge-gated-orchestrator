@@ -8,7 +8,7 @@
 
 ## Quick Start (5 Minutes)
 
-### Option 1: Install Protocol Tools in Your Project (Recommended)
+### Option 1: GitHub Setup (Recommended)
 
 ```bash
 # Clone protocol tools repository
@@ -25,6 +25,8 @@ touch .repo/plan.yaml
 ./tools/phasectl.py discover
 ./tools/phasectl.py generate-briefs
 ```
+
+**For detailed GitHub setup instructions, see [GITHUB_SETUP.md](GITHUB_SETUP.md)**
 
 ### Option 2: Use as Example Project
 
