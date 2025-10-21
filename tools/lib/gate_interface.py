@@ -225,10 +225,11 @@ class IntegrityGate(GateInterface):
     def run(self, phase: Dict[str, Any], plan: Dict[str, Any], 
             context: Dict[str, Any]) -> List[str]:
         """Check protocol integrity."""
-        from .protocol_guard import check_protocol_integrity
+        from .protocol_guard import verify_protocol_lock
         repo_root = context.get("repo_root")
         baseline_sha = context.get("baseline_sha")
-        return check_protocol_integrity(repo_root, plan, baseline_sha)
+        phase_id = phase.get("id", "unknown")
+        return verify_protocol_lock(repo_root, plan, phase_id, baseline_sha)
 
 
 # Gate Registry

@@ -122,9 +122,16 @@ def find_matching_patterns(context: Dict[str, Any], repo_root: str = ".") -> Lis
     matches = []
     with open(patterns_file, 'r') as f:
         for line in f:
-            pattern = json.loads(line.strip())
-            if _pattern_matches(pattern, context):
-                matches.append(pattern)
+            line = line.strip()
+            if not line:  # Skip empty lines
+                continue
+            try:
+                pattern = json.loads(line)
+                if _pattern_matches(pattern, context):
+                    matches.append(pattern)
+            except json.JSONDecodeError:
+                # Skip corrupted lines
+                continue
     
     # Sort by confidence and recency
     matches.sort(key=lambda p: (p.get("confidence", 0), p.get("timestamp", "")), reverse=True)

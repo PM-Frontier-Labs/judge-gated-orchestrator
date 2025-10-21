@@ -124,6 +124,9 @@ def safe_read_json(file_path: Path) -> dict:
     """
     import json
     
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+    
     with acquire_file_lock(file_path, mode="shared"):
         with open(file_path, 'r') as f:
             return json.load(f)
@@ -141,6 +144,9 @@ def safe_read_lines(file_path: Path) -> list[str]:
     Raises:
         FileNotFoundError: If file doesn't exist
     """
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+    
     with acquire_file_lock(file_path, mode="shared"):
         with open(file_path, 'r') as f:
             return f.readlines()
