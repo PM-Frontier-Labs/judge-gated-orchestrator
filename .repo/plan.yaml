@@ -2,8 +2,8 @@ plan:
   id: FRONTEND-UI-UX-IMPLEMENTATION
   summary: "Comprehensive frontend UI/UX implementation for Frontier Orchestrator - creating a world-class conversational planning and execution interface with modern design systems, seamless workflows, and intelligent human-AI interaction patterns"
   base_branch: "main"
-  test_command: "npm test && npm run lint && npm run type-check"
-  lint_command: "npm run lint"
+  test_command: "cd frontend && npm test && npm run lint && npm run type-check"
+  lint_command: "cd frontend && npm run lint"
   
   llm_review_config:
     model: "claude-sonnet-4-20250514"
