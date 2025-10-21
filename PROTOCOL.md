@@ -161,6 +161,25 @@ git diff --name-only HEAD
 
 ---
 
+## Phase Initialization
+
+**CRITICAL:** Always use the protocol's start command to initialize phases:
+
+```bash
+./tools/phasectl.py start <phase-id>
+```
+
+This command:
+- Creates `.repo/briefs/CURRENT.json` with proper phase state
+- Generates baseline SHA for change tracking  
+- Sets up phase context in `.repo/state/`
+- Validates the phase exists and is ready
+- Auto-injects learned patterns (if available)
+
+**Never manually create CURRENT.json** - always use the start command.
+
+---
+
 ## File Specifications
 
 ### `.repo/briefs/CURRENT.json`

@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-from lib.file_lock import safe_write_yaml, safe_read_json
+from .file_lock import safe_write_yaml, safe_read_json
 
 def propose_amendment(phase_id: str, amendment_type: str, value: Any, reason: str, repo_root: str = ".") -> bool:
     """Propose an amendment. Returns True if within budget."""

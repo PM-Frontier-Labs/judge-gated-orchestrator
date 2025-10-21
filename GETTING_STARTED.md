@@ -214,26 +214,18 @@ AI will create:
 
 ### Step 4: Initialize Phase 1
 
-Create `.repo/briefs/CURRENT.json`:
+Use the protocol's start command to properly initialize the first phase:
 
-```json
-{
-  "phase_id": "P01-scaffold",
-  "brief_path": ".repo/briefs/P01-scaffold.md",
-  "status": "active",
-  "started_at": 1760223767.0
-}
-```
-
-Or use this shortcut:
 ```bash
-echo '{
-  "phase_id": "P01-scaffold",
-  "brief_path": ".repo/briefs/P01-scaffold.md",
-  "status": "active",
-  "started_at": '$(date +%s.%N)'
-}' > .repo/briefs/CURRENT.json
+# Start the first phase (creates baseline SHA and phase state)
+./tools/phasectl.py start P01-scaffold
 ```
+
+This command:
+- Creates `.repo/briefs/CURRENT.json` with proper phase state
+- Generates baseline SHA for change tracking
+- Sets up phase context in `.repo/state/`
+- Validates the phase exists and is ready
 
 **You're now ready for autonomous execution!**
 
@@ -254,12 +246,15 @@ Start with: ./orient.sh
 **What happens:**
 1. AI reads PROTOCOL.md (execution manual)
 2. AI runs `./orient.sh` to see current state
-3. AI reads phase brief
-4. AI implements changes within scope
-5. AI submits for review
-6. AI handles critiques and re-submits
-7. AI advances to next phase when approved
-8. Repeat
+3. AI runs `./tools/phasectl.py start <phase-id>` to properly initialize the phase and create baseline SHA
+4. AI reads phase brief
+5. AI implements changes within scope
+6. AI submits for review
+7. AI handles critiques and re-submits
+8. AI advances to next phase when approved
+9. Repeat
+
+**CRITICAL:** The agent MUST use `./tools/phasectl.py start <phase-id>` before implementing any changes. This creates the baseline SHA and properly initializes the phase state.
 
 ### What You Do During Execution
 
@@ -882,13 +877,11 @@ Let's break this into phases with clear scope and quality gates.
 ### Step 4: Initialize First Phase
 
 ```bash
-echo '{
-  "phase_id": "P01-scaffold",
-  "brief_path": ".repo/briefs/P01-scaffold.md",
-  "status": "active",
-  "started_at": '$(date +%s.%N)'
-}' > .repo/briefs/CURRENT.json
+# Use the protocol's start command to properly initialize
+./tools/phasectl.py start P01-scaffold
 ```
+
+This creates all necessary state files and baseline SHA automatically.
 
 ### Step 5: Verify Clean State
 

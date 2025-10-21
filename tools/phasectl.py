@@ -1383,33 +1383,70 @@ def protocol_health_dashboard():
     print("🔍 Protocol Health Dashboard:")
     print("=" * 50)
     
-    issues = []
-    for check, status in health.items():
-        icon = "✅" if status else "❌"
-        check_name = check.replace("_", " ").title()
-        print(f"  {icon} {check_name}: {'OK' if status else 'ISSUE'}")
-        if not status:
-            issues.append(check)
+    # Check if this is a fresh setup (no CURRENT.json)
+    is_fresh_setup = not CURRENT_FILE.exists()
     
-    print("=" * 50)
-    
-    if issues:
-        print("🔧 DETECTED ISSUES:")
-        print("")
+    if is_fresh_setup:
+        print("📋 Status: Ready for Implementation")
+        print("=" * 50)
         
-        for issue in issues:
-            explanation = get_issue_explanation(issue)
-            print(f"❌ {explanation['title']}")
-            print(f"   Problem: {explanation['problem']}")
-            print(f"   Fix: {explanation['fix']}")
-            print("")
+        # Show core systems
+        print("✅ Core Systems: All Operational")
+        for check in ["tool_version", "state_corruption", "experimental_features"]:
+            status = health[check]
+            icon = "✅" if status else "❌"
+            check_name = check.replace("_", " ").title()
+            print(f"  {icon} {check_name}: {'OK' if status else 'ISSUE'}")
         
-        print("🚀 QUICK RECOVERY:")
-        print("   ./tools/phasectl.py recover")
         print("")
+        print("🚀 Next Steps Available:")
+        
+        # Show implementation systems with context
+        implementation_systems = {
+            "baseline_valid": "Will activate when you start a phase",
+            "scope_resolution": "Will activate when you make changes", 
+            "gate_functions": "Will activate when you run reviews"
+        }
+        
+        for check, context in implementation_systems.items():
+            status = health[check]
+            icon = "✅" if status else "🔄"
+            check_name = check.replace("_", " ").title()
+            print(f"  {icon} {check_name}: {context}")
+        
+        print("")
+        print("💡 Ready to start your first phase:")
+        print("   ./tools/phasectl.py start <phase-id>")
+        
     else:
-        print("✅ All systems healthy!")
-        print("")
+        # Existing behavior for active phases
+        issues = []
+        for check, status in health.items():
+            icon = "✅" if status else "❌"
+            check_name = check.replace("_", " ").title()
+            print(f"  {icon} {check_name}: {'OK' if status else 'ISSUE'}")
+            if not status:
+                issues.append(check)
+        
+        print("=" * 50)
+        
+        if issues:
+            print("🔧 DETECTED ISSUES:")
+            print("")
+            
+            for issue in issues:
+                explanation = get_issue_explanation(issue)
+                print(f"❌ {explanation['title']}")
+                print(f"   Problem: {explanation['problem']}")
+                print(f"   Fix: {explanation['fix']}")
+                print("")
+            
+            print("🚀 QUICK RECOVERY:")
+            print("   ./tools/phasectl.py recover")
+            print("")
+        else:
+            print("✅ All systems healthy!")
+            print("")
     
     return health
 

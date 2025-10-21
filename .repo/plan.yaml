@@ -1,8 +1,9 @@
 plan:
-  id: PROMPT-LAB-IMPLEMENTATION
-  summary: "Implement the complete Prompt Lab feature - an intelligent prompt optimization system with situation-aware configuration, A/B testing, and agent-aware optimization"
+  id: FRONTEND-UI-UX-IMPLEMENTATION
+  summary: "Comprehensive frontend UI/UX implementation for Frontier Orchestrator - creating a world-class conversational planning and execution interface with modern design systems, seamless workflows, and intelligent human-AI interaction patterns"
   base_branch: "main"
-  test_command: "pytest tests/ -v"
+  test_command: "npm test && npm run lint && npm run type-check"
+  lint_command: "npm run lint"
   
   llm_review_config:
     model: "claude-sonnet-4-20250514"
@@ -11,129 +12,302 @@ plan:
     budget_usd: 2.0
     fail_on_transport_error: false
     llm_review_scope: "scope"
-    include_extensions: [".py", ".tsx", ".ts", ".md"]
+    include_extensions: [".tsx", ".ts", ".css", ".md", ".json"]
     exclude_patterns:
-      - "tests/**"
-      - "**/__pycache__/**"
-      - "runs/**"
-      - ".repo/**"
+      - "node_modules/**"
+      - "dist/**"
+      - "build/**"
+      - ".next/**"
+      - "coverage/**"
 
   phases:
-    - id: P01-prompt-backend-foundation
-      description: "Build the foundational backend infrastructure for the Prompt Lab feature, including prompt template management, variant system, and API endpoints"
+    - id: P01-foundation-setup
+      description: "Establish modern frontend foundation with TypeScript, React, build tooling, and development environment"
       scope:
         include:
-          - "app/prompts/"
-          - "app/api/prompt_routes.py"
-          - "app/schemas/prompt_schemas.py"
-          - "app/services/prompt_service.py"
-          - "tests/test_prompt_service.py"
+          - "frontend/package.json"
+          - "frontend/tsconfig.json"
+          - "frontend/vite.config.ts"
+          - "frontend/tailwind.config.js"
+          - "frontend/src/main.tsx"
+          - "frontend/src/App.tsx"
+          - "frontend/src/index.css"
+          - "frontend/.eslintrc.js"
+          - "frontend/.prettierrc"
+          - "frontend/README.md"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/package.json"
+          - "frontend/tsconfig.json"
+          - "frontend/vite.config.ts"
+          - "frontend/tailwind.config.js"
+          - "frontend/src/main.tsx"
+          - "frontend/src/App.tsx"
       gates:
         tests:
+          must_pass: true
+        lint:
           must_pass: true
         llm_review:
           enabled: true
-        drift:
-          allowed_out_of_scope_changes: 1
-
-    - id: P02-situation-classification-engine
-      description: "Implement the intelligent situation detection and prompt routing engine based on the 10 spectra"
-      scope:
-        include:
-          - "app/prompts/situation_classifier.py"
-          - "app/prompts/spectra_detector.py"
-          - "app/prompts/runtime_levers.py"
-          - "app/prompts/policy_engine.py"
-          - "app/schemas/situation_schemas.py"
-          - "tests/test_situation_classifier.py"
-      gates:
-        tests:
-          must_pass: true
-        llm_review:
-          enabled: true
-        drift:
-          allowed_out_of_scope_changes: 1
-
-    - id: P03-frontend-prompt-lab-ui
-      description: "Develop the React components for the Prompt Lab user interface, including composer, spectra panel, and variant selection"
-      scope:
-        include:
-          - "frontend/src/components/prompt-lab/"
-          - "frontend/src/hooks/usePromptLab.ts"
-          - "frontend/src/services/promptApi.ts"
-          - "frontend/src/components/navigation/PrimaryNav.tsx"
-          - "frontend/app/prompts/"
-      gates:
-        tests:
-          must_pass: true
-        llm_review:
-          enabled: false
         drift:
           allowed_out_of_scope_changes: 2
 
-    - id: P04-agent-aware-optimization
-      description: "Implement agent-aware prompt optimization with AI-powered prompt generation and agent-specific analysis"
+    - id: P02-design-system
+      description: "Create comprehensive design system with components, tokens, typography, and accessibility standards"
       scope:
         include:
-          - "app/prompts/agent_aware_classifier.py"
-          - "app/prompts/ai_prompt_generator.py"
-          - "frontend/src/components/prompt-lab/AgentSelector.tsx"
-          - "frontend/src/components/prompt-lab/OptimizationResults.tsx"
-          - "tests/test_agent_aware_optimization.py"
+          - "frontend/src/design-system/"
+          - "frontend/src/components/ui/"
+          - "frontend/src/styles/"
+          - "frontend/src/lib/utils.ts"
+          - "frontend/src/hooks/use-theme.ts"
+          - "frontend/src/contexts/ThemeContext.tsx"
+          - "docs/design-system/"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/src/design-system/tokens.ts"
+          - "frontend/src/design-system/components/"
+          - "frontend/src/components/ui/button.tsx"
+          - "frontend/src/components/ui/input.tsx"
+          - "frontend/src/components/ui/card.tsx"
+          - "docs/design-system/README.md"
       gates:
         tests:
           must_pass: true
-        llm_review:
-          enabled: true
-        drift:
-          allowed_out_of_scope_changes: 1
-
-    - id: P05-ab-testing-experiments
-      description: "Enable multi-variant testing and performance analytics for prompt optimization"
-      scope:
-        include:
-          - "app/prompts/experiment_engine.py"
-          - "frontend/src/components/prompt-lab/ExperimentRunner.tsx"
-          - "frontend/src/components/prompt-lab/ResultsCompare.tsx"
-          - "tests/test_experiment_engine.py"
-      gates:
-        tests:
-          must_pass: true
-        llm_review:
-          enabled: true
-        drift:
-          allowed_out_of_scope_changes: 1
-
-    - id: P06-advanced-features-integration
-      description: "Integrate advanced reasoning scaffolds, multi-agent coordination, and enterprise governance features"
-      scope:
-        include:
-          - "app/prompts/reasoning_scaffolds.py"
-          - "app/prompts/multi_agent_coordinator.py"
-          - "app/prompts/governance.py"
-          - "tests/test_advanced_prompts.py"
-      gates:
-        tests:
-          must_pass: true
-        llm_review:
-          enabled: true
-        drift:
-          allowed_out_of_scope_changes: 1
-
-    - id: P07-testing-documentation
-      description: "Add comprehensive testing (unit, integration, E2E) and complete documentation (user, API, developer guides) for the Prompt Lab"
-      scope:
-        include:
-          - "tests/prompt_lab/"
-          - "tests/integration/test_prompt_lab_integration.py"
-          - "tests/e2e/test_prompt_lab_e2e.py"
-          - "docs/guides/Prompt_Lab_Guide.md"
-          - "docs/reference/Prompt_API.md"
-          - "docs/architecture/Prompt_Lab_Architecture.md"
-      gates:
-        tests:
+        lint:
           must_pass: true
         llm_review:
           enabled: true
         drift:
           allowed_out_of_scope_changes: 3
+
+    - id: P03-api-integration
+      description: "Build robust API client layer with TypeScript types, error handling, and real-time capabilities"
+      scope:
+        include:
+          - "frontend/src/lib/api/"
+          - "frontend/src/types/"
+          - "frontend/src/hooks/use-api.ts"
+          - "frontend/src/hooks/use-websocket.ts"
+          - "frontend/src/hooks/use-sse.ts"
+          - "frontend/src/services/"
+          - "frontend/src/utils/error-handling.ts"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/src/lib/api/client.ts"
+          - "frontend/src/types/api.ts"
+          - "frontend/src/hooks/use-api.ts"
+          - "frontend/src/hooks/use-websocket.ts"
+          - "frontend/src/services/projectService.ts"
+          - "frontend/src/services/planningService.ts"
+      gates:
+        tests:
+          must_pass: true
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 2
+
+    - id: P04-unified-conversational-workflow
+      description: "Create unified WhatsApp-style conversational workflow that seamlessly evolves from project creation through planning to evaluation generation, with organic markdown evolution and key metrics as focal points. This is the core innovation - a single conversational interface where plans and evaluations emerge organically through natural dialogue, with real-time quality scoring and confidence indicators driving the conversation forward."
+      scope:
+        include:
+          - "frontend/src/components/conversation/"
+          - "frontend/src/hooks/use-conversation.ts"
+          - "frontend/src/hooks/use-project-creation.ts"
+          - "frontend/src/hooks/use-planning.ts"
+          - "frontend/src/hooks/use-evaluation.ts"
+          - "frontend/src/components/chat/"
+          - "frontend/src/components/evolution/"
+          - "frontend/src/components/metrics/"
+          - "frontend/src/components/workflow/"
+          - "frontend/src/pages/ConversationalWorkflow.tsx"
+          - "frontend/src/utils/markdown-evolution.ts"
+          - "frontend/src/utils/metrics-calculator.ts"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/src/components/conversation/ConversationalWorkflow.tsx"
+          - "frontend/src/components/chat/WhatsAppChat.tsx"
+          - "frontend/src/components/chat/ChatMessage.tsx"
+          - "frontend/src/components/evolution/PlanEvolution.tsx"
+          - "frontend/src/components/evolution/EvalEvolution.tsx"
+          - "frontend/src/components/metrics/KeyMetricsDisplay.tsx"
+          - "frontend/src/components/metrics/QualityScore.tsx"
+          - "frontend/src/components/metrics/ConfidenceIndicator.tsx"
+          - "frontend/src/components/workflow/ProjectCreationFlow.tsx"
+          - "frontend/src/components/workflow/PlanningFlow.tsx"
+          - "frontend/src/components/workflow/EvaluationFlow.tsx"
+          - "frontend/src/hooks/use-conversation.ts"
+          - "frontend/src/hooks/use-project-creation.ts"
+          - "frontend/src/hooks/use-planning.ts"
+          - "frontend/src/hooks/use-evaluation.ts"
+          - "frontend/src/pages/ConversationalWorkflow.tsx"
+          - "frontend/src/utils/markdown-evolution.ts"
+          - "frontend/src/utils/metrics-calculator.ts"
+      gates:
+        tests:
+          must_pass: true
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 3
+
+    - id: P05-execution-monitoring
+      description: "Build real-time execution monitoring dashboard with agent status, activity feeds, and escalation interfaces"
+      scope:
+        include:
+          - "frontend/src/components/execution/"
+          - "frontend/src/hooks/use-execution.ts"
+          - "frontend/src/components/agents/"
+          - "frontend/src/components/activity/"
+          - "frontend/src/components/escalation/"
+          - "frontend/src/pages/ExecutionPage.tsx"
+          - "frontend/src/components/terminal/"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/src/components/execution/ExecutionDashboard.tsx"
+          - "frontend/src/components/agents/AgentStatus.tsx"
+          - "frontend/src/components/activity/ActivityFeed.tsx"
+          - "frontend/src/components/escalation/EscalationInterface.tsx"
+          - "frontend/src/components/terminal/EmbeddedTerminal.tsx"
+          - "frontend/src/pages/ExecutionPage.tsx"
+      gates:
+        tests:
+          must_pass: true
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 3
+
+    - id: P06-unified-command-center
+      description: "Create unified command center layout with workspace management, context panels, and seamless phase transitions"
+      scope:
+        include:
+          - "frontend/src/components/layout/"
+          - "frontend/src/components/workspace/"
+          - "frontend/src/components/context/"
+          - "frontend/src/hooks/use-workspace.ts"
+          - "frontend/src/hooks/use-context.ts"
+          - "frontend/src/pages/CommandCenter.tsx"
+          - "frontend/src/components/navigation/"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/src/components/layout/CommandCenterLayout.tsx"
+          - "frontend/src/components/workspace/WorkspaceSidebar.tsx"
+          - "frontend/src/components/context/ContextPanel.tsx"
+          - "frontend/src/components/navigation/MainNavigation.tsx"
+          - "frontend/src/pages/CommandCenter.tsx"
+          - "frontend/src/hooks/use-workspace.ts"
+      gates:
+        tests:
+          must_pass: true
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 3
+
+    - id: P07-results-delivery
+      description: "Implement results and delivery interface with quality metrics, artifact review, and next steps recommendations"
+      scope:
+        include:
+          - "frontend/src/components/results/"
+          - "frontend/src/hooks/use-results.ts"
+          - "frontend/src/components/metrics/"
+          - "frontend/src/components/artifacts/"
+          - "frontend/src/components/handoff/"
+          - "frontend/src/pages/ResultsPage.tsx"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/src/components/results/ResultsDashboard.tsx"
+          - "frontend/src/components/metrics/QualityMetrics.tsx"
+          - "frontend/src/components/artifacts/ArtifactReview.tsx"
+          - "frontend/src/components/handoff/HandoffRecommendations.tsx"
+          - "frontend/src/pages/ResultsPage.tsx"
+      gates:
+        tests:
+          must_pass: true
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 2
+
+    - id: P08-responsive-optimization
+      description: "Optimize for responsive design, performance, accessibility, and cross-browser compatibility"
+      scope:
+        include:
+          - "frontend/src/styles/responsive.css"
+          - "frontend/src/hooks/use-responsive.ts"
+          - "frontend/src/components/responsive/"
+          - "frontend/src/utils/performance.ts"
+          - "frontend/src/utils/accessibility.ts"
+          - "frontend/vite.config.ts"
+          - "frontend/src/components/lazy/"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/src/styles/responsive.css"
+          - "frontend/src/hooks/use-responsive.ts"
+          - "frontend/src/components/responsive/ResponsiveContainer.tsx"
+          - "frontend/src/utils/performance.ts"
+          - "frontend/src/utils/accessibility.ts"
+          - "frontend/src/components/lazy/LazyComponent.tsx"
+      gates:
+        tests:
+          must_pass: true
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 2
+
+    - id: P09-testing-documentation
+      description: "Comprehensive testing suite, documentation, and deployment preparation"
+      scope:
+        include:
+          - "frontend/src/__tests__/"
+          - "frontend/src/components/**/*.test.tsx"
+          - "frontend/src/hooks/**/*.test.ts"
+          - "frontend/src/utils/**/*.test.ts"
+          - "frontend/docs/"
+          - "frontend/README.md"
+          - "frontend/DEPLOYMENT.md"
+          - "frontend/src/storybook/"
+        exclude: []
+      artifacts:
+        must_exist:
+          - "frontend/src/__tests__/setup.ts"
+          - "frontend/src/components/__tests__/"
+          - "frontend/src/hooks/__tests__/"
+          - "frontend/docs/USER_GUIDE.md"
+          - "frontend/docs/DEVELOPER_GUIDE.md"
+          - "frontend/README.md"
+          - "frontend/DEPLOYMENT.md"
+          - "frontend/src/storybook/"
+      gates:
+        tests:
+          must_pass: true
+        lint:
+          must_pass: true
+        llm_review:
+          enabled: true
+        drift:
+          allowed_out_of_scope_changes: 2
