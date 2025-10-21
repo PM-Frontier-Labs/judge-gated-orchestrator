@@ -4,7 +4,8 @@ State Management: Runtime state separate from governance.
 Implements the core Governance ≠ Runtime split.
 """
 
-from lib.file_lock import safe_write_json, safe_read_json
+import json
+from .file_lock import safe_write_json, safe_read_json
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime

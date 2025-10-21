@@ -62,11 +62,9 @@ def filter_changed_files(changed_files: List[str], scope_config: dict) -> List[s
     if not include_patterns:
         return changed_files
     
-    filtered = []
-    for file_path in changed_files:
-        if any(file_path.startswith(pattern) for pattern in include_patterns):
-            filtered.append(file_path)
-    return filtered
+    # Use pathspec for consistent pattern matching (same as classify_files)
+    include_spec = pathspec.PathSpec.from_lines('gitwildmatch', include_patterns)
+    return [f for f in changed_files if include_spec.match_file(f)]
 
 
 def check_forbidden_files(

@@ -23,8 +23,11 @@ import subprocess
 import shlex
 import re
 import os
+import shutil
 from pathlib import Path
 from typing import List, Dict, Any
+
+from lib.path_utils import get_relative_path
 
 try:
     import yaml
@@ -43,6 +46,7 @@ REPO_DIR = REPO_ROOT / ".repo"
 CRITIQUES_DIR = REPO_DIR / "critiques"
 TRACES_DIR = REPO_DIR / "traces"
 BRIEFS_DIR = REPO_DIR / "briefs"
+STATE_DIR = REPO_DIR / "state"
 CURRENT_FILE = BRIEFS_DIR / "CURRENT.json"
 
 
@@ -780,7 +784,7 @@ def reset_phase(phase_id: str):
     # Create new phase state
     current_data = {
         "phase_id": phase_id,
-        "brief_path": str(brief_path.relative_to(REPO_ROOT)),
+        "brief_path": str(get_relative_path(brief_path, REPO_ROOT)),
         "status": "active",
         "started_at": time.time(),
         "baseline_sha": baseline_sha
@@ -1100,7 +1104,7 @@ def start_phase(phase_id: str):
     # Update current phase status
     current_data = {
         "phase_id": phase_id,
-        "brief_path": str(brief_path.relative_to(REPO_ROOT)),
+        "brief_path": str(get_relative_path(brief_path, REPO_ROOT)),
         "status": "implementation_started",
         "started_at": time.time(),
         "brief_acknowledged_at": time.time()
@@ -1250,7 +1254,7 @@ def next_phase():
     CURRENT_FILE.write_text(json.dumps(current_data, indent=2))
 
     print(f"➡️  Advanced to phase {next_id}")
-    print(f"📄 Brief: {next_brief.relative_to(REPO_ROOT)}")
+    print(f"📄 Brief: {get_relative_path(next_brief, REPO_ROOT)}")
     
     return 0
 
@@ -1338,11 +1342,38 @@ def protocol_health_check():
     ])
 
 
+def get_issue_explanation(issue_type: str) -> dict:
+    """Get human-readable explanation and fix for issues."""
+    explanations = {
+        "state_corruption": {
+            "title": "State Corruption",
+            "problem": "Missing or corrupted CURRENT.json - protocol doesn't know current phase",
+            "fix": "Reset to first phase: ./tools/phasectl.py reset P01-prompt-backend-foundation"
+        },
+        "baseline_valid": {
+            "title": "Baseline Validation Failed", 
+            "problem": "Invalid baseline SHA - git state changed after phase started",
+            "fix": "Reset phase state: ./tools/phasectl.py reset <current-phase>"
+        },
+        "scope_resolution": {
+            "title": "Scope Resolution Failed",
+            "problem": "Pathspec dependency missing or scope logic error",
+            "fix": "Install dependency: pip install pathspec"
+        },
+        "gate_functions": {
+            "title": "Gate Functions Failed",
+            "problem": "Gate execution or import errors",
+            "fix": "Reinstall tools: ./tools/install-protocol.sh"
+        }
+    }
+    return explanations.get(issue_type, {"title": "Unknown", "problem": "Unknown issue", "fix": "Contact support"})
+
+
 def protocol_health_dashboard():
-    """Comprehensive protocol health status."""
+    """Comprehensive protocol health status with actionable fixes."""
     health = {
         "tool_version": check_protocol_version(),
-        "state_corruption": detect_plan_mismatch(),
+        "state_corruption": not detect_plan_mismatch(),  # Invert: True = no corruption
         "baseline_valid": not baseline_corrupted(),
         "experimental_features": get_experimental_status(),
         "scope_resolution": test_scope_resolution(),
@@ -1352,18 +1383,171 @@ def protocol_health_dashboard():
     print("🔍 Protocol Health Dashboard:")
     print("=" * 50)
     
+    issues = []
     for check, status in health.items():
         icon = "✅" if status else "❌"
         check_name = check.replace("_", " ").title()
         print(f"  {icon} {check_name}: {'OK' if status else 'ISSUE'}")
+        if not status:
+            issues.append(check)
     
     print("=" * 50)
     
-    if not all(health.values()):
-        print("💡 Run 'phasectl solutions' for specific fixes")
+    if issues:
+        print("🔧 DETECTED ISSUES:")
+        print("")
+        
+        for issue in issues:
+            explanation = get_issue_explanation(issue)
+            print(f"❌ {explanation['title']}")
+            print(f"   Problem: {explanation['problem']}")
+            print(f"   Fix: {explanation['fix']}")
+            print("")
+        
+        print("🚀 QUICK RECOVERY:")
+        print("   ./tools/phasectl.py recover")
+        print("")
+    else:
+        print("✅ All systems healthy!")
         print("")
     
     return health
+
+
+def recover():
+    """Interactive recovery from detected issues."""
+    print("🔧 Protocol Recovery Mode")
+    print("=" * 30)
+    
+    # Detect issues
+    health = {
+        "state_corruption": not detect_plan_mismatch(),  # Invert: True = no corruption
+        "baseline_valid": not baseline_corrupted(),
+        "scope_resolution": test_scope_resolution(),
+        "gate_functions": test_gate_functions()
+    }
+    
+    issues = [issue for issue, status in health.items() if not status]
+    
+    if not issues:
+        print("✅ No issues detected - protocol is healthy!")
+        return
+    
+    print(f"🔍 Found {len(issues)} issue(s):")
+    print("")
+    
+    for issue in issues:
+        explanation = get_issue_explanation(issue)
+        print(f"❌ {explanation['title']}")
+        print(f"   {explanation['problem']}")
+        print(f"   Fix: {explanation['fix']}")
+        print("")
+    
+    # Ask permission
+    print("Would you like to apply these fixes?")
+    print("(This will create backups before making changes)")
+    
+    if input("Apply fixes? (y/n): ").lower() != 'y':
+        print("❌ Recovery cancelled")
+        return
+    
+    # Apply fixes with backups
+    success_count = 0
+    for issue in issues:
+        if apply_fix_with_backup(issue):
+            success_count += 1
+    
+    print("")
+    print(f"🎯 Recovery complete: {success_count}/{len(issues)} fixes applied")
+    
+    # Re-run health check
+    print("")
+    print("🔍 Re-running health check...")
+    protocol_health_dashboard()
+
+
+def apply_fix_with_backup(issue_type: str) -> bool:
+    """Apply fix with backup creation."""
+    try:
+        if issue_type == "state_corruption":
+            return fix_state_corruption()
+        elif issue_type == "baseline_valid":
+            return fix_baseline_validation()
+        elif issue_type == "scope_resolution":
+            return fix_scope_resolution()
+        elif issue_type == "gate_functions":
+            return fix_gate_functions()
+        return False
+    except Exception as e:
+        print(f"   ❌ Fix failed: {e}")
+        return False
+
+
+def fix_state_corruption() -> bool:
+    """Fix state corruption with backup."""
+    print("   🔧 Fixing state corruption...")
+    
+    # Create backup
+    if CURRENT_FILE.exists():
+        backup_file = CURRENT_FILE.with_suffix('.json.backup')
+        shutil.copy2(CURRENT_FILE, backup_file)
+        print(f"   📦 Backup created: {backup_file}")
+    
+    # Apply fix
+    try:
+        plan = load_plan()
+        phases = plan.get("phases", [])
+        if phases:
+            first_phase = phases[0]["id"]
+            reset_phase(first_phase)
+            print(f"   ✅ Reset to {first_phase}")
+            return True
+    except Exception as e:
+        print(f"   ❌ Reset failed: {e}")
+        return False
+    
+    return False
+
+
+def fix_baseline_validation() -> bool:
+    """Fix baseline validation with backup."""
+    print("   🔧 Fixing baseline validation...")
+    
+    # Create backup of state directory
+    if STATE_DIR.exists():
+        backup_dir = STATE_DIR.with_suffix('.backup')
+        shutil.copytree(STATE_DIR, backup_dir)
+        print(f"   📦 Backup created: {backup_dir}")
+    
+    # Apply fix by resetting current phase
+    try:
+        if CURRENT_FILE.exists():
+            current_data = json.loads(CURRENT_FILE.read_text())
+            phase_id = current_data.get("phase_id")
+            if phase_id:
+                reset_phase(phase_id)
+                print(f"   ✅ Reset {phase_id} baseline")
+                return True
+    except Exception as e:
+        print(f"   ❌ Baseline fix failed: {e}")
+        return False
+    
+    return False
+
+
+def fix_scope_resolution() -> bool:
+    """Fix scope resolution issues."""
+    print("   🔧 Fixing scope resolution...")
+    print("   💡 Try running: pip install pathspec")
+    print("   💡 Or reinstall tools: ./tools/install-protocol.sh")
+    return False  # Can't auto-fix dependency issues
+
+
+def fix_gate_functions() -> bool:
+    """Fix gate function issues."""
+    print("   🔧 Fixing gate functions...")
+    print("   💡 Try running: ./tools/install-protocol.sh")
+    return False  # Can't auto-fix import issues
 
 
 def get_experimental_status():
@@ -1376,8 +1560,9 @@ def get_experimental_status():
         return False
 
 
+
+
 def test_scope_resolution():
-    """Test scope resolution functionality."""
     try:
         test_files = ["src/test.py", "docs/test.md"]
         test_scope = {"scope": {"include": ["src/"]}}
@@ -1509,6 +1694,9 @@ def main():
         return 0
     elif command == "health":
         protocol_health_dashboard()
+        return 0
+    elif command == "recover":
+        recover()
         return 0
     elif command == "start":
         if len(sys.argv) < 3:

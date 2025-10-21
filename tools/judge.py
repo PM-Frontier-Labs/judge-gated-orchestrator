@@ -23,6 +23,13 @@ except ImportError:
     print("❌ Error: pyyaml not installed. Run: pip install pyyaml")
     sys.exit(1)
 
+# Add tools directory to path for imports
+tools_dir = Path(__file__).parent
+sys.path.insert(0, str(tools_dir))
+
+from lib.error_utils import log_error, log_warning, log_info, ProtocolError, ExecutionError
+from lib.path_utils import get_relative_path
+
 # Import shared utilities
 from lib.git_ops import get_changed_files
 from lib.scope import classify_files, check_forbidden_files
@@ -1472,8 +1479,8 @@ Please address the issues above and re-run:
     if ok_json_file.exists():
         ok_json_file.unlink()
 
-    print(f"📝 Critique written to {critique_file.relative_to(REPO_ROOT)}")
-    print(f"📊 JSON critique: {json_file.relative_to(REPO_ROOT)}")
+    log_info(f"Critique written to {get_relative_path(critique_file, REPO_ROOT)}")
+    log_info(f"JSON critique: {get_relative_path(json_file, REPO_ROOT)}")
 
 
 def write_approval(phase_id: str):
@@ -1535,8 +1542,8 @@ def write_approval(phase_id: str):
     if critique_json_file.exists():
         critique_json_file.unlink()
 
-    print(f"✅ Approval written to {ok_file.relative_to(REPO_ROOT)}")
-    print(f"📊 JSON approval: {ok_json_file.relative_to(REPO_ROOT)}")
+    log_info(f"Approval written to {get_relative_path(ok_file, REPO_ROOT)}")
+    log_info(f"JSON approval: {get_relative_path(ok_json_file, REPO_ROOT)}")
 
 
 def explain_error(error_type: str, error_details: dict = None) -> str:
@@ -1621,7 +1628,7 @@ def extract_error_details(exception: Exception) -> dict:
 
 def judge_phase(phase_id: str):
     """Run all checks and produce verdict."""
-    print(f"⚖️  Judging phase {phase_id}...")
+    log_info(f"Judging phase {phase_id}...")
 
     # Load plan
     plan = load_plan()
@@ -1630,16 +1637,16 @@ def judge_phase(phase_id: str):
     from lib.plan_validator import validate_plan
     validation_errors = validate_plan(plan)
     if validation_errors:
-        print("❌ Plan validation failed:")
+        log_error("Plan validation failed:")
         for error in validation_errors:
-            print(f"   - {error}")
-        print("\nFix errors in .repo/plan.yaml and try again.")
+            log_error(f"   - {error}")
+        log_error("Fix errors in .repo/plan.yaml and try again.")
         return 2
 
     try:
         phase = get_phase(plan, phase_id)
     except ValueError as e:
-        print(f"❌ Error: {e}")
+        log_error(f"Error: {e}")
         return 2
 
     # Load baseline SHA from CURRENT.json for consistent diffs
@@ -1725,8 +1732,8 @@ def judge_phase(phase_id: str):
 
     # Verdict (write functions handle cleanup atomically)
     if all_issues:
-        print("😤 VERDICT: REJECTED! 😤")
-        print("   'Issues found. Please address and resubmit.'")
+        log_info("😤 VERDICT: REJECTED! 😤")
+        log_info("   'Issues found. Please address and resubmit.'")
         write_critique(phase_id, all_issues, gate_results)
         
         # Add smart error messages for common issues
@@ -1742,8 +1749,8 @@ def judge_phase(phase_id: str):
         
         return 1
     else:
-        print("🎉 VERDICT: APPROVED! 🎉")
-        print("   'Excellent work! Proceed to next phase.'")
+        log_info("🎉 VERDICT: APPROVED! 🎉")
+        log_info("   'Excellent work! Proceed to next phase.'")
         write_approval(phase_id)
         
         # Auto-capture patterns from successful critique

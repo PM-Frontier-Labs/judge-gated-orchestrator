@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+from .path_utils import get_relative_path
+
 
 def run_command_with_trace(
     gate_name: str,
@@ -28,10 +30,7 @@ def run_command_with_trace(
     trace_file = traces_dir / f"last_{gate_name}.txt"
     
     # Calculate relative path for display
-    try:
-        relative_trace_path = trace_file.relative_to(repo_root)
-    except ValueError:
-        relative_trace_path = trace_file
+    relative_trace_path = get_relative_path(trace_file, repo_root)
     
     trace_file.write_text(
         f"Trace path: {relative_trace_path}\n"
@@ -84,11 +83,8 @@ def check_gate_trace(gate_name: str, traces_dir: Path, error_prefix: str) -> Lis
         ]
     else:
         # Fallback to calculated path
-        try:
-            repo_root = traces_dir.parent.parent  # .repo/traces -> .repo -> repo_root
-            relative_path = trace_file.relative_to(repo_root)
-        except ValueError:
-            relative_path = trace_file
+        repo_root = traces_dir.parent.parent  # .repo/traces -> .repo -> repo_root
+        relative_path = get_relative_path(trace_file, repo_root)
         
         return [
             f"{error_prefix} failed with exit code {exit_code}. "
@@ -106,7 +102,7 @@ def store_pattern(pattern: Dict[str, Any], repo_root: str = ".") -> None:
     pattern["timestamp"] = datetime.now().isoformat()
     
     # Use file locking to prevent concurrent writes
-    from lib.file_lock import acquire_file_lock
+    from .file_lock import acquire_file_lock
     with acquire_file_lock(patterns_file):
         with open(patterns_file, 'a') as f:
             f.write(json.dumps(pattern) + '\n')
