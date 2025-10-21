@@ -18,6 +18,8 @@ PROTOCOL_FILES = [
     "tools/lib/protocol_guard.py",
     "tools/lib/plan_validator.py",
     "tools/lib/file_lock.py",
+    "tools/lib/error_utils.py",
+    "tools/lib/path_utils.py",
 ]
 
 
