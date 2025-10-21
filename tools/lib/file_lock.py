@@ -13,19 +13,21 @@ from typing import Generator, ContextManager, Any, Dict
 from contextlib import contextmanager
 
 @contextmanager
-def acquire_file_lock(file_path: Path, mode: str = "exclusive") -> Generator[None, None, None]:
+def acquire_file_lock(file_path: Path, mode: str = "exclusive", timeout: int = None) -> Generator[None, None, None]:
     """
     Acquire a file lock for safe concurrent access.
     
     Args:
         file_path: Path to the file to lock
         mode: Lock mode - "exclusive" (default) or "shared"
+        timeout: Maximum time to wait for lock (seconds). None = no timeout
     
     Yields:
         None - Lock is held during context
         
     Raises:
         OSError: If lock cannot be acquired
+        TimeoutError: If timeout is exceeded
     """
     # Ensure parent directory exists
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -34,13 +36,30 @@ def acquire_file_lock(file_path: Path, mode: str = "exclusive") -> Generator[Non
     lock_file = open(file_path, 'a+')
     
     try:
-        # Acquire lock
-        if mode == "exclusive":
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        elif mode == "shared":
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
+        # Acquire lock with optional timeout
+        if timeout is None:
+            # No timeout - blocking lock
+            if mode == "exclusive":
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            elif mode == "shared":
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
+            else:
+                raise ValueError(f"Invalid lock mode: {mode}")
         else:
-            raise ValueError(f"Invalid lock mode: {mode}")
+            # Timeout - non-blocking with retry loop
+            import time
+            start_time = time.time()
+            lock_flags = fcntl.LOCK_EX if mode == "exclusive" else fcntl.LOCK_SH
+            
+            while True:
+                try:
+                    fcntl.flock(lock_file.fileno(), lock_flags | fcntl.LOCK_NB)
+                    break  # Lock acquired successfully
+                except OSError:
+                    # Lock not available, check timeout
+                    if time.time() - start_time >= timeout:
+                        raise TimeoutError(f"Could not acquire lock on {file_path} within {timeout}s")
+                    time.sleep(0.1)  # Wait 100ms before retry
         
         yield
         

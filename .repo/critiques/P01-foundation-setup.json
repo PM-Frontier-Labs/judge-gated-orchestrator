@@ -1,0 +1,33 @@
+{
+  "phase": "P01-foundation-setup",
+  "timestamp": 1761075236.7230191,
+  "passed": false,
+  "issues": [
+    {
+      "gate": "artifacts",
+      "messages": [
+        "Missing required artifact: must_exist"
+      ]
+    },
+    {
+      "gate": "tests",
+      "messages": [
+        "Tests failed with exit code 254. See .repo/traces/last_tests.txt for details."
+      ]
+    },
+    {
+      "gate": "lint",
+      "messages": [
+        "Linting failed with exit code 254. See .repo/traces/last_lint.txt for details."
+      ]
+    }
+  ],
+  "total_issue_count": 3,
+  "context": {
+    "has_drift": false,
+    "has_test_failures": true,
+    "has_plan_corruption": false,
+    "has_lint_failures": true,
+    "has_forbidden_files": false
+  }
+}

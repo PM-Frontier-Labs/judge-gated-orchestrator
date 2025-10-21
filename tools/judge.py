@@ -1775,7 +1775,7 @@ def main():
     phase_id = sys.argv[1]
 
     # Use file lock to prevent concurrent judge runs
-    from lib.file_lock import file_lock
+    from lib.file_lock import acquire_file_lock as file_lock
     lock_file = REPO_ROOT / ".repo/.judge.lock"
 
     try:
