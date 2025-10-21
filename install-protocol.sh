@@ -36,6 +36,12 @@ mkdir -p tools
 echo "📦 Copying protocol tools from $SOURCE_DIR..."
 cp -r $SOURCE_DIR/tools/* ./tools/
 
+# CRITICAL: Never copy .repo directory from protocol repository
+# This prevents overwriting project-specific plans and state
+if [ -d "$SOURCE_DIR/.repo" ]; then
+    echo "⚠️  Skipping protocol repository's .repo directory to preserve your project configuration"
+fi
+
 # Ensure tools are executable
 chmod +x tools/phasectl.py
 chmod +x tools/judge.py
@@ -52,6 +58,20 @@ mkdir -p .repo/state
 if [ -f ".repo/plan.yaml" ]; then
     echo "✅ Project plan preserved: .repo/plan.yaml"
     echo "⚠️  Protocol tools installed without overwriting your project configuration"
+    
+    # Check if this looks like the protocol's plan (safety check)
+    if grep -q "PROMPT-LAB-IMPLEMENTATION" .repo/plan.yaml 2>/dev/null; then
+        echo ""
+        echo "🚨 WARNING: Detected protocol repository's plan.yaml!"
+        echo "   This suggests your project plan was overwritten."
+        echo "   Your original plan may be lost."
+        echo ""
+        echo "💡 Recovery options:"
+        echo "   1. Check git history: git log --oneline .repo/plan.yaml"
+        echo "   2. Restore from backup: git checkout HEAD~1 -- .repo/plan.yaml"
+        echo "   3. Recreate your plan from scratch"
+        echo ""
+    fi
 else
     echo "ℹ️  No existing plan.yaml found"
     echo "   Create your project plan: touch .repo/plan.yaml"
