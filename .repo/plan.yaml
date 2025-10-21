@@ -311,3 +311,4 @@ plan:
           enabled: true
         drift:
           allowed_out_of_scope_changes: 2
+# Test uncommitted plan
