@@ -40,12 +40,18 @@ def get_mode(phase_id: str, repo_root: str = ".") -> str:
     context = load_phase_context(phase_id, repo_root)
     return context.get("mode", "EXPLORE")
 
-def set_mode(phase_id: str, mode: str, repo_root: str = ".") -> None:
-    """Set mode for phase"""
+def set_mode(phase_id: str, mode: str, repo_root: str = ".") -> bool:
+    """Set mode for phase with validation"""
+    valid_modes = ["EXPLORE", "LOCK"]
+    if mode not in valid_modes:
+        print(f"❌ Invalid mode: {mode}. Must be one of {valid_modes}")
+        return False
+    
     context = load_phase_context(phase_id, repo_root)
     context["mode"] = mode
     context["mode_changed_at"] = datetime.now().isoformat()
     save_phase_context(phase_id, context, repo_root)
+    return True
 
 def _create_default_context(phase_id: str) -> Dict[str, Any]:
     """Create default context for new phase"""

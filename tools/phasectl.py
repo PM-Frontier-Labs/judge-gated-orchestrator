@@ -1512,7 +1512,7 @@ def solutions_command():
     
     # Check for missing briefs
     try:
-        plan_file = REPO_ROOT / "plan.yaml"
+        plan_file = REPO_DIR / "plan.yaml"  # Fix path to use correct location
         if plan_file.exists():
             import yaml
             with plan_file.open() as f:

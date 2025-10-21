@@ -155,9 +155,11 @@ def _parse_review_response(review_text: str, budget_usd: float = None, usage: Di
     
     # Check budget if configured
     if budget_usd is not None and usage:
-        # Pricing for claude-sonnet-4 (as of 2025-01)
-        input_cost_per_1k = 0.003  # $3 per million
-        output_cost_per_1k = 0.015  # $15 per million
+        # Updated pricing for claude-sonnet-4-20250514 (as of 2025-01-15)
+        # Claude Sonnet 4: $3.00 per 1M input tokens, $15.00 per 1M output tokens
+        # This is per 1K tokens for small content
+        input_cost_per_1k = 0.003  # $3.00 per 1M tokens = $0.003 per 1K tokens
+        output_cost_per_1k = 0.015  # $15.00 per 1M tokens = $0.015 per 1K tokens
         
         estimated_cost = (
             usage["input_tokens"] / 1000 * input_cost_per_1k +

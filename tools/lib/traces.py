@@ -50,9 +50,17 @@ def check_gate_trace(gate_name: str, traces_dir: Path, error_prefix: str) -> Lis
                 exit_code = int(line.split(":")[1].strip())
                 if exit_code == 0:
                     return []
+                # Use more robust path resolution - show relative to repo root
+                try:
+                    repo_root = traces_dir.parent.parent  # .repo/traces -> .repo -> repo_root
+                    relative_path = trace_file.relative_to(repo_root)
+                except ValueError:
+                    # Fallback to absolute path if relative resolution fails
+                    relative_path = trace_file
+                
                 return [
                     f"{error_prefix} failed with exit code {exit_code}. "
-                    f"See {trace_file.relative_to(trace_file.parent.parent.parent)} for details."
+                    f"See {relative_path} for details."
                 ]
             except (ValueError, IndexError):
                 pass
@@ -63,14 +71,21 @@ def check_gate_trace(gate_name: str, traces_dir: Path, error_prefix: str) -> Lis
 # Collective Intelligence Functions
 
 def store_pattern(pattern: Dict[str, Any], repo_root: str = ".") -> None:
-    """Store a pattern in JSONL format"""
+    """Store a pattern in JSONL format with file locking to prevent concurrent writes"""
     patterns_file = Path(repo_root) / ".repo" / "collective_intelligence" / "patterns.jsonl"
     patterns_file.parent.mkdir(parents=True, exist_ok=True)
     
     pattern["timestamp"] = datetime.now().isoformat()
     
+    # Use file locking to prevent concurrent writes
+    import fcntl
     with open(patterns_file, 'a') as f:
-        f.write(json.dumps(pattern) + '\n')
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock
+        try:
+            f.write(json.dumps(pattern) + '\n')
+            f.flush()  # Ensure data is written
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # Release lock
 
 def find_matching_patterns(context: Dict[str, Any], repo_root: str = ".") -> List[Dict[str, Any]]:
     """Find patterns that match the current context"""

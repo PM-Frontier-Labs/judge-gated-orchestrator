@@ -62,13 +62,23 @@ Respond in JSON format:
 """
         
         response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-20250514",  # Match llm_judge.py default
             max_tokens=1000,
             temperature=0,
+            timeout=60.0,  # Add timeout
             messages=[{"role": "user", "content": prompt}]
         )
         
-        return json.loads(response.content[0].text)
+        # Safe JSON parsing with error handling
+        try:
+            if not response.content or not response.content[0].text:
+                return {"must_fix": [], "proposed_amendments": []}
+            
+            content = response.content[0].text
+            return json.loads(content)
+        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            print(f"⚠️ LLM critic response parsing failed: {e}")
+            return {"must_fix": [], "proposed_amendments": []}
         
     except ImportError:
         print("⚠️ LLM critic requires anthropic package. Run: pip install anthropic")

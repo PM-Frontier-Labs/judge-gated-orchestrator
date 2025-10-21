@@ -1705,15 +1705,6 @@ def judge_phase(phase_id: str):
     )
 
     print("  🔍 Checking documentation...")
-    # Ensure changed_files is never None when calling check_docs
-    if changed_files is None:
-        print("  ⚠️  Warning: changed_files is None, re-fetching...")
-        changed_files = get_changed_files(
-            REPO_ROOT,
-            include_committed=True,
-            base_branch=base_branch,
-            baseline_sha=baseline_sha
-        )
     docs_issues = check_docs(phase, changed_files)
     gate_results["docs"] = docs_issues
     all_issues.extend(docs_issues)

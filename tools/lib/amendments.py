@@ -15,6 +15,12 @@ def propose_amendment(phase_id: str, amendment_type: str, value: Any, reason: st
     if not _check_budget(phase_id, amendment_type, repo_root):
         return False
     
+    # Normalize value to string to prevent type issues
+    if isinstance(value, list):
+        value = " ".join(str(v) for v in value)
+    elif not isinstance(value, str):
+        value = str(value)
+    
     amendment = {
         "type": amendment_type,
         "value": value,
@@ -26,7 +32,13 @@ def propose_amendment(phase_id: str, amendment_type: str, value: Any, reason: st
     pending_dir = Path(repo_root) / ".repo" / "amendments" / "pending"
     pending_dir.mkdir(parents=True, exist_ok=True)
     
-    amendment_file = pending_dir / f"{amendment_type}_{phase_id}_{len(list(pending_dir.glob('*')))}.yaml"
+    # Use timestamp + random suffix for uniqueness to prevent collisions
+    import time
+    import random
+    timestamp = int(time.time() * 1000)
+    random_suffix = random.randint(1000, 9999)
+    amendment_file = pending_dir / f"{amendment_type}_{phase_id}_{timestamp}_{random_suffix}.yaml"
+    
     with open(amendment_file, 'w') as f:
         yaml.dump(amendment, f)
     

@@ -76,6 +76,6 @@ def get_changed_files(
         unique_changes = list(set(all_changes))
         return [f for f in unique_changes if f]
 
-    except subprocess.CalledProcessError:
-        # Not a git repo or base branch doesn't exist
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️  Warning: Git operation failed: {e}")
         return []
