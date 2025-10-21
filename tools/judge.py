@@ -29,6 +29,7 @@ from lib.scope import classify_files, check_forbidden_files
 from lib.traces import check_gate_trace
 from lib.protocol_guard import verify_protocol_lock, verify_phase_binding
 from lib.state import load_phase_context
+from lib.gate_interface import run_gates
 
 # Import LLM judge (optional)
 try:
@@ -1678,27 +1679,8 @@ def judge_phase(phase_id: str):
 
     # Run all checks - Phase → Gates → Verdict
     all_issues = []
-    gate_results = {}  # Track results per gate for JSON output
-
-    print("  🔍 Checking artifacts...")
-    artifacts_issues = check_artifacts(phase)
-    gate_results["artifacts"] = artifacts_issues
-    all_issues.extend(artifacts_issues)
-
-    print("  🔍 Checking tests...")
-    tests_issues = check_gate_trace("tests", TRACES_DIR, "Tests")
-    gate_results["tests"] = tests_issues
-    all_issues.extend(tests_issues)
-
-    # Lint check (optional)
-    lint_gate = phase.get("gates", {}).get("lint", {})
-    if lint_gate.get("must_pass", False):
-        print("  🔍 Checking linting...")
-        lint_issues = check_gate_trace("lint", TRACES_DIR, "Linting")
-        gate_results["lint"] = lint_issues
-        all_issues.extend(lint_issues)
-
-    # Get changed files for docs and drift gates
+    
+    # Get changed files for gates that need them
     base_branch = plan.get("plan", {}).get("base_branch", "main")
     changed_files, warnings = get_changed_files(
         REPO_ROOT,
@@ -1710,25 +1692,26 @@ def judge_phase(phase_id: str):
     # Display warnings if any
     for warning in warnings:
         print(f"  ⚠️  {warning}")
-
-    print("  🔍 Checking documentation...")
-    docs_issues = check_docs(phase, changed_files)
-    gate_results["docs"] = docs_issues
-    all_issues.extend(docs_issues)
-
-    print("  🔍 Checking for plan drift...")
-    drift_issues = check_drift(phase, plan, baseline_sha)
-    gate_results["drift"] = drift_issues
-    all_issues.extend(drift_issues)
-
-    # LLM code review (optional)
-    if LLM_JUDGE_AVAILABLE:
-        llm_gate = phase.get("gates", {}).get("llm_review", {})
-        if llm_gate.get("enabled", False):
-            print("  🤖 Running LLM code review...")
-            llm_issues = llm_code_review(phase, REPO_ROOT, plan, baseline_sha)
-            gate_results["llm_review"] = llm_issues
-            all_issues.extend(llm_issues)
+    
+    # Prepare execution context
+    context = {
+        "changed_files": changed_files,
+        "baseline_sha": baseline_sha,
+        "repo_root": REPO_ROOT,
+        "traces_dir": TRACES_DIR
+    }
+    
+    # Run all enabled gates
+    print("  🔍 Running gates...")
+    gate_results = run_gates(phase, plan, context)
+    
+    # Collect all issues
+    for gate_name, issues in gate_results.items():
+        all_issues.extend(issues)
+        if issues:
+            print(f"  ❌ {gate_name}: {len(issues)} issues")
+        else:
+            print(f"  ✅ {gate_name}: passed")
 
     # Fun UI sequence before verdict
     print("\n⚖️  Judge is deliberating...")

@@ -4,7 +4,7 @@ State Management: Runtime state separate from governance.
 Implements the core Governance ≠ Runtime split.
 """
 
-import json
+from lib.file_lock import safe_write_json, safe_read_json
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -22,8 +22,8 @@ def save_phase_context(phase_id: str, context: Dict[str, Any], repo_root: str = 
     ctx_file = Path(repo_root) / ".repo" / "state" / f"{phase_id}.ctx.json"
     ctx_file.parent.mkdir(parents=True, exist_ok=True)
     context["updated_at"] = datetime.now().isoformat()
-    with open(ctx_file, 'w') as f:
-        json.dump(context, f, indent=2)
+    # Write context atomically
+    safe_write_json(ctx_file, context, indent=2)
 
 def get_baseline_sha(phase_id: str, repo_root: str = ".") -> str:
     """Get pinned baseline SHA for phase"""

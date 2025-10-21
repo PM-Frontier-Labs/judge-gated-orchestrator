@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 File Locking Utilities: Centralized file locking for concurrent access safety.
-Provides consistent file locking across all protocol operations.
+Provides consistent file locking and atomic writes across all protocol operations.
 """
 
 import fcntl
 import os
+import tempfile
+import json
 from pathlib import Path
-from typing import Generator, ContextManager
+from typing import Generator, ContextManager, Any, Dict
 from contextlib import contextmanager
 
 @contextmanager
@@ -49,20 +51,49 @@ def acquire_file_lock(file_path: Path, mode: str = "exclusive") -> Generator[Non
         finally:
             lock_file.close()
 
-def safe_write_json(file_path: Path, data: dict, **kwargs) -> None:
+def safe_write_json(file_path: Path, data: Dict[str, Any], **kwargs) -> None:
     """
-    Safely write JSON data with file locking.
+    Atomically write JSON data with file locking.
+    
+    Uses tempfile + os.replace for atomic writes, preventing corruption
+    if the process is interrupted during write.
     
     Args:
         file_path: Path to write JSON to
         data: Dictionary to serialize as JSON
         **kwargs: Additional arguments for json.dump
     """
-    import json
+    # Ensure parent directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     
-    with acquire_file_lock(file_path):
-        with open(file_path, 'w') as f:
-            json.dump(data, f, **kwargs)
+    # Create temporary file in same directory for atomic rename
+    with tempfile.NamedTemporaryFile(
+        mode='w', 
+        dir=file_path.parent,
+        prefix=f".{file_path.name}.",
+        suffix='.tmp',
+        delete=False
+    ) as temp_file:
+        temp_path = Path(temp_file.name)
+        
+        try:
+            # Write JSON to temporary file
+            json.dump(data, temp_file, **kwargs)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())  # Ensure data is written to disk
+            
+        except Exception:
+            # Clean up temp file on error
+            temp_path.unlink(missing_ok=True)
+            raise
+    
+    # Atomically replace target file with temp file
+    try:
+        os.replace(temp_path, file_path)
+    except Exception:
+        # Clean up temp file on error
+        temp_path.unlink(missing_ok=True)
+        raise
 
 def safe_append_line(file_path: Path, line: str) -> None:
     """
@@ -113,3 +144,88 @@ def safe_read_lines(file_path: Path) -> list[str]:
     with acquire_file_lock(file_path, mode="shared"):
         with open(file_path, 'r') as f:
             return f.readlines()
+
+
+def safe_write_text(file_path: Path, content: str) -> None:
+    """
+    Atomically write text content to a file.
+    
+    Args:
+        file_path: Path to write text to
+        content: Text content to write
+    """
+    # Ensure parent directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create temporary file in same directory for atomic rename
+    with tempfile.NamedTemporaryFile(
+        mode='w', 
+        dir=file_path.parent,
+        prefix=f".{file_path.name}.",
+        suffix='.tmp',
+        delete=False
+    ) as temp_file:
+        temp_path = Path(temp_file.name)
+        
+        try:
+            # Write content to temporary file
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())  # Ensure data is written to disk
+            
+        except Exception:
+            # Clean up temp file on error
+            temp_path.unlink(missing_ok=True)
+            raise
+    
+    # Atomically replace target file with temp file
+    try:
+        os.replace(temp_path, file_path)
+    except Exception:
+        # Clean up temp file on error
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def safe_write_yaml(file_path: Path, data: Dict[str, Any], **kwargs) -> None:
+    """
+    Atomically write YAML data to a file.
+    
+    Args:
+        file_path: Path to write YAML to
+        data: Dictionary to serialize as YAML
+        **kwargs: Additional arguments for yaml.dump
+    """
+    import yaml
+    
+    # Ensure parent directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create temporary file in same directory for atomic rename
+    with tempfile.NamedTemporaryFile(
+        mode='w', 
+        dir=file_path.parent,
+        prefix=f".{file_path.name}.",
+        suffix='.tmp',
+        delete=False
+    ) as temp_file:
+        temp_path = Path(temp_file.name)
+        
+        try:
+            # Write YAML to temporary file
+            yaml.dump(data, temp_file, **kwargs)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())  # Ensure data is written to disk
+            
+        except Exception:
+            # Clean up temp file on error
+            temp_path.unlink(missing_ok=True)
+            raise
+    
+    # Atomically replace target file with temp file
+    try:
+        os.replace(temp_path, file_path)
+    except Exception:
+        # Clean up temp file on error
+        temp_path.unlink(missing_ok=True)
+        raise
