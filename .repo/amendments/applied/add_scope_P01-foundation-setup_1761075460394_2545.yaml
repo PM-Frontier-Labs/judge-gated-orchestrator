@@ -1,0 +1,6 @@
+phase_id: P01-foundation-setup
+reason: No patterns apply - new scenario requiring scope expansion for frontend foundation
+  files
+timestamp: '2025-10-21T20:37:40.394039'
+type: add_scope
+value: frontend/README.md

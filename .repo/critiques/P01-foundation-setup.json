@@ -1,6 +1,6 @@
 {
   "phase": "P01-foundation-setup",
-  "timestamp": 1761075236.7230191,
+  "timestamp": 1761076319.516042,
   "passed": false,
   "issues": [
     {
@@ -20,11 +20,17 @@
       "messages": [
         "Linting failed with exit code 254. See .repo/traces/last_lint.txt for details."
       ]
+    },
+    {
+      "gate": "drift",
+      "messages": [
+        "Plan drift detected: 7 out-of-scope files changed (limit: 2)\nOut-of-scope files: .repo/.judge.lock, .repo/briefs/CURRENT.json, .repo/critiques/P01-foundation-setup.json, tools/judge.py, tools/lib/file_lock.py, tools/lib/scope.py, tools/phasectl.py"
+      ]
     }
   ],
-  "total_issue_count": 3,
+  "total_issue_count": 4,
   "context": {
-    "has_drift": false,
+    "has_drift": true,
     "has_test_failures": true,
     "has_plan_corruption": false,
     "has_lint_failures": true,

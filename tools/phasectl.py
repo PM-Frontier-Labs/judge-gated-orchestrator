@@ -251,6 +251,40 @@ def detect_plan_mismatch() -> bool:
         return False
 
 
+def validate_git_state() -> bool:
+    """Validate that critical protocol state is committed to git."""
+    critical_files = [
+        ".repo/plan.yaml",
+        ".repo/briefs/"
+    ]
+    
+    for file_path in critical_files:
+        if not is_committed_to_git(file_path):
+            return False
+    return True
+
+
+def is_committed_to_git(file_path: str) -> bool:
+    """Check if file is committed to git and has no uncommitted changes."""
+    try:
+        # Check if file is tracked by git
+        result = subprocess.run(
+            ["git", "ls-files", file_path],
+            capture_output=True, text=True, cwd=REPO_ROOT
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+        
+        # Check if file has uncommitted changes
+        result = subprocess.run(
+            ["git", "diff", "--quiet", file_path],
+            capture_output=True, text=True, cwd=REPO_ROOT
+        )
+        return result.returncode == 0  # 0 means no changes
+    except:
+        return False
+
+
 def extract_scope_from_brief(brief_path: Path) -> Dict[str, List[str]]:
     """Extract scope from brief markdown."""
     if not brief_path.exists():
@@ -542,10 +576,31 @@ def review_phase(phase_id: str):
     print(f"📋 Submitting phase {phase_id} for review...")
     print()
 
+    # ENFORCEMENT 1: Git State Validation (NEW)
+    if not validate_git_state():
+        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
+        print("=" * 40)
+        print()
+        print("❌ CRITICAL: Uncommitted protocol state detected!")
+        print()
+        print("The following files are not committed to git:")
+        print("   - .repo/plan.yaml")
+        print("   - .repo/briefs/")
+        print()
+        print("This prevents state loss from git operations.")
+        print()
+        print("SOLUTION: Commit protocol state first:")
+        print("   git add .repo/plan.yaml .repo/briefs/")
+        print("   git commit -m 'Add protocol state'")
+        print()
+        print("Then retry:")
+        print(f"   ./tools/phasectl.py review {phase_id}")
+        return 1  # BLOCKS EXECUTION
+
     # Load plan
     plan = load_plan()
     
-    # CRITICAL: Validate plan state consistency before review
+    # ENFORCEMENT 2: Plan State Validation (EXISTING)
     if CURRENT_FILE.exists():
         try:
             current = json.loads(CURRENT_FILE.read_text())
@@ -1022,11 +1077,32 @@ The following patterns were automatically identified as relevant to this phase:
         return brief_content
 
 def start_phase(phase_id: str):
-    """Start implementation phase with mandatory brief acknowledgment."""
+    """Start implementation phase with mandatory workflow enforcement."""
     print(f"📋 Starting phase: {phase_id}")
     print()
     
-    # MINIMUM CHECK: Detect plan mismatch before starting
+    # ENFORCEMENT 1: Git State Validation (NEW)
+    if not validate_git_state():
+        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
+        print("=" * 40)
+        print()
+        print("❌ CRITICAL: Uncommitted protocol state detected!")
+        print()
+        print("The following files are not committed to git:")
+        print("   - .repo/plan.yaml")
+        print("   - .repo/briefs/")
+        print()
+        print("This prevents state loss from git operations.")
+        print()
+        print("SOLUTION: Commit protocol state first:")
+        print("   git add .repo/plan.yaml .repo/briefs/")
+        print("   git commit -m 'Add protocol state'")
+        print()
+        print("Then retry:")
+        print(f"   ./tools/phasectl.py start {phase_id}")
+        return 1  # BLOCKS EXECUTION
+    
+    # ENFORCEMENT 2: Plan State Validation (EXISTING)
     if detect_plan_mismatch():
         print("⚠️  Plan State Mismatch Detected!")
         print()
@@ -1039,7 +1115,7 @@ def start_phase(phase_id: str):
         print("This will update the phase state to match your current plan.")
         return 1
     
-    # Check if brief exists
+    # ENFORCEMENT 3: Brief Existence (EXISTING)
     brief_path = BRIEFS_DIR / f"{phase_id}.md"
     if not brief_path.exists():
         print(f"❌ Error: Brief not found: {brief_path}")
@@ -1134,6 +1210,28 @@ def start_phase(phase_id: str):
 
 def next_phase():
     """Advance to the next phase."""
+    # ENFORCEMENT 1: Git State Validation (NEW)
+    if not validate_git_state():
+        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
+        print("=" * 40)
+        print()
+        print("❌ CRITICAL: Uncommitted protocol state detected!")
+        print()
+        print("The following files are not committed to git:")
+        print("   - .repo/plan.yaml")
+        print("   - .repo/briefs/")
+        print()
+        print("This prevents state loss from git operations.")
+        print()
+        print("SOLUTION: Commit protocol state first:")
+        print("   git add .repo/plan.yaml .repo/briefs/")
+        print("   git commit -m 'Add protocol state'")
+        print()
+        print("Then retry:")
+        print("   ./tools/phasectl.py next")
+        return 1  # BLOCKS EXECUTION
+
+    # ENFORCEMENT 2: Current State Validation (EXISTING)
     if not CURRENT_FILE.exists():
         print("❌ Error: No CURRENT.json found")
         return 1
@@ -1152,7 +1250,7 @@ def next_phase():
     # Load plan
     plan = load_plan()
     
-    # CRITICAL: Validate plan state consistency
+    # ENFORCEMENT 3: Plan State Validation (EXISTING)
     stored_plan_sha = current.get("plan_sha")
     if stored_plan_sha:
         import hashlib
@@ -1613,25 +1711,24 @@ def test_scope_resolution():
 def test_gate_functions():
     """Test that gate functions are working."""
     try:
-        # Test basic gate functions exist and are callable
-        gate_tests = [
-            "check_tests",
-            "check_docs", 
-            "check_drift",
-            "check_lint"
-        ]
+        # Test that gate interface can be imported and instantiated
+        from lib.gate_interface import run_gates, GATE_REGISTRY
         
-        # Import judge module to test functions
-        import sys
-        sys.path.insert(0, str(Path(__file__).parent))
-        import judge
+        # Check that we have gates registered
+        if not GATE_REGISTRY:
+            return False
+            
+        # Test that we can create a minimal context
+        test_phase = {"gates": {"tests": {"must_pass": True}}}
+        test_plan = {"plan": {"test_command": "echo test"}}
+        test_context = {"changed_files": [], "baseline_sha": None}
         
-        for test_func in gate_tests:
-            if not hasattr(judge, test_func):
-                return False
+        # This should not raise an exception
+        results = run_gates(test_phase, test_plan, test_context)
+        return isinstance(results, dict)
         
-        return True
-    except Exception:
+    except Exception as e:
+        print(f"Gate functions test failed: {e}")
         return False
 
 def solutions_command():

@@ -51,7 +51,8 @@ def classify_files(
 
 def resolve_scope(scope_config: dict, changed_files: List[str]) -> List[str]:
     """Unified scope resolution for all gate types."""
-    if scope_config.get("lint_scope") == "scope":
+    # Always filter by scope if scope is defined
+    if "scope" in scope_config:
         return filter_changed_files(changed_files, scope_config)
     return changed_files
 

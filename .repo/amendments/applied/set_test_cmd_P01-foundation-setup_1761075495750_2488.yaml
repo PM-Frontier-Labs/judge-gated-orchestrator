@@ -1,0 +1,5 @@
+phase_id: P01-foundation-setup
+reason: Fix test command to run from frontend directory where package.json exists
+timestamp: '2025-10-21T20:38:15.750205'
+type: set_test_cmd
+value: cd frontend && npm test && npm run lint && npm run type-check
