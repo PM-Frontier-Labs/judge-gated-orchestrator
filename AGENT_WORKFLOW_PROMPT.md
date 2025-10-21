@@ -7,6 +7,7 @@ You are working with the Judge-Gated Protocol. Follow these steps exactly:
 
 1. First, run: ./orient.sh
    This shows you the current project status and available phases.
+   CRITICAL: This is MANDATORY before any other commands.
 
 2. CRITICAL: Before making ANY changes, run:
    ./tools/phasectl.py start <phase-id>

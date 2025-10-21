@@ -11,7 +11,7 @@ This document is for execution. For planning, collaborate with a human to draft 
 ## Core Loop
 
 ```
-1. Orient:     ./orient.sh                    # Shows current status
+1. Orient:     ./orient.sh                    # Shows current status (MANDATORY)
 2. Start:      ./tools/phasectl.py start <phase-id>  # Auto-injects patterns (opt-out costs budget)
 3. Implement:  Make changes within scope (patterns provided automatically)
 4. Review:     ./tools/phasectl.py review <phase-id>
@@ -24,6 +24,8 @@ This document is for execution. For planning, collaborate with a human to draft 
 6. Advance:    ./tools/phasectl.py next      # Shows next phase
 7. Repeat from step 1
 ```
+
+**CRITICAL**: Always run `./orient.sh` first to understand current state before starting any phase.
 
 **Win-function**: Pass now and pass a near-neighbor faster under a bounded replay; your replay score directly buys you more budget next phase.
 

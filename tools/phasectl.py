@@ -576,6 +576,23 @@ def review_phase(phase_id: str):
     print(f"📋 Submitting phase {phase_id} for review...")
     print()
 
+    # ENFORCEMENT 0: Must run orient.sh first (NEW)
+    if not has_run_orient_recently():
+        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
+        print("=" * 40)
+        print()
+        print("❌ CRITICAL: Must run orient.sh first!")
+        print()
+        print("You must understand the current state before reviewing.")
+        print("This prevents confusion and ensures proper context.")
+        print()
+        print("SOLUTION: Run orient.sh first:")
+        print("   ./orient.sh")
+        print()
+        print("Then retry:")
+        print(f"   ./tools/phasectl.py review {phase_id}")
+        return 1  # BLOCKS EXECUTION
+
     # ENFORCEMENT 1: Git State Validation (NEW)
     if not validate_git_state():
         print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
@@ -1076,10 +1093,40 @@ The following patterns were automatically identified as relevant to this phase:
         print(f"  ⚠️  Error injecting patterns: {e}")
         return brief_content
 
+def has_run_orient_recently() -> bool:
+    """Check if orient.sh was run recently (within last 5 minutes)."""
+    orient_timestamp = REPO_ROOT / ".repo" / ".orient_run_timestamp"
+    if not orient_timestamp.exists():
+        return False
+    
+    try:
+        timestamp = orient_timestamp.stat().st_mtime
+        return time.time() - timestamp < 300  # 5 minutes
+    except Exception:
+        return False
+
+
 def start_phase(phase_id: str):
     """Start implementation phase with mandatory workflow enforcement."""
     print(f"📋 Starting phase: {phase_id}")
     print()
+    
+    # ENFORCEMENT 0: Must run orient.sh first (NEW)
+    if not has_run_orient_recently():
+        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
+        print("=" * 40)
+        print()
+        print("❌ CRITICAL: Must run orient.sh first!")
+        print()
+        print("You must understand the current state before starting.")
+        print("This prevents confusion and ensures proper context.")
+        print()
+        print("SOLUTION: Run orient.sh first:")
+        print("   ./orient.sh")
+        print()
+        print("Then retry:")
+        print(f"   ./tools/phasectl.py start {phase_id}")
+        return 1  # BLOCKS EXECUTION
     
     # ENFORCEMENT 1: Git State Validation (NEW)
     if not validate_git_state():
@@ -1210,6 +1257,23 @@ def start_phase(phase_id: str):
 
 def next_phase():
     """Advance to the next phase."""
+    # ENFORCEMENT 0: Must run orient.sh first (NEW)
+    if not has_run_orient_recently():
+        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
+        print("=" * 40)
+        print()
+        print("❌ CRITICAL: Must run orient.sh first!")
+        print()
+        print("You must understand the current state before advancing.")
+        print("This prevents confusion and ensures proper context.")
+        print()
+        print("SOLUTION: Run orient.sh first:")
+        print("   ./orient.sh")
+        print()
+        print("Then retry:")
+        print("   ./tools/phasectl.py next")
+        return 1  # BLOCKS EXECUTION
+
     # ENFORCEMENT 1: Git State Validation (NEW)
     if not validate_git_state():
         print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
