@@ -854,6 +854,7 @@ rm -rf .repo/traces/
 rm -rf .repo/state/
 rm -rf .repo/amendments/
 rm -rf .repo/collective_intelligence/
+rm -f .repo/plan.yaml  # Remove old plan to ensure fresh start
 
 # Create fresh directory structure
 mkdir -p .repo/briefs .repo/critiques .repo/traces .repo/state .repo/amendments/pending .repo/amendments/applied .repo/collective_intelligence
