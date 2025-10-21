@@ -16,7 +16,8 @@ This document is for execution. For planning, collaborate with a human to draft 
 3. Implement:  Make changes within scope (patterns provided automatically)
 4. Review:     ./tools/phasectl.py review <phase-id>
    ├─> Auto-suggests amendments (safe-to-auto applied automatically)
-   ├─> Runs generalization-gated judge (replay → score → budget)
+   ├─> Runs pluggable gate system (artifacts, tests, lint, docs, drift, llm_review, integrity)
+   ├─> Uses atomic file operations for data integrity
    └─> Auto-captures patterns from successful critiques
 5. Check:      If .repo/critiques/<phase-id>.OK exists → approved
                If .repo/critiques/<phase-id>.md exists → fix and re-review
@@ -61,6 +62,49 @@ When errors occur, the system suggests amendments. Only pre-approved "safe-to-au
 
 ### **Attribution Tracking**
 System tracks which mechanisms (patterns, amendments, scope expansion) helped replay success, enabling continuous learning.
+
+---
+
+## Architectural Improvements
+
+The protocol has been enhanced with robust architectural improvements for production use:
+
+### **Pluggable Gate System**
+- **Gate Interface**: Clean abstract base class for all gates
+- **Individual Gate Classes**: ArtifactsGate, TestsGate, LintGate, DocsGate, DriftGate, LLMReviewGate, IntegrityGate
+- **Gate Registry**: Centralized registry for easy testing and extensibility
+- **Exception Handling**: Graceful error handling with detailed error messages
+
+### **Atomic File Operations**
+- **Safe Writes**: All file operations use `tempfile` + `os.replace` for atomic writes
+- **File Locking**: Concurrent access protection with `fcntl` file locks
+- **Data Integrity**: Prevents corruption during concurrent operations
+- **Error Recovery**: Automatic cleanup on write failures
+
+### **Robust Error Handling**
+- **Smart Error Messages**: Technical errors converted to actionable guidance
+- **Error Classification**: Categorized error types (insufficient_budget, missing_brief, plan_mismatch, etc.)
+- **Recovery Suggestions**: Specific commands to fix common issues
+- **Graceful Degradation**: System continues operating even with partial failures
+
+### **Self-Updating Tools**
+- **Version Detection**: Automatic detection of outdated protocol tools
+- **Atomic Updates**: Backup, update, verify, rollback on failure
+- **Integrity Verification**: SHA256 checksums ensure update integrity
+- **Zero-Downtime**: Updates don't interrupt ongoing work
+
+### **Enhanced Dependencies**
+- **Pathspec Requirement**: Mandatory `pathspec` dependency for consistent scope resolution
+- **Centralized LLM Config**: Unified LLM model names, pricing, and API client handling
+- **Command Utilities**: Centralized test and lint command builders
+- **Collective Intelligence**: Consolidated JSONL format for pattern storage
+
+### **Comprehensive Testing**
+- **86 Test Cases**: Complete test coverage for all improvements
+- **Unit Tests**: Individual component testing
+- **Integration Tests**: End-to-end workflow testing
+- **Error Scenario Tests**: Edge cases and failure modes
+- **Concurrency Tests**: Multi-process safety verification
 
 ---
 

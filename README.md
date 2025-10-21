@@ -30,6 +30,10 @@ AI agents often drift off-task, skip tests, ignore scope boundaries, and require
 ✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
 ✅ **Intelligent learning** - System automatically learns from successful phases and applies patterns
 ✅ **Economics-based enforcement** - Choices are priced via budget (scope expansion, pattern opt-out, bounded maintenance burst)
+✅ **Pluggable gate system** - Clean gate interface enables easy testing and extensibility
+✅ **Atomic file operations** - All file writes use tempfile + os.replace for data integrity
+✅ **Robust error handling** - Comprehensive error messages with actionable guidance
+✅ **Self-updating tools** - Protocol tools automatically detect and update when outdated
 
 ✅ **Experimental features** - Replay gate and budget shaping are opt-in via `experimental_features.replay_budget: true`
 ✅ **Automatic intelligence extraction** - Patterns captured, amendments suggested, attribution tracked
@@ -226,12 +230,18 @@ judge-gated-orchestrator/
 │   ├── llm_judge.py      # Optional LLM review
 │   ├── generate_manifest.py  # Update protocol hashes
 │   └── lib/              # Shared utilities
+│       ├── gate_interface.py  # Pluggable gate system
+│       ├── gates.py           # Individual gate implementations
 │       ├── protocol_guard.py  # SHA256 integrity verification
 │       ├── plan_validator.py  # Schema validation
-│       ├── file_lock.py       # Concurrent execution prevention
+│       ├── file_lock.py       # Atomic file operations
+│       ├── command_utils.py   # Test/lint command builders
+│       ├── llm_config.py      # Centralized LLM configuration
 │       ├── git_ops.py         # Git utilities
-│       ├── scope.py           # Scope matching
-│       └── traces.py          # Test output capture
+│       ├── scope.py           # Scope matching (requires pathspec)
+│       ├── traces.py          # Test output capture
+│       ├── amendments.py      # Amendment system
+│       └── state.py           # State management
 ├── orient.sh             # Status in 10 seconds
 └── README.md             # This file
 ```

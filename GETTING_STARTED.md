@@ -45,6 +45,11 @@ pip install -r requirements-llm.txt
 - Git
 - Your preferred AI coding assistant (Claude Code, Cursor, Windsurf, etc.)
 
+**Dependencies:**
+- `pathspec` (required for scope resolution)
+- `pyyaml` (required for plan parsing)
+- `anthropic` (optional, for LLM review features)
+
 **Optional:**
 - Anthropic API key (for LLM code review features)
 
