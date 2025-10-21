@@ -2,7 +2,7 @@
 
 import subprocess
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 
 def get_changed_files(
@@ -10,9 +10,9 @@ def get_changed_files(
     include_committed: bool = True,
     base_branch: str = "main",
     baseline_sha: str = None
-) -> List[str]:
+) -> Tuple[List[str], List[str]]:
     """
-    Get changed files.
+    Get changed files with deterministic ordering and error transparency.
 
     Args:
         repo_root: Repository root path
@@ -21,8 +21,10 @@ def get_changed_files(
         baseline_sha: Fixed baseline commit SHA for consistent diffs (preferred)
 
     Returns:
-        List of changed file paths
+        Tuple of (sorted_file_list, warnings_list)
     """
+    warnings = []
+    
     try:
         all_changes = []
 
@@ -52,30 +54,49 @@ def get_changed_files(
                 all_changes.extend(committed)
             else:
                 # Fallback: use merge-base (can drift as base_branch advances)
-                result = subprocess.run(
-                    ["git", "merge-base", "HEAD", base_branch],
-                    cwd=repo_root,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                merge_base = result.stdout.strip()
+                try:
+                    # Check if base_branch exists first
+                    subprocess.run(
+                        ["git", "rev-parse", "--verify", f"origin/{base_branch}"],
+                        cwd=repo_root,
+                        capture_output=True,
+                        check=True
+                    )
+                    
+                    result = subprocess.run(
+                        ["git", "merge-base", "HEAD", base_branch],
+                        cwd=repo_root,
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    merge_base = result.stdout.strip()
 
-                # Get committed changes
-                result = subprocess.run(
-                    ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
-                    cwd=repo_root,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                committed = [f for f in result.stdout.strip().split("\n") if f]
-                all_changes.extend(committed)
+                    # Get committed changes
+                    result = subprocess.run(
+                        ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
+                        cwd=repo_root,
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    committed = [f for f in result.stdout.strip().split("\n") if f]
+                    all_changes.extend(committed)
+                except subprocess.CalledProcessError as e:
+                    warning_msg = f"Cannot access base branch {base_branch}: {e}"
+                    warnings.append(warning_msg)
+                    print(f"⚠️  Warning: {warning_msg}")
+                    # Continue with just uncommitted changes
 
-        # Remove duplicates and empty strings
+        # Remove duplicates and empty strings, then sort for determinism
         unique_changes = list(set(all_changes))
-        return [f for f in unique_changes if f]
+        filtered_changes = [f for f in unique_changes if f]
+        sorted_changes = sorted(filtered_changes)  # Deterministic ordering
+        
+        return sorted_changes, warnings
 
     except subprocess.CalledProcessError as e:
-        print(f"⚠️  Warning: Git operation failed: {e}")
-        return []
+        error_msg = f"Git operation failed: {e}"
+        warnings.append(error_msg)
+        print(f"⚠️  Warning: {error_msg}")
+        return [], warnings

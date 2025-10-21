@@ -11,6 +11,7 @@ from pathlib import Path
 
 # Import shared utilities
 from lib.git_ops import get_changed_files as get_changed_files_raw
+from lib.llm_config import get_llm_config, get_api_client, calculate_cost, format_cost_message
 
 
 def _filter_code_files(
@@ -155,21 +156,12 @@ def _parse_review_response(review_text: str, budget_usd: float = None, usage: Di
     
     # Check budget if configured
     if budget_usd is not None and usage:
-        # Updated pricing for claude-sonnet-4-20250514 (as of 2025-01-15)
-        # Claude Sonnet 4: $3.00 per 1M input tokens, $15.00 per 1M output tokens
-        # This is per 1K tokens for small content
-        input_cost_per_1k = 0.003  # $3.00 per 1M tokens = $0.003 per 1K tokens
-        output_cost_per_1k = 0.015  # $15.00 per 1M tokens = $0.015 per 1K tokens
-        
-        estimated_cost = (
-            usage["input_tokens"] / 1000 * input_cost_per_1k +
-            usage["output_tokens"] / 1000 * output_cost_per_1k
-        )
-        
-        print(f"💰 LLM review cost: ${estimated_cost:.4f} (input: {usage['input_tokens']} tokens, output: {usage['output_tokens']} tokens)")
+        estimated_cost = calculate_cost(usage["input_tokens"], usage["output_tokens"])
+        print(format_cost_message(estimated_cost, usage["input_tokens"], usage["output_tokens"]))
         
         if estimated_cost > budget_usd:
-            return [f"LLM review exceeded budget: ${estimated_cost:.4f} > ${budget_usd:.2f} limit"]
+            issues.append(f"LLM review cost ${estimated_cost:.4f} exceeds budget ${budget_usd:.2f}")
+            return issues
     
     # Check for approval
     if "APPROVED" in review_text.upper() or "LGTM" in review_text.upper():
@@ -203,8 +195,11 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
         return []
     
     # Check API key
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    try:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            return ["LLM review enabled but ANTHROPIC_API_KEY not set in environment"]
+    except Exception:
         return ["LLM review enabled but ANTHROPIC_API_KEY not set in environment"]
     
     # Check anthropic package
@@ -214,30 +209,34 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
         return ["LLM review enabled but anthropic package not installed. Run: pip install anthropic"]
     
     # Get LLM configuration from plan (with defaults)
-    llm_config = {}
     if plan:
-        llm_config = plan.get("plan", {}).get("llm_review_config", {})
+        llm_config = get_llm_config(plan)
         base_branch = plan.get("plan", {}).get("base_branch", "main")
     else:
+        llm_config = get_llm_config({})  # Use defaults
         base_branch = "main"
     
     # Extract config with defaults
-    model = llm_config.get("model", "claude-sonnet-4-20250514")
-    max_tokens = llm_config.get("max_tokens", 2000)
-    temperature = llm_config.get("temperature", 0)
-    timeout_seconds = llm_config.get("timeout_seconds", 60)
-    budget_usd = llm_config.get("budget_usd")
-    fail_on_error = llm_config.get("fail_on_transport_error", False)
-    include_extensions = llm_config.get("include_extensions", [".py"])
-    exclude_patterns = llm_config.get("exclude_patterns", [])
+    model = llm_config["model"]
+    max_tokens = llm_config["max_tokens"]
+    temperature = llm_config["temperature"]
+    timeout_seconds = llm_config["timeout_seconds"]
+    budget_usd = llm_config["budget_usd"]
+    fail_on_transport_error = llm_config["fail_on_transport_error"]
+    include_extensions = llm_config["include_extensions"]
+    exclude_patterns = llm_config["exclude_patterns"]
     
     # Get changed files (committed + uncommitted)
-    changed_file_strs = get_changed_files_raw(
+    changed_file_strs, warnings = get_changed_files_raw(
         repo_root,
         include_committed=True,
         base_branch=base_branch,
         baseline_sha=baseline_sha
     )
+    
+    # Display warnings if any
+    for warning in warnings:
+        print(f"  ⚠️  {warning}")
     
     # Convert to Path objects and filter to existing files
     changed_files = []
@@ -282,7 +281,7 @@ def llm_code_review(phase: Dict[str, Any], repo_root: Path, plan: Dict[str, Any]
         return _parse_review_response(review_text, budget_usd, usage)
     
     except Exception as e:
-        if fail_on_error:
+        if fail_on_transport_error:
             return [f"LLM review failed: {str(e)}"]
         else:
             print(f"⚠️  LLM review skipped due to error: {e}")

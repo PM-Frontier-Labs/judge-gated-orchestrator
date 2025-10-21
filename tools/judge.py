@@ -335,12 +335,16 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
     base_branch = plan.get("plan", {}).get("base_branch", "main")
 
     # Get changed files using baseline SHA for consistent diffs
-    changed_files = get_changed_files(
+    changed_files, warnings = get_changed_files(
         REPO_ROOT,
         include_committed=True,
         base_branch=base_branch,
         baseline_sha=baseline_sha
     )
+    
+    # Display warnings if any
+    for warning in warnings:
+        print(f"  ⚠️  {warning}")
 
     if not changed_files:
         return []  # No changes or not a git repo
@@ -1697,12 +1701,16 @@ def judge_phase(phase_id: str):
 
     # Get changed files for docs and drift gates
     base_branch = plan.get("plan", {}).get("base_branch", "main")
-    changed_files = get_changed_files(
+    changed_files, warnings = get_changed_files(
         REPO_ROOT,
         include_committed=True,
         base_branch=base_branch,
         baseline_sha=baseline_sha
     )
+    
+    # Display warnings if any
+    for warning in warnings:
+        print(f"  ⚠️  {warning}")
 
     print("  🔍 Checking documentation...")
     docs_issues = check_docs(phase, changed_files)

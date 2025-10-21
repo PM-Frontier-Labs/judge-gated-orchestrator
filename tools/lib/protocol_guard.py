@@ -84,12 +84,16 @@ def verify_protocol_lock(
     base_branch = plan.get("plan", {}).get("base_branch", "main")
 
     try:
-        changed_files = get_changed_files(
+        changed_files, warnings = get_changed_files(
             repo_root,
             include_committed=True,
             base_branch=base_branch,
             baseline_sha=baseline_sha
         )
+        
+        # Display warnings if any
+        for warning in warnings:
+            print(f"  ⚠️  {warning}")
 
         for changed_file in changed_files:
             if any(fnmatch.fnmatch(changed_file, glob) for glob in protected_globs):

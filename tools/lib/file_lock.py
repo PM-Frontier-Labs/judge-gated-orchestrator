@@ -1,99 +1,115 @@
-"""File locking utilities for concurrent execution."""
-import time
+#!/usr/bin/env python3
+"""
+File Locking Utilities: Centralized file locking for concurrent access safety.
+Provides consistent file locking across all protocol operations.
+"""
+
+import fcntl
+import os
 from pathlib import Path
+from typing import Generator, ContextManager
 from contextlib import contextmanager
 
-
 @contextmanager
-def file_lock(lock_file: Path, timeout: int = 30):
+def acquire_file_lock(file_path: Path, mode: str = "exclusive") -> Generator[None, None, None]:
     """
-    Acquire an exclusive file lock.
-
+    Acquire a file lock for safe concurrent access.
+    
     Args:
-        lock_file: Path to lock file
-        timeout: Maximum seconds to wait for lock
-
+        file_path: Path to the file to lock
+        mode: Lock mode - "exclusive" (default) or "shared"
+    
+    Yields:
+        None - Lock is held during context
+        
     Raises:
-        TimeoutError: If lock cannot be acquired within timeout
+        OSError: If lock cannot be acquired
     """
-    import sys
+    # Ensure parent directory exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Create lock file directory if needed
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    # Open file for locking (create if doesn't exist)
+    lock_file = open(file_path, 'a+')
     
-    # Try fcntl first (Unix/Linux/Mac)
     try:
-        import fcntl
-        lock_fd = None
-        lock_acquired = False
+        # Acquire lock
+        if mode == "exclusive":
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        elif mode == "shared":
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
+        else:
+            raise ValueError(f"Invalid lock mode: {mode}")
         
+        yield
+        
+    finally:
+        # Release lock and close file
         try:
-            # Open/create lock file
-            lock_fd = open(lock_file, 'w')
-            
-            # Try to acquire lock with timeout
-            start_time = time.time()
-            while True:
-                try:
-                    fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    lock_acquired = True
-                    break
-                except (IOError, OSError):
-                    # Lock held by another process
-                    if time.time() - start_time > timeout:
-                        raise TimeoutError(f"Could not acquire lock on {lock_file} within {timeout}s")
-                    time.sleep(0.1)
-            
-            # Write timestamp for debugging
-            lock_fd.write(f"{sys.platform}:{time.time()}\n")
-            lock_fd.flush()
-            
-            yield
-        
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
         finally:
-            if lock_acquired and lock_fd:
-                try:
-                    fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
-                except Exception:
-                    pass
-            if lock_fd:
-                try:
-                    lock_fd.close()
-                except Exception:
-                    pass
-            # Clean up lock file
-            try:
-                if lock_file.exists():
-                    lock_file.unlink()
-            except Exception:
-                pass
+            lock_file.close()
+
+def safe_write_json(file_path: Path, data: dict, **kwargs) -> None:
+    """
+    Safely write JSON data with file locking.
     
-    except ImportError:
-        # fcntl not available (Windows) - fall back to exclusive file creation
-        lock_acquired = False
-        start_time = time.time()
+    Args:
+        file_path: Path to write JSON to
+        data: Dictionary to serialize as JSON
+        **kwargs: Additional arguments for json.dump
+    """
+    import json
+    
+    with acquire_file_lock(file_path):
+        with open(file_path, 'w') as f:
+            json.dump(data, f, **kwargs)
+
+def safe_append_line(file_path: Path, line: str) -> None:
+    """
+    Safely append a line to a file with file locking.
+    
+    Args:
+        file_path: Path to append to
+        line: Line to append (should include newline if desired)
+    """
+    with acquire_file_lock(file_path):
+        with open(file_path, 'a') as f:
+            f.write(line)
+            f.flush()  # Ensure data is written
+
+def safe_read_json(file_path: Path) -> dict:
+    """
+    Safely read JSON data with file locking.
+    
+    Args:
+        file_path: Path to read JSON from
         
-        try:
-            while True:
-                try:
-                    # Try to create lock file exclusively
-                    lock_fd = lock_file.open('x')
-                    lock_fd.write(f"{sys.platform}:{time.time()}\n")
-                    lock_fd.close()
-                    lock_acquired = True
-                    break
-                except FileExistsError:
-                    # Lock held by another process
-                    if time.time() - start_time > timeout:
-                        raise TimeoutError(f"Could not acquire lock on {lock_file} within {timeout}s")
-                    time.sleep(0.1)
-            
-            yield
+    Returns:
+        Dictionary from JSON file
         
-        finally:
-            if lock_acquired:
-                try:
-                    if lock_file.exists():
-                        lock_file.unlink()
-                except Exception:
-                    pass
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        json.JSONDecodeError: If file contains invalid JSON
+    """
+    import json
+    
+    with acquire_file_lock(file_path, mode="shared"):
+        with open(file_path, 'r') as f:
+            return json.load(f)
+
+def safe_read_lines(file_path: Path) -> list[str]:
+    """
+    Safely read all lines from a file with file locking.
+    
+    Args:
+        file_path: Path to read from
+        
+    Returns:
+        List of lines from file
+        
+    Raises:
+        FileNotFoundError: If file doesn't exist
+    """
+    with acquire_file_lock(file_path, mode="shared"):
+        with open(file_path, 'r') as f:
+            return f.readlines()

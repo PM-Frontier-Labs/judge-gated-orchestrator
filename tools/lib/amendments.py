@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+from lib.file_lock import safe_write_json, safe_read_json
 
 def propose_amendment(phase_id: str, amendment_type: str, value: Any, reason: str, repo_root: str = ".") -> bool:
     """Propose an amendment. Returns True if within budget."""
@@ -39,8 +40,11 @@ def propose_amendment(phase_id: str, amendment_type: str, value: Any, reason: st
     random_suffix = random.randint(1000, 9999)
     amendment_file = pending_dir / f"{amendment_type}_{phase_id}_{timestamp}_{random_suffix}.yaml"
     
-    with open(amendment_file, 'w') as f:
-        yaml.dump(amendment, f)
+    # Use safe file writing with locking
+    from lib.file_lock import acquire_file_lock
+    with acquire_file_lock(amendment_file):
+        with open(amendment_file, 'w') as f:
+            yaml.dump(amendment, f)
     
     return True
 

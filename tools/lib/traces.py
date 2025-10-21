@@ -23,12 +23,22 @@ def run_command_with_trace(
     except FileNotFoundError:
         return None
 
-    # Save trace
+    # Save trace with path information
     traces_dir.mkdir(parents=True, exist_ok=True)
     trace_file = traces_dir / f"last_{gate_name}.txt"
+    
+    # Calculate relative path for display
+    try:
+        relative_trace_path = trace_file.relative_to(repo_root)
+    except ValueError:
+        relative_trace_path = trace_file
+    
     trace_file.write_text(
+        f"Trace path: {relative_trace_path}\n"
         f"Exit code: {result.returncode}\n"
         f"Timestamp: {time.time()}\n"
+        f"Command: {' '.join(command)}\n"
+        f"Working directory: {repo_root}\n"
         f"\n=== STDOUT ===\n{result.stdout}\n"
         f"\n=== STDERR ===\n{result.stderr}\n"
     )
@@ -43,29 +53,47 @@ def check_gate_trace(gate_name: str, traces_dir: Path, error_prefix: str) -> Lis
     if not trace_file.exists():
         return [f"No {gate_name} results found. {error_prefix} may not have run."]
 
-    # Parse exit code
-    for line in trace_file.read_text().split("\n"):
-        if line.startswith("Exit code:"):
+    # Parse trace file
+    trace_content = trace_file.read_text()
+    lines = trace_content.split("\n")
+    
+    # Extract path and exit code from header
+    trace_path = None
+    exit_code = None
+    
+    for line in lines:
+        if line.startswith("Trace path:"):
+            trace_path = line.split(":", 1)[1].strip()
+        elif line.startswith("Exit code:"):
             try:
-                exit_code = int(line.split(":")[1].strip())
-                if exit_code == 0:
-                    return []
-                # Use more robust path resolution - show relative to repo root
-                try:
-                    repo_root = traces_dir.parent.parent  # .repo/traces -> .repo -> repo_root
-                    relative_path = trace_file.relative_to(repo_root)
-                except ValueError:
-                    # Fallback to absolute path if relative resolution fails
-                    relative_path = trace_file
-                
-                return [
-                    f"{error_prefix} failed with exit code {exit_code}. "
-                    f"See {relative_path} for details."
-                ]
+                exit_code = int(line.split(":", 1)[1].strip())
             except (ValueError, IndexError):
                 pass
-
-    return [f"Could not parse {gate_name} exit code from trace"]
+    
+    if exit_code is None:
+        return [f"Could not parse {gate_name} exit code from trace"]
+    
+    if exit_code == 0:
+        return []
+    
+    # Use stored path or fallback to calculated path
+    if trace_path:
+        return [
+            f"{error_prefix} failed with exit code {exit_code}. "
+            f"See {trace_path} for details."
+        ]
+    else:
+        # Fallback to calculated path
+        try:
+            repo_root = traces_dir.parent.parent  # .repo/traces -> .repo -> repo_root
+            relative_path = trace_file.relative_to(repo_root)
+        except ValueError:
+            relative_path = trace_file
+        
+        return [
+            f"{error_prefix} failed with exit code {exit_code}. "
+            f"See {relative_path} for details."
+        ]
 
 
 # Collective Intelligence Functions
@@ -78,14 +106,11 @@ def store_pattern(pattern: Dict[str, Any], repo_root: str = ".") -> None:
     pattern["timestamp"] = datetime.now().isoformat()
     
     # Use file locking to prevent concurrent writes
-    import fcntl
-    with open(patterns_file, 'a') as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock
-        try:
+    from lib.file_lock import acquire_file_lock
+    with acquire_file_lock(patterns_file):
+        with open(patterns_file, 'a') as f:
             f.write(json.dumps(pattern) + '\n')
             f.flush()  # Ensure data is written
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # Release lock
 
 def find_matching_patterns(context: Dict[str, Any], repo_root: str = ".") -> List[Dict[str, Any]]:
     """Find patterns that match the current context"""

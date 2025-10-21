@@ -7,6 +7,7 @@ Implements the LLM judge pipeline that proposes amendments.
 import os
 import json
 from typing import List, Dict, Any, Optional
+from lib.llm_config import get_llm_config, get_api_client, calculate_cost, format_cost_message
 
 def review_phase_with_llm(phase: Dict[str, Any], changed_files: List[str], 
                          test_output: str, lint_output: str) -> Dict[str, Any]:
@@ -25,13 +26,13 @@ def review_phase_with_llm(phase: Dict[str, Any], changed_files: List[str],
 def _critic_analyze(phase: Dict[str, Any], changed_files: List[str], 
                    test_output: str, lint_output: str) -> Dict[str, Any]:
     """Critic analyzes code and suggests must-fix items and amendments"""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        return {"must_fix": [], "proposed_amendments": []}
-    
     try:
-        from anthropic import Anthropic
-        client = Anthropic(api_key=api_key)
+        # Load plan to get LLM configuration
+        from lib.state import load_plan
+        plan = load_plan()
+        llm_config = get_llm_config(plan)
+        
+        client = get_api_client()
         
         prompt = f"""
 You are a code critic analyzing a phase implementation.
@@ -62,10 +63,10 @@ Respond in JSON format:
 """
         
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",  # Match llm_judge.py default
-            max_tokens=1000,
-            temperature=0,
-            timeout=60.0,  # Add timeout
+            model=llm_config["model"],
+            max_tokens=llm_config["max_tokens"],
+            temperature=llm_config["temperature"],
+            timeout=llm_config["timeout_seconds"],
             messages=[{"role": "user", "content": prompt}]
         )
         

@@ -34,8 +34,9 @@ except ImportError:
 
 # Import shared utilities
 from lib.git_ops import get_changed_files
-from lib.scope import classify_files, check_forbidden_files
+from lib.scope import classify_files, check_forbidden_files, resolve_scope
 from lib.traces import run_command_with_trace
+from lib.command_utils import build_test_command, build_lint_command
 
 REPO_ROOT = Path(__file__).parent.parent
 REPO_DIR = REPO_ROOT / ".repo"
@@ -282,88 +283,25 @@ def extract_scope_from_brief(brief_path: Path) -> Dict[str, List[str]]:
 
 def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
     """Resolve test scope patterns to specific test paths."""
-    # Use pathspec to find matching test files/directories
-    try:
-        import pathspec
-        
-        # Create pathspec for include patterns
-        include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
-        exclude_spec = None
-        if exclude_patterns:
-            exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
-        
-        # Find all test files in tests/ directory
-        test_paths = set()
-        tests_dir = REPO_ROOT / "tests"
-        if tests_dir.exists():
-            for test_file in tests_dir.rglob("test_*.py"):
-                rel_path = str(test_file.relative_to(REPO_ROOT))
-                # Check if matches include patterns
-                if include_spec.match_file(rel_path):
-                    # Check if not excluded
-                    if not exclude_spec or not exclude_spec.match_file(rel_path):
-                        # Add specific test file for precise testing
-                        test_path = str(test_file.relative_to(REPO_ROOT))
-                        if test_path.startswith("tests"):
-                            test_paths.add(test_path)
-        
-        if test_paths:
-            print(f"  📍 Test scope: Running {len(test_paths)} specific test files")
-            
-            # Handle poetry run pytest commands
-            if len(test_cmd) >= 3 and test_cmd[0] == "poetry" and test_cmd[1] == "run" and test_cmd[2] == "pytest":
-                new_cmd = test_cmd[:3]  # Keep "poetry run pytest"
-                new_cmd.extend(sorted(test_paths))
-                new_cmd.extend([arg for arg in test_cmd[3:] if arg.startswith("-")])
-            else:
-                # Original logic for direct pytest commands
-                new_cmd = [test_cmd[0]]  # Keep pytest
-                new_cmd.extend(sorted(test_paths))
-                new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-            
-            return new_cmd
-        else:
-            print("  ⚠️  No test files match scope patterns - running all tests")
-            return test_cmd
+    # Get changed files first (only test what was actually changed)
+    changed_files, warnings = get_changed_files(REPO_ROOT, include_committed=True)
+    if warnings:
+        for warning in warnings:
+            print(f"  ⚠️  {warning}")
     
-    except ImportError:
-        # Fallback to simple string matching if pathspec not available
-        print("  ⚠️  pathspec not available - using simple pattern matching")
-        test_paths = []
-        tests_dir = REPO_ROOT / "tests"
-        if tests_dir.exists():
-            for test_file in tests_dir.rglob("test_*.py"):
-                rel_path = str(test_file.relative_to(REPO_ROOT))
-                # Simple pattern matching
-                for pattern in scope_patterns:
-                    if pattern.endswith("*"):
-                        # Directory pattern
-                        if rel_path.startswith(pattern.rstrip("*")):
-                            test_paths.append(rel_path)
-                            break
-                    elif pattern.endswith(".py"):
-                        # Specific file pattern
-                        if rel_path == pattern:
-                            test_paths.append(rel_path)
-                            break
-        
-        if test_paths:
-            print(f"  📍 Test scope: Running {len(test_paths)} specific test files (fallback mode)")
-            
-            # Handle poetry run pytest commands
-            if len(test_cmd) >= 3 and test_cmd[0] == "poetry" and test_cmd[1] == "run" and test_cmd[2] == "pytest":
-                new_cmd = test_cmd[:3]  # Keep "poetry run pytest"
-                new_cmd.extend(sorted(test_paths))
-                new_cmd.extend([arg for arg in test_cmd[3:] if arg.startswith("-")])
-            else:
-                # Original logic for direct pytest commands
-                new_cmd = [test_cmd[0]]
-                new_cmd.extend(sorted(test_paths))
-                new_cmd.extend([arg for arg in test_cmd[1:] if arg.startswith("-")])
-            
-            return new_cmd
-        
+    if not changed_files:
+        print("  ⚠️  No changed files detected - running on all test files")
         return test_cmd
+    
+    # Use unified scope resolution to filter changed files
+    scoped_files = resolve_scope({"include": scope_patterns, "exclude": exclude_patterns}, changed_files)
+    
+    if not scoped_files:
+        print("  ⚠️  No files match scope patterns - running on all test files")
+        return test_cmd
+    
+    # Use command utilities to build test command
+    return build_test_command(test_cmd, scoped_files, "scope")
 
 
 def run_tests(plan, phase=None):
@@ -419,52 +357,25 @@ def run_tests(plan, phase=None):
 
 def _resolve_lint_scope(lint_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
     """Resolve lint scope patterns to specific file paths (only changed files)."""
-    try:
-        # Get changed files first (only lint what was actually changed)
-        changed_files = get_changed_files(REPO_ROOT, include_committed=True)
-        if not changed_files:
-            print("  ⚠️  No changed files detected - running on all files")
-            return lint_cmd
-        
-        # Use unified scope resolution
-        scope_config = {"scope": {"include": scope_patterns, "exclude": exclude_patterns}}
-        from lib.scope import resolve_scope
-        filtered_files = resolve_scope(scope_config, changed_files)
-        
-        # Find only changed Python files matching scope patterns
-        lint_paths = set()
-        for file_path in filtered_files:
-            if file_path.endswith('.py'):
-                lint_paths.add(file_path)
-        
-        if lint_paths:
-            print(f"  📍 Lint scope: Running on {len(lint_paths)} specific files")
-            
-            # Handle poetry run ruff commands
-            if len(lint_cmd) >= 3 and lint_cmd[0] == "poetry" and lint_cmd[1] == "run" and lint_cmd[2] == "ruff":
-                new_cmd = lint_cmd[:3]  # Keep "poetry run ruff"
-                new_cmd.extend(sorted(lint_paths))
-                new_cmd.extend([arg for arg in lint_cmd[3:] if arg.startswith("-")])
-            elif len(lint_cmd) >= 2 and lint_cmd[0] == "ruff" and lint_cmd[1] == "check":
-                # Handle "ruff check" commands properly
-                new_cmd = ["ruff", "check"]  # Keep "ruff check"
-                new_cmd.extend(sorted(lint_paths))
-                new_cmd.extend([arg for arg in lint_cmd[2:] if arg.startswith("-")])
-            else:
-                # Original logic for direct ruff commands (fallback)
-                new_cmd = [lint_cmd[0]]  # Keep ruff
-                new_cmd.extend(sorted(lint_paths))
-                new_cmd.extend([arg for arg in lint_cmd[1:] if arg.startswith("-")])
-            
-            return new_cmd
-        else:
-            print("  ⚠️  No files match scope patterns - running on all files")
-            return lint_cmd
+    # Get changed files first (only lint what was actually changed)
+    changed_files, warnings = get_changed_files(REPO_ROOT, include_committed=True)
+    if warnings:
+        for warning in warnings:
+            print(f"  ⚠️  {warning}")
     
-    except ImportError:
-        # Fallback to simple pattern matching if pathspec not available
-        print("  ⚠️  pathspec not available - using simple pattern matching")
+    if not changed_files:
+        print("  ⚠️  No changed files detected - running on all files")
         return lint_cmd
+    
+    # Use unified scope resolution to filter changed files
+    scoped_files = resolve_scope({"include": scope_patterns, "exclude": exclude_patterns}, changed_files)
+    
+    if not scoped_files:
+        print("  ⚠️  No files match scope patterns - running on all files")
+        return lint_cmd
+    
+    # Use command utilities to build lint command
+    return build_lint_command(lint_cmd, scoped_files, "scope")
 
 
 def run_lint(plan, phase_id):
@@ -534,12 +445,16 @@ def show_diff_summary(phase_id: str, plan: dict):
     base_branch = plan.get("plan", {}).get("base_branch", "main")
 
     # Get changed files using baseline SHA for consistent diffs
-    changed_files = get_changed_files(
+    changed_files, warnings = get_changed_files(
         REPO_ROOT,
         include_committed=True,
         base_branch=base_branch,
         baseline_sha=baseline_sha
     )
+    
+    # Display warnings if any
+    for warning in warnings:
+        print(f"  ⚠️  {warning}")
 
     if not changed_files:
         print("📊 No changes detected")
