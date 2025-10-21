@@ -6,6 +6,23 @@ echo "  Judge-Gated Orchestration - Status"
 echo "════════════════════════════════════════════════════════════════"
 echo ""
 
+# Protocol status
+echo "🔧 PROTOCOL STATUS"
+echo "────────────────────────────────────────────────────────────────"
+if [ -f "tools/phasectl.py" ]; then
+    echo "Protocol tools: ✅ Available"
+    if ./tools/phasectl.py discover >/dev/null 2>&1; then
+        echo "Protocol health: ✅ Healthy"
+    else
+        echo "Protocol health: ❌ Issues detected"
+        echo "   Run: ./tools/phasectl.py discover"
+    fi
+else
+    echo "Protocol tools: ❌ Missing"
+    echo "   Run: ../judge-gated-orchestrator/install-protocol.sh"
+fi
+echo ""
+
 # Current phase
 echo "📍 CURRENT PHASE"
 echo "────────────────────────────────────────────────────────────────"

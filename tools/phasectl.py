@@ -11,6 +11,7 @@ Usage:
   ./tools/phasectl.py discover            # Discover and validate plan structure
   ./tools/phasectl.py generate-briefs      # Generate brief templates from plan phases
   ./tools/phasectl.py solutions           # Show relevant solutions for current issues
+  ./tools/phasectl.py health              # Show comprehensive protocol health dashboard
   ./tools/phasectl.py amend propose <type> <value> <reason>  # Propose amendments
   ./tools/phasectl.py patterns <command>  # Handle patterns
 """
@@ -69,31 +70,106 @@ def can_update():
 
 
 def auto_update_protocol():
-    """Auto-update protocol tools if outdated."""
+    """Atomic update with backup and verification."""
     try:
         if not can_update():
             print("❌ Auto-update failed - manual update required")
             print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
             return False
         
-        print("🔄 Protocol tools outdated - attempting auto-update...")
+        print("🔄 Protocol tools outdated - attempting atomic update...")
         
-        result = subprocess.run([
-            "../judge-gated-orchestrator/install-protocol.sh"
-        ], capture_output=True, text=True)
+        # Create backup before update
+        backup_path = create_tool_backup()
+        if not backup_path:
+            print("❌ Failed to create backup - aborting update")
+            return False
         
-        if result.returncode == 0:
-            print("✅ Protocol tools updated successfully")
+        try:
+            # Attempt update
+            result = subprocess.run([
+                "../judge-gated-orchestrator/install-protocol.sh"
+            ], capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                raise UpdateError(f"Update failed: {result.stderr}")
+            
+            # Verify update integrity
+            if not verify_tool_integrity():
+                raise VerificationError("Tool integrity verification failed")
+            
+            print("✅ Protocol tools updated and verified successfully")
             return True
-        else:
-            print(f"❌ Auto-update failed: {result.stderr}")
-            print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
+            
+        except Exception as e:
+            # Rollback on failure
+            print(f"❌ Update failed: {e}")
+            if rollback_tools(backup_path):
+                print("✅ Rolled back to previous version")
+            else:
+                print("❌ Rollback failed - manual recovery required")
             return False
             
     except Exception as e:
         print(f"❌ Auto-update error: {e}")
         print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
         return False
+
+
+def create_tool_backup():
+    """Create backup of current tools."""
+    try:
+        backup_dir = REPO_DIR / "backup"
+        backup_dir.mkdir(exist_ok=True)
+        backup_path = backup_dir / f"tools_{int(time.time())}"
+        
+        import shutil
+        shutil.copytree("tools", backup_path)
+        return str(backup_path)
+    except Exception as e:
+        print(f"❌ Backup creation failed: {e}")
+        return None
+
+
+def verify_tool_integrity():
+    """Verify tools are working after update."""
+    try:
+        # Check critical commands exist
+        critical_commands = ["discover_plan", "generate_briefs", "solutions_command"]
+        for cmd in critical_commands:
+            if not has_command(cmd):
+                return False
+        
+        # Test basic functionality
+        if not check_protocol_version():
+            return False
+            
+        return True
+    except Exception:
+        return False
+
+
+def rollback_tools(backup_path):
+    """Rollback tools to backup version."""
+    try:
+        import shutil
+        if os.path.exists("tools"):
+            shutil.rmtree("tools")
+        shutil.copytree(backup_path, "tools")
+        return True
+    except Exception as e:
+        print(f"❌ Rollback failed: {e}")
+        return False
+
+
+class UpdateError(Exception):
+    """Exception for update failures."""
+    pass
+
+
+class VerificationError(Exception):
+    """Exception for verification failures."""
+    pass
 
 
 def load_plan():
@@ -109,6 +185,40 @@ def load_plan():
     except yaml.YAMLError as e:
         print(f"❌ Error: Invalid YAML in {plan_file}: {e}")
         sys.exit(1)
+
+
+def auto_detect_corruption():
+    """Automatically detect corruption without manual command."""
+    if detect_plan_mismatch() or baseline_corrupted():
+        print("🔄 Auto-detecting corruption...")
+        return recover_from_corruption()
+    return False
+
+
+def baseline_corrupted():
+    """Check if baseline commit exists and is reachable."""
+    try:
+        baseline_sha = get_baseline_sha()
+        if not baseline_sha:
+            return True
+        
+        subprocess.run(["git", "cat-file", "-e", baseline_sha], 
+                     check=True, capture_output=True)
+        return False
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return True
+
+
+def get_baseline_sha():
+    """Get current baseline SHA from state."""
+    try:
+        if not CURRENT_FILE.exists():
+            return None
+        
+        current = json.loads(CURRENT_FILE.read_text())
+        return current.get("baseline_sha")
+    except Exception:
+        return None
 
 
 def detect_plan_mismatch() -> bool:
@@ -310,27 +420,22 @@ def run_tests(plan, phase=None):
 def _resolve_lint_scope(lint_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
     """Resolve lint scope patterns to specific file paths (only changed files)."""
     try:
-        import pathspec
-        
         # Get changed files first (only lint what was actually changed)
         changed_files = get_changed_files(REPO_ROOT, include_committed=True)
         if not changed_files:
             print("  ⚠️  No changed files detected - running on all files")
             return lint_cmd
         
-        # Create pathspec for include patterns
-        include_spec = pathspec.PathSpec.from_lines('gitwildmatch', scope_patterns)
-        exclude_spec = None
-        if exclude_patterns:
-            exclude_spec = pathspec.PathSpec.from_lines('gitwildmatch', exclude_patterns)
+        # Use unified scope resolution
+        scope_config = {"scope": {"include": scope_patterns, "exclude": exclude_patterns}}
+        from lib.scope import resolve_scope
+        filtered_files = resolve_scope(scope_config, changed_files)
         
         # Find only changed Python files matching scope patterns
         lint_paths = set()
-        for file_path in changed_files:
+        for file_path in filtered_files:
             if file_path.endswith('.py'):
-                if include_spec.match_file(file_path):
-                    if not exclude_spec or not exclude_spec.match_file(file_path):
-                        lint_paths.add(file_path)
+                lint_paths.add(file_path)
         
         if lint_paths:
             print(f"  📍 Lint scope: Running on {len(lint_paths)} specific files")
@@ -1317,6 +1422,81 @@ def protocol_health_check():
         Path(".repo/plan.yaml").exists()
     ])
 
+
+def protocol_health_dashboard():
+    """Comprehensive protocol health status."""
+    health = {
+        "tool_version": check_protocol_version(),
+        "state_corruption": detect_plan_mismatch(),
+        "baseline_valid": not baseline_corrupted(),
+        "experimental_features": get_experimental_status(),
+        "scope_resolution": test_scope_resolution(),
+        "gate_functions": test_gate_functions()
+    }
+    
+    print("🔍 Protocol Health Dashboard:")
+    print("=" * 50)
+    
+    for check, status in health.items():
+        icon = "✅" if status else "❌"
+        check_name = check.replace("_", " ").title()
+        print(f"  {icon} {check_name}: {'OK' if status else 'ISSUE'}")
+    
+    print("=" * 50)
+    
+    if not all(health.values()):
+        print("💡 Run 'phasectl solutions' for specific fixes")
+        print("")
+    
+    return health
+
+
+def get_experimental_status():
+    """Check experimental feature configuration."""
+    try:
+        plan = load_plan()
+        experimental = plan.get("plan", {}).get("experimental_features", {})
+        return isinstance(experimental, dict)
+    except Exception:
+        return False
+
+
+def test_scope_resolution():
+    """Test scope resolution functionality."""
+    try:
+        test_files = ["src/test.py", "docs/test.md"]
+        test_scope = {"scope": {"include": ["src/"]}}
+        from lib.scope import resolve_scope
+        result = resolve_scope(test_scope, test_files)
+        return len(result) == 1 and result[0] == "src/test.py"
+    except Exception:
+        return False
+
+
+def test_gate_functions():
+    """Test that gate functions are working."""
+    try:
+        # Test basic gate functions exist and are callable
+        gate_tests = [
+            "check_tests",
+            "check_docs", 
+            "check_drift",
+            "check_lint"
+        ]
+        
+        # Import judge module to test functions
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent))
+        import judge
+        
+        for test_func in gate_tests:
+            if not hasattr(judge, test_func):
+                return False
+        
+        return True
+    except Exception:
+        return False
+
 def solutions_command():
     """Show relevant solutions for current issues."""
     print("💡 Protocol Solutions:")
@@ -1380,6 +1560,11 @@ def solutions_command():
         print("")
 
 def main():
+    # Auto-detect corruption before any command
+    if auto_detect_corruption():
+        print("✅ Corruption detected and recovered")
+        print()
+    
     # Protocol health check
     if not protocol_health_check():
         print("⚠️  Protocol health check failed - some features may not work")
@@ -1406,6 +1591,9 @@ def main():
         return generate_briefs()
     elif command == "solutions":
         solutions_command()
+        return 0
+    elif command == "health":
+        protocol_health_dashboard()
         return 0
     elif command == "start":
         if len(sys.argv) < 3:

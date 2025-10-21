@@ -67,6 +67,26 @@ def classify_files(
     return in_scope, out_of_scope
 
 
+def resolve_scope(scope_config: dict, changed_files: List[str]) -> List[str]:
+    """Unified scope resolution for all gate types."""
+    if scope_config.get("lint_scope") == "scope":
+        return filter_changed_files(changed_files, scope_config)
+    return changed_files
+
+
+def filter_changed_files(changed_files: List[str], scope_config: dict) -> List[str]:
+    """Filter changed files against scope patterns."""
+    include_patterns = scope_config.get("scope", {}).get("include", [])
+    if not include_patterns:
+        return changed_files
+    
+    filtered = []
+    for file_path in changed_files:
+        if any(file_path.startswith(pattern) for pattern in include_patterns):
+            filtered.append(file_path)
+    return filtered
+
+
 def check_forbidden_files(
     changed_files: List[str],
     forbid_patterns: List[str]

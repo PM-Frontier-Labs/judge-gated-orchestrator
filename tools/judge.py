@@ -366,8 +366,13 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
     if not include_patterns:
         return []  # No scope defined, can't check drift
 
-    # Two-tier scope classification: inner (free), outer (costed)
-    inner_files, outer_files = check_two_tier_scope(phase_id, changed_files)
+    # Use simple drift classification (two-tier scope is experimental)
+    if is_experimental_enabled("replay_budget"):
+        # Two-tier scope classification: inner (free), outer (costed)
+        inner_files, outer_files = check_two_tier_scope(phase_id, changed_files)
+    else:
+        # Simple classification: in-scope vs out-of-scope
+        inner_files, outer_files = classify_files(changed_files, include_patterns, exclude_patterns)
     
     # Generalized maintenance burst: allow bounded, priced outer edits for repo-wide maintenance
     try:
@@ -380,8 +385,8 @@ def check_drift(phase: Dict[str, Any], plan: Dict[str, Any], baseline_sha: str =
     except Exception as e:
         print(f"  ⚠️  Maintenance burst check error: {e}")
 
-    # Apply scope expansion cost for outer files (post-burst)
-    if outer_files:
+    # Apply scope expansion cost for outer files (post-burst) - experimental feature only
+    if outer_files and is_experimental_enabled("replay_budget"):
         if not apply_scope_expansion_cost(phase_id, outer_files):
             issues.append("Insufficient budget for scope expansion:")
             for f in outer_files:
@@ -651,6 +656,10 @@ def track_pattern_opt_out(phase_id: str, brief_content: str) -> bool:
 
 def apply_opt_out_cost(phase_id: str, replay_score: float) -> None:
     """Apply cost for pattern opt-out if replay performance degraded."""
+    # Only run if experimental feature enabled
+    if not is_experimental_enabled("replay_budget"):
+        return
+    
     try:
         # Check if agent opted out
         opt_out_file = REPO_ROOT / ".repo" / "state" / "pattern_opt_outs.jsonl"
@@ -1075,6 +1084,16 @@ def load_relevant_patterns(phase_id: str) -> List[dict]:
 
 def check_two_tier_scope(phase_id: str, changed_files: List[str]) -> tuple:
     """Check two-tier scope: inner (free), outer (costed)."""
+    # Only run if experimental feature enabled
+    if not is_experimental_enabled("replay_budget"):
+        # Fallback to simple classification
+        plan = load_plan()
+        phase = get_phase(plan, phase_id)
+        scope = phase.get("scope", {})
+        include_patterns = scope.get("include", [])
+        exclude_patterns = scope.get("exclude", [])
+        return classify_files(changed_files, include_patterns, exclude_patterns)
+    
     try:
         plan = load_plan()
         phase = get_phase(plan, phase_id)
@@ -1105,6 +1124,10 @@ def check_two_tier_scope(phase_id: str, changed_files: List[str]) -> tuple:
 
 def apply_scope_expansion_cost(phase_id: str, outer_files: List[str]) -> bool:
     """Apply cost for scope expansion (outer files)."""
+    # Only run if experimental feature enabled
+    if not is_experimental_enabled("replay_budget"):
+        return True  # No cost if experimental feature disabled
+    
     try:
         if not outer_files:
             return True  # No cost if no outer files
@@ -1512,6 +1535,86 @@ def write_approval(phase_id: str):
     print(f"📊 JSON approval: {ok_json_file.relative_to(REPO_ROOT)}")
 
 
+def explain_error(error_type: str, error_details: dict = None) -> str:
+    """Convert technical errors to actionable guidance."""
+    explanations = {
+        "insufficient_budget": "💡 Run 'phasectl solutions' to see budget recovery options",
+        "missing_brief": "💡 Run 'phasectl generate-briefs' to create missing briefs",
+        "plan_mismatch": "💡 Run 'phasectl discover' to validate plan state",
+        "scope_drift": "💡 Run 'phasectl reset' to update baseline SHA",
+        "lint_scope": "💡 Check scope patterns in plan.yaml",
+        "docs_gate": "💡 Verify documentation requirements in plan.yaml",
+        "protocol_outdated": "💡 Run '../judge-gated-orchestrator/install-protocol.sh'",
+        "baseline_corrupted": "💡 Run 'phasectl recover' to fix state corruption",
+        "experimental_disabled": "💡 Enable experimental features in plan.yaml or use standard features"
+    }
+    
+    base_message = explanations.get(error_type, f"💡 Run 'phasectl solutions' for help with {error_type}")
+    
+    # Add specific details if available
+    if error_details:
+        if error_type == "scope_drift" and "files" in error_details:
+            files = error_details["files"][:3]  # Show first 3 files
+            more = f" and {len(error_details['files']) - 3} more" if len(error_details['files']) > 3 else ""
+            base_message += f"\n   Out-of-scope files: {', '.join(files)}{more}"
+        elif error_type == "insufficient_budget" and "needed" in error_details:
+            base_message += f"\n   Budget needed: {error_details['needed']}, available: {error_details.get('available', 'unknown')}"
+    
+    return base_message
+
+
+def classify_error(exception: Exception) -> str:
+    """Classify exception into error type for smart messaging."""
+    error_msg = str(exception).lower()
+    
+    if "budget" in error_msg or "insufficient" in error_msg:
+        return "insufficient_budget"
+    elif "brief" in error_msg or "missing" in error_msg:
+        return "missing_brief"
+    elif "plan" in error_msg and ("mismatch" in error_msg or "corrupted" in error_msg):
+        return "plan_mismatch"
+    elif "scope" in error_msg and "drift" in error_msg:
+        return "scope_drift"
+    elif "lint" in error_msg:
+        return "lint_scope"
+    elif "documentation" in error_msg or "docs" in error_msg:
+        return "docs_gate"
+    elif "protocol" in error_msg and "outdated" in error_msg:
+        return "protocol_outdated"
+    elif "baseline" in error_msg and "corrupted" in error_msg:
+        return "baseline_corrupted"
+    elif "experimental" in error_msg:
+        return "experimental_disabled"
+    else:
+        return "unknown_error"
+
+
+def extract_error_details(exception: Exception) -> dict:
+    """Extract relevant details from exception for smart messaging."""
+    error_msg = str(exception)
+    details = {}
+    
+    # Extract file lists from scope drift errors
+    if "out-of-scope" in error_msg.lower():
+        import re
+        files_match = re.search(r'files: \[(.*?)\]', error_msg)
+        if files_match:
+            files_str = files_match.group(1)
+            files = [f.strip().strip("'\"") for f in files_str.split(',')]
+            details["files"] = files
+    
+    # Extract budget information
+    if "budget" in error_msg.lower():
+        import re
+        needed_match = re.search(r'need (\d+)', error_msg)
+        available_match = re.search(r'have (\d+)', error_msg)
+        if needed_match:
+            details["needed"] = needed_match.group(1)
+        if available_match:
+            details["available"] = available_match.group(1)
+    
+    return details
+
 def judge_phase(phase_id: str):
     """Run all checks and produce verdict."""
     print(f"⚖️  Judging phase {phase_id}...")
@@ -1644,6 +1747,18 @@ def judge_phase(phase_id: str):
         print("😤 VERDICT: REJECTED! 😤")
         print("   'Issues found. Please address and resubmit.'")
         write_critique(phase_id, all_issues, gate_results)
+        
+        # Add smart error messages for common issues
+        print("\n💡 Smart Error Messages:")
+        for issue in all_issues:
+            if "insufficient budget" in issue.lower():
+                print(f"   💡 {explain_error('insufficient_budget')}")
+            elif "missing brief" in issue.lower():
+                print(f"   💡 {explain_error('missing_brief')}")
+            elif "plan mismatch" in issue.lower():
+                print(f"   💡 {explain_error('plan_mismatch')}")
+        print()
+        
         return 1
     else:
         print("🎉 VERDICT: APPROVED! 🎉")
@@ -1683,9 +1798,18 @@ def main():
         print("   Another judge process may be running. Wait and try again.")
         return 2
     except Exception as e:
-        print(f"❌ Judge error: {e}")
-        import traceback
-        traceback.print_exc()
+        error_type = classify_error(e)
+        error_details = extract_error_details(e)
+        smart_message = explain_error(error_type, error_details)
+        
+        print(f"❌ {error_type.replace('_', ' ').title()}: {e}")
+        print(smart_message)
+        
+        # Only show traceback for unknown errors
+        if error_type == "unknown_error":
+            import traceback
+            traceback.print_exc()
+        
         return 2
 
 
