@@ -12,7 +12,7 @@ This document is for execution. For planning, collaborate with a human to draft 
 
 ```
 1. Orient:     ./orient.sh                    # Shows current status (MANDATORY)
-2. Start:      ./tools/phasectl.py start <phase-id>  # Auto-injects patterns (opt-out costs budget)
+2. Start:      ./tools/phasectl.py start <phase-id>  # Verifies baseline + auto-injects patterns
 3. Implement:  Make changes within scope (patterns provided automatically)
 4. Review:     ./tools/phasectl.py review <phase-id>
    ├─> Auto-suggests amendments (safe-to-auto applied automatically)
@@ -26,6 +26,8 @@ This document is for execution. For planning, collaborate with a human to draft 
 ```
 
 **CRITICAL**: Always run `./orient.sh` first to understand current state before starting any phase.
+
+**BASELINE ENFORCEMENT**: The protocol now verifies baseline SHA validity before starting any phase, preventing state corruption from invalid git commits.
 
 **Win-function**: Pass now and pass a near-neighbor faster under a bounded replay; your replay score directly buys you more budget next phase.
 
@@ -720,19 +722,22 @@ Create briefs before starting implementation:
 
 ### `./tools/phasectl.py start <phase-id>`
 
-**Purpose:** Start implementation phase with mandatory brief acknowledgment
+**Purpose:** Start implementation phase with mandatory brief acknowledgment and baseline verification
 
 **What it does:**
-1. Displays the complete brief content with intelligence context
-2. Shows mechanism opportunities and available patterns
-3. Extracts and shows scope boundaries (✅/❌)
-4. Requires explicit confirmation of understanding
-5. Updates `.repo/briefs/CURRENT.json` with implementation status
-6. Captures baseline SHA for consistent diffs
+1. **Enforces orient.sh requirement** - Must run `./orient.sh` first
+2. **Validates git state** - Ensures protocol state is committed
+3. **Verifies baseline SHA** - Confirms git commit exists and is reachable
+4. Displays the complete brief content with intelligence context
+5. Shows mechanism opportunities and available patterns
+6. Extracts and shows scope boundaries (✅/❌)
+7. Requires explicit confirmation of understanding
+8. Updates `.repo/briefs/CURRENT.json` with implementation status
+9. Captures baseline SHA for consistent diffs
 
 **Exit codes:**
 - `0` - Phase started successfully
-- `1` - Brief not found or acknowledgment declined
+- `1` - Brief not found, acknowledgment declined, or baseline verification failed
 
 **Example:**
 ```bash
@@ -740,6 +745,12 @@ Create briefs before starting implementation:
 ```
 
 **This command is MANDATORY** before any implementation work.
+
+**Baseline Enforcement:**
+The protocol now verifies that the baseline SHA is valid and reachable before starting any phase. This prevents:
+- Starting phases with invalid git commits
+- State corruption from unreachable baselines
+- Silent failures from git operations
 
 ---
 

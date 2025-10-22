@@ -1,6 +1,6 @@
 {
   "phase": "P01-foundation-setup",
-  "timestamp": 1761076319.516042,
+  "timestamp": 1761078706.498314,
   "passed": false,
   "issues": [
     {
@@ -10,30 +10,18 @@
       ]
     },
     {
-      "gate": "tests",
-      "messages": [
-        "Tests failed with exit code 254. See .repo/traces/last_tests.txt for details."
-      ]
-    },
-    {
-      "gate": "lint",
-      "messages": [
-        "Linting failed with exit code 254. See .repo/traces/last_lint.txt for details."
-      ]
-    },
-    {
       "gate": "drift",
       "messages": [
-        "Plan drift detected: 7 out-of-scope files changed (limit: 2)\nOut-of-scope files: .repo/.judge.lock, .repo/briefs/CURRENT.json, .repo/critiques/P01-foundation-setup.json, tools/judge.py, tools/lib/file_lock.py, tools/lib/scope.py, tools/phasectl.py"
+        "Plan drift detected: 15 out-of-scope files changed (limit: 2)\nOut-of-scope files: .repo/.orient_run_timestamp, .repo/briefs/CURRENT.json, .repo/critiques/P01-foundation-setup.json, AGENT_WORKFLOW_PROMPT.md, PROTOCOL.md, frontend/node_modules/.package-lock.json, frontend/node_modules/.vitest/deps_temp_31874519/package.json, frontend/node_modules/fsevents/LICENSE, frontend/node_modules/fsevents/README.md, frontend/node_modules/fsevents/fsevents.d.ts..."
       ]
     }
   ],
-  "total_issue_count": 4,
+  "total_issue_count": 2,
   "context": {
     "has_drift": true,
     "has_test_failures": true,
     "has_plan_corruption": false,
-    "has_lint_failures": true,
+    "has_lint_failures": false,
     "has_forbidden_files": false
   }
 }
