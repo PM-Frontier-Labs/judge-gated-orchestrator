@@ -22,9 +22,10 @@ echo "╚═══════════════════════�
 echo ""
 
 # Check if protocol v2 exists
-if [ -d "v2/tools" ]; then
-    echo -e "${BLUE}🆕 Protocol v2 Available${NC}"
-    echo "   This project has the simplified v2 protocol"
+if [ -d "v2" ]; then
+    echo -e "${BLUE}ℹ️  Protocol v2 Source Available${NC}"
+    echo "   v2 source code in v2/ directory (reference only)"
+    echo "   Active protocol: ./tools/ (v2 cutover complete)"
     echo ""
 fi
 
@@ -61,22 +62,22 @@ if [ -f "$CURRENT_FILE" ]; then
     if [ -f "$OK_FILE" ]; then
         echo -e "${GREEN}✅ Status: APPROVED${NC}"
         echo ""
-        echo "Next steps:"
-        echo "  1. Reflect on learnings: ./v2/tools/phasectl.py reflect $CURRENT_PHASE"
-        echo "  2. Advance: ./v2/tools/phasectl.py next"
+         echo "Next steps:"
+         echo "  1. Reflect on learnings: ./tools/phasectl.py reflect $CURRENT_PHASE"
+         echo "  2. Advance: ./tools/phasectl.py next"
     elif [ -f "$CRITIQUE_FILE" ]; then
         echo -e "${RED}❌ Status: NEEDS FIXES${NC}"
         echo ""
         echo "Review critique:"
         echo "  cat $CRITIQUE_FILE"
         echo ""
-        echo "After fixing:"
-        echo "  ./v2/tools/phasectl.py review $CURRENT_PHASE"
+         echo "After fixing:"
+         echo "  ./tools/phasectl.py review $CURRENT_PHASE"
     else
         echo -e "${YELLOW}🔨 Status: IN PROGRESS${NC}"
         echo ""
-        echo "When ready:"
-        echo "  ./v2/tools/phasectl.py review $CURRENT_PHASE"
+         echo "When ready:"
+         echo "  ./tools/phasectl.py review $CURRENT_PHASE"
     fi
 else
     echo -e "${YELLOW}⏸️  No Active Phase${NC}"
@@ -84,8 +85,8 @@ else
     
     # Find first phase
     FIRST_PHASE=$(grep "^    - id:" "$REPO_DIR/plan.yaml" | head -1 | awk '{print $3}')
-    echo "Start first phase:"
-    echo "  ./v2/tools/phasectl.py start $FIRST_PHASE"
+     echo "Start first phase:"
+     echo "  ./tools/phasectl.py start $FIRST_PHASE"
 fi
 
 echo ""
@@ -121,12 +122,12 @@ echo "║                    QUICK REFERENCE                         ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Commands:"
-echo "  ./v2/tools/phasectl.py start <phase>       - Start phase"
-echo "  ./v2/tools/phasectl.py review <phase>      - Submit for review"
-echo "  ./v2/tools/phasectl.py justify-scope <p>   - Justify drift"
-echo "  ./v2/tools/phasectl.py acknowledge-orient  - Acknowledge reading"
-echo "  ./v2/tools/phasectl.py reflect <phase>     - Capture learnings"
-echo "  ./v2/tools/phasectl.py next                - Advance phase"
+echo "  ./tools/phasectl.py start <phase>       - Start phase"
+echo "  ./tools/phasectl.py review <phase>      - Submit for review"
+echo "  ./tools/phasectl.py justify-scope <p>   - Justify drift"
+echo "  ./tools/phasectl.py acknowledge-orient  - Acknowledge reading"
+echo "  ./tools/phasectl.py reflect <phase>     - Capture learnings"
+echo "  ./tools/phasectl.py next                - Advance phase"
 echo ""
 
 echo "Full context recovered ✅"
