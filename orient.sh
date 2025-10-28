@@ -1,154 +1,134 @@
 #!/bin/bash
-# Quick orientation for new Claude Code instances
+# Orient.sh v2 - Enhanced context recovery
 
-echo "════════════════════════════════════════════════════════════════"
-echo "  Judge-Gated Orchestration - Status"
-echo "════════════════════════════════════════════════════════════════"
+set -e
+
+REPO_DIR=".repo"
+CURRENT_FILE="$REPO_DIR/state/current.json"
+LEARNINGS_FILE="$REPO_DIR/learnings.md"
+CRITIQUES_DIR="$REPO_DIR/critiques"
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo ""
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║                  📍 PROJECT ORIENTATION                    ║"
+echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Protocol status
-echo "🔧 PROTOCOL STATUS"
-echo "────────────────────────────────────────────────────────────────"
-if [ -f "tools/phasectl.py" ]; then
-    echo "Protocol tools: ✅ Available"
-    if ./tools/phasectl.py discover >/dev/null 2>&1; then
-        echo "Protocol health: ✅ Healthy"
-    else
-        echo "Protocol health: ❌ Issues detected"
-        echo "   Run: ./tools/phasectl.py discover"
-    fi
-else
-    echo "Protocol tools: ❌ Missing"
-    echo "   Run: ../judge-gated-orchestrator/install-protocol.sh"
+# Check if protocol v2 exists
+if [ -d "v2/tools" ]; then
+    echo -e "${BLUE}🆕 Protocol v2 Available${NC}"
+    echo "   This project has the simplified v2 protocol"
+    echo ""
 fi
-echo ""
 
-# Current phase
-echo "📍 CURRENT PHASE"
-echo "────────────────────────────────────────────────────────────────"
-if [ -f .repo/briefs/CURRENT.json ]; then
-    PHASE_ID=$(cat .repo/briefs/CURRENT.json | grep -o '"phase_id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"/\1/')
-    BRIEF_PATH=$(cat .repo/briefs/CURRENT.json | grep -o '"brief_path"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"/\1/')
-    echo "Phase: $PHASE_ID"
-    echo "Brief: $BRIEF_PATH"
-else
-    echo "⚠️  No CURRENT.json found"
+# Check if plan exists
+if [ ! -f "$REPO_DIR/plan.yaml" ]; then
+    echo -e "${RED}❌ No plan found${NC}"
+    echo "   Create $REPO_DIR/plan.yaml to get started"
+    exit 1
 fi
+
+# Get plan info
+PLAN_ID=$(grep "^  id:" "$REPO_DIR/plan.yaml" | head -1 | awk '{print $2}')
+echo -e "${GREEN}📋 Plan: $PLAN_ID${NC}"
 echo ""
 
-# Progress
-echo "📊 PROGRESS"
-echo "────────────────────────────────────────────────────────────────"
-TOTAL_PHASES=$(grep "id:" .repo/plan.yaml | grep -v "plan:" | wc -l | tr -d ' ')
-COMPLETED=$(ls .repo/critiques/*.OK 2>/dev/null | wc -l | tr -d ' ')
-echo "Completed phases: $COMPLETED/$TOTAL_PHASES"
-if [ $COMPLETED -gt 0 ]; then
-    echo "✅ Approved:"
-    ls .repo/critiques/*.OK 2>/dev/null | xargs -n1 basename | sed 's/.OK$//' | sed 's/^/   - /'
-fi
+# Count phases
+PHASE_COUNT=$(grep "^    - id:" "$REPO_DIR/plan.yaml" | wc -l | xargs)
+echo -e "📊 Total Phases: $PHASE_COUNT"
 echo ""
 
-# Current status
-echo "🔍 CURRENT STATUS"
-echo "────────────────────────────────────────────────────────────────"
-if [ -n "$PHASE_ID" ]; then
-    if [ -f .repo/critiques/${PHASE_ID}.OK ]; then
-        echo "✅ Phase approved - ready to advance"
-        echo "   Run: ./tools/phasectl.py next"
-    elif [ -f .repo/critiques/${PHASE_ID}.md ]; then
-        echo "❌ Critique exists - needs fixes"
-        echo "   Read: cat .repo/critiques/${PHASE_ID}.md"
+# Check current phase
+if [ -f "$CURRENT_FILE" ]; then
+    CURRENT_PHASE=$(python3 -c "import json; print(json.load(open('$CURRENT_FILE'))['phase_id'])" 2>/dev/null || echo "unknown")
+    BASELINE_SHA=$(python3 -c "import json; print(json.load(open('$CURRENT_FILE'))['baseline_sha'][:8])" 2>/dev/null || echo "unknown")
+    
+    echo -e "${YELLOW}▶️  Current Phase: $CURRENT_PHASE${NC}"
+    echo "   Baseline: $BASELINE_SHA"
+    echo ""
+    
+    # Check status
+    OK_FILE="$CRITIQUES_DIR/$CURRENT_PHASE.OK"
+    CRITIQUE_FILE="$CRITIQUES_DIR/$CURRENT_PHASE.md"
+    
+    if [ -f "$OK_FILE" ]; then
+        echo -e "${GREEN}✅ Status: APPROVED${NC}"
         echo ""
-        echo "Issues:"
-        grep "^- " .repo/critiques/${PHASE_ID}.md 2>/dev/null | head -3
+        echo "Next steps:"
+        echo "  1. Reflect on learnings: ./v2/tools/phasectl.py reflect $CURRENT_PHASE"
+        echo "  2. Advance: ./v2/tools/phasectl.py next"
+    elif [ -f "$CRITIQUE_FILE" ]; then
+        echo -e "${RED}❌ Status: NEEDS FIXES${NC}"
+        echo ""
+        echo "Review critique:"
+        echo "  cat $CRITIQUE_FILE"
+        echo ""
+        echo "After fixing:"
+        echo "  ./v2/tools/phasectl.py review $CURRENT_PHASE"
     else
-        echo "⏳ No review yet - ready to implement or submit"
-        echo "   Run: ./tools/phasectl.py review $PHASE_ID"
-    fi
-fi
-echo ""
-
-# Automatic Intelligence Status
-echo "🧠 AUTOMATIC INTELLIGENCE STATUS"
-echo "────────────────────────────────────────────────────────────────"
-if [ -n "$PHASE_ID" ]; then
-    # Check for patterns
-    PATTERNS_FILE=".repo/collective_intelligence/patterns.jsonl"
-    if [ -f "$PATTERNS_FILE" ]; then
-        PATTERN_COUNT=$(wc -l < "$PATTERNS_FILE" 2>/dev/null || echo "0")
-        echo "📚 Auto-captured patterns: $PATTERN_COUNT"
-    else
-        echo "📚 Auto-captured patterns: 0"
-    fi
-    
-    # Check for attribution data
-    ATTRIBUTION_FILE=".repo/state/attribution.jsonl"
-    if [ -f "$ATTRIBUTION_FILE" ]; then
-        ATTRIBUTION_COUNT=$(wc -l < "$ATTRIBUTION_FILE" 2>/dev/null || echo "0")
-        echo "📊 Attribution records: $ATTRIBUTION_COUNT"
-    else
-        echo "📊 Attribution records: 0"
-    fi
-    
-    # Check for generalization scores
-    GEN_FILE=".repo/state/generalization.json"
-    if [ -f "$GEN_FILE" ]; then
-        echo "🎯 Generalization scores: Available"
-    else
-        echo "🎯 Generalization scores: None yet"
-    fi
-    
-    # Check for budget shaping
-    BUDGET_FILE=".repo/state/next_budget.json"
-    if [ -f "$BUDGET_FILE" ]; then
-        echo "💰 Budget shaping: Active"
-    else
-        echo "💰 Budget shaping: Default"
+        echo -e "${YELLOW}🔨 Status: IN PROGRESS${NC}"
+        echo ""
+        echo "When ready:"
+        echo "  ./v2/tools/phasectl.py review $CURRENT_PHASE"
     fi
 else
-    echo "⚠️  No active phase - run ./tools/phasectl.py start <phase-id>"
+    echo -e "${YELLOW}⏸️  No Active Phase${NC}"
+    echo ""
+    
+    # Find first phase
+    FIRST_PHASE=$(grep "^    - id:" "$REPO_DIR/plan.yaml" | head -1 | awk '{print $3}')
+    echo "Start first phase:"
+    echo "  ./v2/tools/phasectl.py start $FIRST_PHASE"
 fi
+
 echo ""
+echo "───────────────────────────────────────────────────────────"
+echo ""
+
+# Show recent learnings if they exist
+if [ -f "$LEARNINGS_FILE" ]; then
+    echo -e "${BLUE}💡 Recent Learnings${NC}"
+    echo ""
+    
+    # Show last 3 learnings
+    tail -n 30 "$LEARNINGS_FILE" | head -n 25 || true
+    
+    echo ""
+    echo "───────────────────────────────────────────────────────────"
+    echo ""
+fi
 
 # Git status
-echo "📝 GIT STATUS"
-echo "────────────────────────────────────────────────────────────────"
-CHANGED=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
-if [ $CHANGED -eq 0 ]; then
-    echo "No changes (working tree clean)"
-else
-    echo "Files changed: $CHANGED"
-    git status --short 2>/dev/null | head -5
-    if [ $CHANGED -gt 5 ]; then
-        echo "   ... and $((CHANGED - 5)) more"
-    fi
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+    UNCOMMITTED=$(git diff --name-only HEAD 2>/dev/null | wc -l | xargs)
+    
+    echo -e "${BLUE}🔀 Git Status${NC}"
+    echo "   Branch: $BRANCH"
+    echo "   Uncommitted changes: $UNCOMMITTED files"
+    echo ""
 fi
+
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║                    QUICK REFERENCE                         ║"
+echo "╚════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Commands:"
+echo "  ./v2/tools/phasectl.py start <phase>       - Start phase"
+echo "  ./v2/tools/phasectl.py review <phase>      - Submit for review"
+echo "  ./v2/tools/phasectl.py justify-scope <p>   - Justify drift"
+echo "  ./v2/tools/phasectl.py acknowledge-orient  - Acknowledge reading"
+echo "  ./v2/tools/phasectl.py reflect <phase>     - Capture learnings"
+echo "  ./v2/tools/phasectl.py next                - Advance phase"
 echo ""
 
-# Next steps
-echo "🎯 NEXT STEPS"
-echo "────────────────────────────────────────────────────────────────"
-if [ -n "$PHASE_ID" ]; then
-    if [ -f .repo/critiques/${PHASE_ID}.OK ]; then
-        echo "1. Advance: ./tools/phasectl.py next"
-        echo "2. Read new brief"
-        echo "3. Start implementation"
-    elif [ -f .repo/critiques/${PHASE_ID}.md ]; then
-        echo "1. Read critique: cat .repo/critiques/${PHASE_ID}.md"
-        echo "2. Fix issues"
-        echo "3. Re-submit: ./tools/phasectl.py review $PHASE_ID"
-    else
-        echo "1. Read brief: cat $BRIEF_PATH"
-        echo "2. Implement required files"
-        echo "3. Submit: ./tools/phasectl.py review $PHASE_ID"
-    fi
-fi
+echo "Full context recovered ✅"
 echo ""
 
-echo "════════════════════════════════════════════════════════════════"
-echo "📚 Docs: GETTING_STARTED.md | README.md"
-echo "════════════════════════════════════════════════════════════════"
-
-# Mark that orient.sh was run (for protocol enforcement)
-mkdir -p .repo
-touch .repo/.orient_run_timestamp

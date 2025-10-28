@@ -1,2009 +1,452 @@
 #!/usr/bin/env python3
 """
-Phasectl: Controller for gated phase protocol.
+Phasectl v2: User command interface.
 
-Usage:
-  ./tools/phasectl.py start <PHASE_ID>   # Start implementation phase with brief acknowledgment
-  ./tools/phasectl.py reset <PHASE_ID>    # Reset phase state to match current plan (for plan transitions)
-  ./tools/phasectl.py review <PHASE_ID>  # Submit phase for review
-  ./tools/phasectl.py next                # Advance to next phase
-  ./tools/phasectl.py recover             # Recover from plan state corruption
-  ./tools/phasectl.py discover            # Discover and validate plan structure
-  ./tools/phasectl.py generate-briefs      # Generate brief templates from plan phases
-  ./tools/phasectl.py solutions           # Show relevant solutions for current issues
-  ./tools/phasectl.py health              # Show comprehensive protocol health dashboard
-  ./tools/phasectl.py amend propose <type> <value> <reason>  # Propose amendments
-  ./tools/phasectl.py patterns <command>  # Handle patterns
+Commands:
+- start <phase>        Start a phase
+- review <phase>       Submit for review
+- justify-scope <phase> Justify out-of-scope changes
+- acknowledge-orient   Acknowledge orient.sh reading
+- reflect <phase>      Capture learnings
+- next                 Advance to next phase
 """
 
 import sys
-import json
-import time
 import subprocess
-import shlex
-import re
-import os
-import shutil
 from pathlib import Path
-from typing import List, Dict, Any
 
-from lib.path_utils import get_relative_path
+# Add lib to path
+sys.path.insert(0, str(Path(__file__).parent))
 
-try:
-    import yaml
-except ImportError:
-    print("❌ Error: pyyaml not installed. Run: pip install pyyaml")
-    sys.exit(1)
-
-# Import shared utilities
+from lib.plan import load_plan, get_phase, get_brief, get_next_phase, PlanError
+from lib.state import (
+    get_current_phase, set_current_phase, clear_current_phase,
+    acknowledge_orient, save_scope_justification, append_learning
+)
 from lib.git_ops import get_changed_files
-from lib.scope import classify_files, check_forbidden_files, resolve_scope
-from lib.traces import run_command_with_trace
-from lib.command_utils import build_test_command, build_lint_command
+from lib.scope import classify_files
+from lib.traces import run_command_with_trace, build_test_command, build_lint_command
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path.cwd()
 REPO_DIR = REPO_ROOT / ".repo"
-CRITIQUES_DIR = REPO_DIR / "critiques"
 TRACES_DIR = REPO_DIR / "traces"
-BRIEFS_DIR = REPO_DIR / "briefs"
-STATE_DIR = REPO_DIR / "state"
-CURRENT_FILE = BRIEFS_DIR / "CURRENT.json"
 
 
-def check_protocol_version():
-    """Check if protocol tools are up to date."""
-    # Check if we have latest commands by looking for discover command
-    return has_command("discover_plan")
-
-
-def has_command(command_name: str) -> bool:
-    """Check if a command exists in the current protocol tools."""
+def cmd_start(phase_id: str):
+    """Start a phase."""
+    print(f"🚀 Starting phase {phase_id}...")
+    print()
+    
     try:
-        # Check if the command function exists
-        return command_name in globals()
-    except Exception:
-        return False
+        plan = load_plan(REPO_ROOT)
+        phase = get_phase(plan, phase_id)
+        brief = get_brief(plan, phase_id, REPO_ROOT)
+    except PlanError as e:
+        print(f"❌ {e}")
+        return 1
+    
+    # Set as current phase (captures baseline SHA)
+    current = set_current_phase(phase_id, REPO_ROOT)
+    
+    print(f"✅ Phase {phase_id} activated")
+    print(f"   Baseline: {current['baseline_sha'][:8]}...")
+    print()
+    
+    # Display brief
+    print("="*60)
+    print(brief)
+    print("="*60)
+    print()
+    
+    # Show scope summary
+    scope_config = phase.get("scope", {})
+    if scope_config:
+        print("📍 Scope:")
+        include_patterns = scope_config.get("include", [])
+        for pattern in include_patterns:
+            print(f"   ✅ {pattern}")
+        exclude_patterns = scope_config.get("exclude", [])
+        for pattern in exclude_patterns:
+            print(f"   ❌ {pattern}")
+        print()
+    
+    print("Next steps:")
+    print(f"  1. Implement the phase requirements")
+    print(f"  2. Run: ./v2/tools/phasectl.py review {phase_id}")
+    print()
+    
+    return 0
 
 
-def can_update():
-    """Check if auto-update is possible."""
-    return (
-        Path("../judge-gated-orchestrator/install-protocol.sh").exists() and
-        os.access("tools", os.W_OK) and
-        Path(".git").exists()
-    )
-
-
-def auto_update_protocol():
-    """Atomic update with backup and verification."""
+def cmd_review(phase_id: str):
+    """Submit phase for review."""
+    print(f"📋 Reviewing phase {phase_id}...")
+    print()
+    
+    # Check if phase is active
+    current = get_current_phase(REPO_ROOT)
+    if not current or current["phase_id"] != phase_id:
+        print(f"❌ Phase {phase_id} is not active")
+        print(f"   Run: ./v2/tools/phasectl.py start {phase_id}")
+        return 1
+    
     try:
-        if not can_update():
-            print("❌ Auto-update failed - manual update required")
-            print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
-            return False
+        plan = load_plan(REPO_ROOT)
+        phase = get_phase(plan, phase_id)
+    except PlanError as e:
+        print(f"❌ {e}")
+        return 1
+    
+    baseline_sha = current.get("baseline_sha")
+    
+    # Show changed files summary
+    changed_files, warnings = get_changed_files(REPO_ROOT, baseline_sha)
+    
+    if changed_files:
+        print(f"📝 Changed files ({len(changed_files)}):")
+        for f in changed_files[:10]:
+            print(f"   - {f}")
+        if len(changed_files) > 10:
+            print(f"   ... and {len(changed_files) - 10} more")
+        print()
+    else:
+        print("⚠️  No changed files detected")
+        print()
+    
+    # Run tests if configured
+    tests_config = phase.get("gates", {}).get("tests", {})
+    if tests_config:
+        print("🧪 Running tests...")
         
-        print("🔄 Protocol tools outdated - attempting atomic update...")
-        
-        # Create backup before update
-        backup_path = create_tool_backup()
-        if not backup_path:
-            print("❌ Failed to create backup - aborting update")
-            return False
-        
-        try:
-            # Attempt update
-            result = subprocess.run([
-                "../judge-gated-orchestrator/install-protocol.sh"
-            ], capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                raise UpdateError(f"Update failed: {result.stderr}")
-            
-            # Verify update integrity
-            if not verify_tool_integrity():
-                raise VerificationError("Tool integrity verification failed")
-            
-            print("✅ Protocol tools updated and verified successfully")
-            return True
-            
-        except Exception as e:
-            # Rollback on failure
-            print(f"❌ Update failed: {e}")
-            if rollback_tools(backup_path):
-                print("✅ Rolled back to previous version")
+        # Check for split tests
+        if "unit" in tests_config:
+            print("   - Unit tests...")
+            cmd = build_test_command(phase, plan, "unit")
+            exit_code = run_command_with_trace(cmd, REPO_ROOT, TRACES_DIR, "tests_unit")
+            if exit_code == 0:
+                print("     ✅ Pass")
             else:
-                print("❌ Rollback failed - manual recovery required")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Auto-update error: {e}")
-        print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
-        return False
-
-
-def create_tool_backup():
-    """Create backup of current tools."""
-    try:
-        backup_dir = REPO_DIR / "backup"
-        backup_dir.mkdir(exist_ok=True)
-        backup_path = backup_dir / f"tools_{int(time.time())}"
+                print(f"     ❌ Failed (exit {exit_code})")
         
-        import shutil
-        shutil.copytree("tools", backup_path)
-        return str(backup_path)
-    except Exception as e:
-        print(f"❌ Backup creation failed: {e}")
-        return None
-
-
-def verify_tool_integrity():
-    """Verify tools are working after update."""
-    try:
-        # Check critical commands exist
-        critical_commands = ["discover_plan", "generate_briefs", "solutions_command"]
-        for cmd in critical_commands:
-            if not has_command(cmd):
-                return False
+        if "integration" in tests_config:
+            print("   - Integration tests...")
+            cmd = build_test_command(phase, plan, "integration")
+            exit_code = run_command_with_trace(cmd, REPO_ROOT, TRACES_DIR, "tests_integration")
+            if exit_code == 0:
+                print("     ✅ Pass")
+            else:
+                print(f"     ❌ Failed (exit {exit_code})")
         
-        # Test basic functionality
-        if not check_protocol_version():
-            return False
-            
-        return True
-    except Exception:
-        return False
-
-
-def rollback_tools(backup_path):
-    """Rollback tools to backup version."""
-    try:
-        import shutil
-        if os.path.exists("tools"):
-            shutil.rmtree("tools")
-        shutil.copytree(backup_path, "tools")
-        return True
-    except Exception as e:
-        print(f"❌ Rollback failed: {e}")
-        return False
-
-
-class UpdateError(Exception):
-    """Exception for update failures."""
-    pass
-
-
-class VerificationError(Exception):
-    """Exception for verification failures."""
-    pass
-
-
-def load_plan():
-    """Load plan.yaml and validate."""
-    plan_file = REPO_DIR / "plan.yaml"
-    if not plan_file.exists():
-        print(f"❌ Error: {plan_file} not found")
-        sys.exit(1)
-
-    try:
-        with plan_file.open() as f:
-            return yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        print(f"❌ Error: Invalid YAML in {plan_file}: {e}")
-        sys.exit(1)
-
-
-def auto_detect_corruption():
-    """Automatically detect corruption without manual command."""
-    if detect_plan_mismatch() or baseline_corrupted():
-        print("🔄 Auto-detecting corruption...")
-        return recover_from_corruption()
-    return False
-
-
-def baseline_corrupted():
-    """Check if baseline commit exists and is reachable."""
-    try:
-        baseline_sha = get_baseline_sha()
-        if not baseline_sha:
-            return True
+        if "unit" not in tests_config and "integration" not in tests_config:
+            # Simple mode
+            cmd = build_test_command(phase, plan, "simple")
+            exit_code = run_command_with_trace(cmd, REPO_ROOT, TRACES_DIR, "tests")
+            if exit_code == 0:
+                print("   ✅ Pass")
+            else:
+                print(f"   ❌ Failed (exit {exit_code})")
         
-        subprocess.run(["git", "cat-file", "-e", baseline_sha], 
-                     check=True, capture_output=True)
-        return False
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return True
-
-
-def get_baseline_sha():
-    """Get current baseline SHA from state."""
-    try:
-        if not CURRENT_FILE.exists():
-            return None
-        
-        current = json.loads(CURRENT_FILE.read_text())
-        return current.get("baseline_sha")
-    except Exception:
-        return None
-
-
-def detect_plan_mismatch() -> bool:
-    """Detect if current plan differs from stored plan SHA."""
-    if not CURRENT_FILE.exists():
-        return False
+        print()
     
-    try:
-        current = json.loads(CURRENT_FILE.read_text())
-        stored_plan_sha = current.get("plan_sha")
-        
-        if not stored_plan_sha:
-            return False
-        
-        # Compute current plan SHA
-        plan_path = REPO_DIR / "plan.yaml"
-        if not plan_path.exists():
-            return False
-        
-        import hashlib
-        current_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
-        return current_plan_sha != stored_plan_sha
-        
-    except (json.JSONDecodeError, KeyError):
-        return False
-
-
-def validate_git_state() -> bool:
-    """Validate that critical protocol state is committed to git."""
-    critical_files = [
-        ".repo/plan.yaml",
-        ".repo/briefs/"
-    ]
-    
-    for file_path in critical_files:
-        if not is_committed_to_git(file_path):
-            return False
-    return True
-
-
-def is_committed_to_git(file_path: str) -> bool:
-    """Check if file is committed to git and has no uncommitted changes."""
-    try:
-        # Check if file is tracked by git
-        result = subprocess.run(
-            ["git", "ls-files", file_path],
-            capture_output=True, text=True, cwd=REPO_ROOT
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            return False
-        
-        # Check if file has uncommitted changes
-        result = subprocess.run(
-            ["git", "diff", "--quiet", file_path],
-            capture_output=True, text=True, cwd=REPO_ROOT
-        )
-        return result.returncode == 0  # 0 means no changes
-    except:
-        return False
-
-
-def extract_scope_from_brief(brief_path: Path) -> Dict[str, List[str]]:
-    """Extract scope from brief markdown."""
-    if not brief_path.exists():
-        return {"include": [], "exclude": []}
-    
-    content = brief_path.read_text()
-    
-    # Find scope section
-    scope_match = re.search(r'## Scope.*?(?=##|\Z)', content, re.DOTALL | re.IGNORECASE)
-    if not scope_match:
-        return {"include": [], "exclude": []}
-    
-    scope_section = scope_match.group(0)
-    
-    # Extract include items (✅) - look for lines starting with - after ✅ section
-    include_section = re.search(r'✅.*?(?=❌|\Z)', scope_section, re.DOTALL)
-    include_list = []
-    if include_section:
-        include_lines = re.findall(r'- `([^`]+)`', include_section.group(0))
-        include_list.extend(include_lines)
-    
-    # Extract exclude items (❌) - look for lines starting with - after ❌ section
-    exclude_section = re.search(r'❌.*?(?=🤔|\Z)', scope_section, re.DOTALL)
-    exclude_list = []
-    if exclude_section:
-        exclude_lines = re.findall(r'- `([^`]+)`', exclude_section.group(0))
-        exclude_list.extend(exclude_lines)
-    
-    return {
-        "include": [item.strip() for item in include_list],
-        "exclude": [item.strip() for item in exclude_list]
-    }
-
-
-def _resolve_test_scope(test_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
-    """Resolve test scope patterns to specific test paths."""
-    # Get changed files first (only test what was actually changed)
-    changed_files, warnings = get_changed_files(REPO_ROOT, include_committed=True)
-    if warnings:
-        for warning in warnings:
-            print(f"  ⚠️  {warning}")
-    
-    if not changed_files:
-        print("  ⚠️  No changed files detected - running on all test files")
-        return test_cmd
-    
-    # Use unified scope resolution to filter changed files
-    scoped_files = resolve_scope({"include": scope_patterns, "exclude": exclude_patterns}, changed_files)
-    
-    if not scoped_files:
-        print("  ⚠️  No files match scope patterns - running on all test files")
-        return test_cmd
-    
-    # Use command utilities to build test command
-    return build_test_command(test_cmd, scoped_files, "scope")
-
-
-def run_tests(plan, phase=None):
-    """Run tests and save results to trace file."""
-    print("🧪 Running tests...")
-
-    # Get test command from runtime context if available, otherwise from plan
-    if phase and phase.get("runtime", {}).get("test_cmd"):
-        test_cmd = shlex.split(phase["runtime"]["test_cmd"])
-    else:
-        test_config = plan.get("plan", {}).get("test_command", {})
-        if isinstance(test_config, str):
-            test_cmd = shlex.split(test_config)
-        elif isinstance(test_config, dict):
-            test_cmd = shlex.split(test_config.get("command", "pytest tests/ -v"))
+    # Run lint if configured
+    lint_config = phase.get("gates", {}).get("lint", {})
+    if lint_config.get("must_pass", False):
+        print("🔍 Running lint...")
+        cmd = build_lint_command(phase, plan)
+        exit_code = run_command_with_trace(cmd, REPO_ROOT, TRACES_DIR, "lint")
+        if exit_code == 0:
+            print("   ✅ Pass")
         else:
-            test_cmd = ["pytest", "tests/", "-v"]
-
-    # Apply test scoping and quarantine if phase provided
-    if phase:
-        test_gate = phase.get("gates", {}).get("tests", {})
-
-        # Test scoping: "scope" | "all" | custom path
-        test_scope = test_gate.get("test_scope", "all")
-
-        if test_scope == "scope":
-            scope_patterns = phase.get("scope", {}).get("include", [])
-            exclude_patterns = phase.get("scope", {}).get("exclude", [])
-            test_cmd = _resolve_test_scope(test_cmd, scope_patterns, exclude_patterns)
-
-        # Quarantine list: tests expected to fail
-        quarantine = test_gate.get("quarantine", [])
-        if quarantine:
-            print(f"  ⚠️  Quarantined tests ({len(quarantine)} tests will be skipped):")
-            for item in quarantine:
-                test_path = item.get("path", "")
-                reason = item.get("reason", "No reason provided")
-                print(f"     - {test_path}")
-                print(f"       Reason: {reason}")
-                # Add --deselect for pytest
-                test_cmd.extend(["--deselect", test_path])
-            print()
-
-    # Run command and save trace
-    exit_code = run_command_with_trace("tests", test_cmd, REPO_ROOT, TRACES_DIR)
-
-    if exit_code is None:
-        print(f"❌ Error: {test_cmd[0]} not installed")
-        print("   Install it or update test_command in .repo/plan.yaml")
-
-    return exit_code
-
-
-def _resolve_lint_scope(lint_cmd: List[str], scope_patterns: List[str], exclude_patterns: List[str]) -> List[str]:
-    """Resolve lint scope patterns to specific file paths (only changed files)."""
-    # Get changed files first (only lint what was actually changed)
-    changed_files, warnings = get_changed_files(REPO_ROOT, include_committed=True)
-    if warnings:
-        for warning in warnings:
-            print(f"  ⚠️  {warning}")
+            print(f"   ❌ Failed (exit {exit_code})")
+        print()
     
-    if not changed_files:
-        print("  ⚠️  No changed files detected - running on all files")
-        return lint_cmd
-    
-    # Use unified scope resolution to filter changed files
-    scoped_files = resolve_scope({"include": scope_patterns, "exclude": exclude_patterns}, changed_files)
-    
-    if not scoped_files:
-        print("  ⚠️  No files match scope patterns - running on all files")
-        return lint_cmd
-    
-    # Use command utilities to build lint command
-    return build_lint_command(lint_cmd, scoped_files, "scope")
-
-
-def run_lint(plan, phase_id):
-    """Run linter and save results to trace file."""
-    # Check if lint gate is enabled for this phase
-    phases = plan.get("plan", {}).get("phases", [])
-    phase = next((p for p in phases if p["id"] == phase_id), None)
-
-    if not phase:
-        return None
-
-    lint_gate = phase.get("gates", {}).get("lint", {})
-    if not lint_gate.get("must_pass", False):
-        return None  # Lint not enabled for this phase
-
-    print("🔍 Running linter...")
-
-    # Get lint command from plan
-    lint_config = plan.get("plan", {}).get("lint_command", {})
-    if isinstance(lint_config, str):
-        lint_cmd = shlex.split(lint_config)
-    elif isinstance(lint_config, dict):
-        lint_cmd = shlex.split(lint_config.get("command", "ruff check ."))
-    else:
-        lint_cmd = ["ruff", "check", "."]
-
-    # Apply lint scoping if phase provided
-    if phase:
-        lint_scope = lint_gate.get("lint_scope", "all")
-        
-        if lint_scope == "scope":
-            scope_patterns = phase.get("scope", {}).get("include", [])
-            exclude_patterns = phase.get("scope", {}).get("exclude", [])
-            lint_cmd = _resolve_lint_scope(lint_cmd, scope_patterns, exclude_patterns)
-
-    # Run command and save trace
-    exit_code = run_command_with_trace("lint", lint_cmd, REPO_ROOT, TRACES_DIR)
-
-    if exit_code is None:
-        print(f"❌ Error: {lint_cmd[0]} not installed")
-        print("   Install it or update lint_command in .repo/plan.yaml")
-
-    return exit_code
-
-
-
-
-def show_diff_summary(phase_id: str, plan: dict):
-    """Show summary of changed files vs phase scope."""
-    # Get phase config
-    phases = plan.get("plan", {}).get("phases", [])
-    phase = next((p for p in phases if p["id"] == phase_id), None)
-
-    if not phase:
-        return  # Can't show summary without phase config
-
-    # Load baseline SHA from CURRENT.json for consistent diffs
-    baseline_sha = None
-    if CURRENT_FILE.exists():
-        try:
-            current = json.loads(CURRENT_FILE.read_text())
-            baseline_sha = current.get("baseline_sha")
-        except (json.JSONDecodeError, KeyError):
-            pass  # Tolerate missing or malformed CURRENT.json
-
-    # Get base branch (fallback only)
-    base_branch = plan.get("plan", {}).get("base_branch", "main")
-
-    # Get changed files using baseline SHA for consistent diffs
-    changed_files, warnings = get_changed_files(
-        REPO_ROOT,
-        include_committed=True,
-        base_branch=base_branch,
-        baseline_sha=baseline_sha
-    )
-    
-    # Display warnings if any
-    for warning in warnings:
-        print(f"  ⚠️  {warning}")
-
-    if not changed_files:
-        print("📊 No changes detected")
-        return
-
-    # Get scope patterns from plan
-    scope = phase.get("scope", {})
-    include_patterns = scope.get("include", [])
-    exclude_patterns = scope.get("exclude", [])
-
-    # Load runtime scope amendments
-    try:
-        from lib.state import load_phase_context
-        context = load_phase_context(phase_id, str(REPO_ROOT))
-        additional_scope = context.get("scope_cache", {}).get("additional", [])
-        if additional_scope:
-            include_patterns = include_patterns + additional_scope
-            print(f"  📍 Using runtime scope amendments: {len(additional_scope)} additional patterns")
-    except Exception:
-        pass  # Tolerate missing context or import errors
-
-    if not include_patterns:
-        print(f"📊 {len(changed_files)} files changed (no scope defined)")
-        return
-
-    # Classify files using shared utility
-    in_scope, out_of_scope = classify_files(
-        changed_files,
-        include_patterns,
-        exclude_patterns
-    )
-
-    # Show summary
-    print("📊 Change Summary:")
-    print()
-
-    if in_scope:
-        print(f"✅ In scope ({len(in_scope)} files):")
-        for f in in_scope[:10]:  # Show first 10
-            print(f"  - {f}")
-        if len(in_scope) > 10:
-            print(f"  ... and {len(in_scope) - 10} more")
-        print()
-
-    if out_of_scope:
-        print(f"❌ Out of scope ({len(out_of_scope)} files):")
-        for f in out_of_scope:
-            print(f"  - {f}")
-        print()
-
-        # Check drift gate
-        drift_gate = phase.get("gates", {}).get("drift", {})
-        allowed = drift_gate.get("allowed_out_of_scope_changes", 0)
-
-        print(f"⚠️  Drift limit: {allowed} files allowed, {len(out_of_scope)} found")
-        print()
-
-        if len(out_of_scope) > allowed:
-            print("💡 Fix options:")
-            print(f"   1. Revert: git restore {' '.join(out_of_scope[:3])}{'...' if len(out_of_scope) > 3 else ''}")
-            print(f"   2. Update scope in .repo/briefs/{phase_id}.md")
-            print("   3. Split into separate phase")
-            print()
-
-    # Check forbidden files using shared utility
-    drift_rules = phase.get("drift_rules", {})
-    forbid_patterns = drift_rules.get("forbid_changes", [])
-    forbidden_files = check_forbidden_files(changed_files, forbid_patterns)
-
-    if forbidden_files:
-        print(f"🚫 Forbidden files changed ({len(forbidden_files)}):")
-        for f in forbidden_files:
-            print(f"  - {f}")
-        print()
-        print(f"   These require a separate phase. Revert: git restore {' '.join(forbidden_files)}")
-        print()
-
-
-def review_phase(phase_id: str):
-    """Submit phase for review and block until judge provides feedback."""
-    print(f"📋 Submitting phase {phase_id} for review...")
-    print()
-
-    # ENFORCEMENT 0: Must run orient.sh first (NEW)
-    if not has_run_orient_recently():
-        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
-        print("=" * 40)
-        print()
-        print("❌ CRITICAL: Must run orient.sh first!")
-        print()
-        print("You must understand the current state before reviewing.")
-        print("This prevents confusion and ensures proper context.")
-        print()
-        print("SOLUTION: Run orient.sh first:")
-        print("   ./orient.sh")
-        print()
-        print("Then retry:")
-        print(f"   ./tools/phasectl.py review {phase_id}")
-        return 1  # BLOCKS EXECUTION
-
-    # ENFORCEMENT 1: Git State Validation (NEW)
-    if not validate_git_state():
-        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
-        print("=" * 40)
-        print()
-        print("❌ CRITICAL: Uncommitted protocol state detected!")
-        print()
-        print("The following files are not committed to git:")
-        print("   - .repo/plan.yaml")
-        print("   - .repo/briefs/")
-        print()
-        print("This prevents state loss from git operations.")
-        print()
-        print("SOLUTION: Commit protocol state first:")
-        print("   git add .repo/plan.yaml .repo/briefs/")
-        print("   git commit -m 'Add protocol state'")
-        print()
-        print("Then retry:")
-        print(f"   ./tools/phasectl.py review {phase_id}")
-        return 1  # BLOCKS EXECUTION
-
-    # Load plan
-    plan = load_plan()
-    
-    # ENFORCEMENT 2: Plan State Validation (EXISTING)
-    if CURRENT_FILE.exists():
-        try:
-            current = json.loads(CURRENT_FILE.read_text())
-            stored_plan_sha = current.get("plan_sha")
-            if stored_plan_sha:
-                import hashlib
-                plan_path = REPO_DIR / "plan.yaml"
-                if plan_path.exists():
-                    current_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
-                    if current_plan_sha != stored_plan_sha:
-                        print("⚠️  Plan State Mismatch Detected!")
-                        print()
-                        print("The current plan differs from the stored plan SHA.")
-                        print("This indicates the plan was reverted externally.")
-                        print()
-                        print("SOLUTION:")
-                        print(f"   ./tools/phasectl.py reset {phase_id}")
-                        print()
-                        print("This will update the phase state to match your current plan.")
-                        return 1
-        except (json.JSONDecodeError, KeyError):
-            pass  # Tolerate missing or malformed CURRENT.json
-
-    # Validate plan schema
-    from lib.plan_validator import validate_plan
-    validation_errors = validate_plan(plan)
-    if validation_errors:
-        print("❌ Plan validation failed:")
-        for error in validation_errors:
-            print(f"   - {error}")
-        print("\nFix errors in .repo/plan.yaml and try again.")
-        return 2
-
-    # Apply pending amendments before review
-    from lib.amendments import apply_amendments
-    applied_amendments = apply_amendments(phase_id)
-    
-    if applied_amendments:
-        print(f"✅ Applied {len(applied_amendments)} amendments")
-        for amendment in applied_amendments:
-            print(f"   {amendment['type']}: {amendment['value']}")
-        print()
-
-    # Auto-propose amendments from patterns
-    from lib.traces import propose_amendments_from_patterns
-    from lib.amendments import propose_amendment
-    
-    # Get context for pattern matching
-    traces_dir = REPO_ROOT / ".repo" / "traces"
-    test_trace_file = traces_dir / "last_tests.txt"
-    lint_trace_file = traces_dir / "last_lint.txt"
-    
-    context = {
-        "test_output": test_trace_file.read_text() if test_trace_file.exists() else "",
-        "lint_output": lint_trace_file.read_text() if lint_trace_file.exists() else "",
-        "changed_files": []  # Will be populated later
-    }
-    
-    # Propose amendments from patterns
-    pattern_proposals = propose_amendments_from_patterns(context)
-    for proposal in pattern_proposals:
-        success = propose_amendment(phase_id, proposal["type"], proposal["value"], proposal["reason"])
-        if success:
-            print(f"🧠 Pattern-based amendment proposed: {proposal['type']} = {proposal['value']}")
-    
-    if pattern_proposals:
-        print()
-
-    # Get phase config for test scoping
-    phases = plan.get("plan", {}).get("phases", [])
-    phase = next((p for p in phases if p["id"] == phase_id), None)
-
-    # Show diff summary
-    show_diff_summary(phase_id, plan)
-
-    # Run tests (with phase-specific scoping/quarantine)
-    test_exit_code = run_tests(plan, phase)
-    if test_exit_code is None:
-        return 2  # Test runner not available
-
-    # Run lint (if enabled for this phase)
-    run_lint(plan, phase_id)
-    # Note: Lint failures are checked by judge, not here
-
-    # Trigger judge
+    # Invoke judge
     print("⚖️  Invoking judge...")
-    subprocess.run(
-        [sys.executable, REPO_ROOT / "tools" / "judge.py", phase_id],
+    print()
+    
+    judge_path = Path(__file__).parent / "judge.py"
+    result = subprocess.run(
+        [sys.executable, str(judge_path), phase_id],
         cwd=REPO_ROOT
     )
+    
+    return result.returncode
 
-    # Check for critique or OK
-    critique_file = CRITIQUES_DIR / f"{phase_id}.md"
-    ok_file = CRITIQUES_DIR / f"{phase_id}.OK"
 
-    if ok_file.exists():
-        print(f"✅ Phase {phase_id} approved!")
-        
-        # Learn from successful review
-        _learn_from_review(phase_id, applied_amendments)
-        
-        # Write micro-retrospective
-        _write_micro_retro(phase_id, applied_amendments)
-        
+def cmd_justify_scope(phase_id: str):
+    """Justify out-of-scope changes."""
+    print(f"🤔 Justifying scope drift for {phase_id}...")
+    print()
+    
+    current = get_current_phase(REPO_ROOT)
+    if not current or current["phase_id"] != phase_id:
+        print(f"❌ Phase {phase_id} is not active")
+        return 1
+    
+    try:
+        plan = load_plan(REPO_ROOT)
+        phase = get_phase(plan, phase_id)
+    except PlanError as e:
+        print(f"❌ {e}")
+        return 1
+    
+    baseline_sha = current.get("baseline_sha")
+    
+    # Get changed files and classify
+    changed_files, _ = get_changed_files(REPO_ROOT, baseline_sha)
+    
+    scope_config = phase.get("scope", {})
+    include_patterns = scope_config.get("include", [])
+    exclude_patterns = scope_config.get("exclude", [])
+    
+    in_scope, out_of_scope = classify_files(changed_files, include_patterns, exclude_patterns)
+    
+    if not out_of_scope:
+        print("✅ No out-of-scope changes detected")
         return 0
-    elif critique_file.exists():
-        print(f"❌ Phase {phase_id} needs revision:")
-        print()
-        print(critique_file.read_text())
-        return 1
-    else:
-        print("⚠️  Judge did not produce feedback. Check for errors above.")
-        return 2
-
-def _learn_from_review(phase_id: str, applied_amendments: List[Dict[str, Any]]) -> None:
-    """Learn patterns from successful review"""
-    from lib.traces import store_pattern
     
-    if not applied_amendments:
-        return
-    
-    # Get test output for learning
-    traces_dir = REPO_ROOT / ".repo" / "traces"
-    test_trace_file = traces_dir / "last_tests.txt"
-    
-    test_output = ""
-    if test_trace_file.exists():
-        test_output = test_trace_file.read_text()
-    
-    # Learn from amendments that fixed issues
-    for amendment in applied_amendments:
-        if amendment["type"] == "set_test_cmd" and "error" in test_output.lower():
-            pattern = {
-                "kind": "fix",
-                "when": {
-                    "pytest_error": "usage: python -m pytest"
-                },
-                "action": {
-                    "amend": "set_test_cmd",
-                    "value": amendment["value"]
-                },
-                "description": "Fix pytest usage error",
-                "confidence": 0.9,
-                "evidence": [test_output]
-            }
-            store_pattern(pattern)
-
-def _write_micro_retro(phase_id: str, applied_amendments: List[Dict[str, Any]]) -> None:
-    """Write micro-retrospective for successful phase"""
-    from lib.traces import write_micro_retro
-    
-    # Get execution data
-    traces_dir = REPO_ROOT / ".repo" / "traces"
-    test_trace_file = traces_dir / "last_tests.txt"
-    
-    test_output = ""
-    if test_trace_file.exists():
-        test_output = test_trace_file.read_text()
-    
-    # Determine what helped
-    what_helped = []
-    if applied_amendments:
-        for amendment in applied_amendments:
-            what_helped.append(f"Amendment {amendment['type']}: {amendment['value']}")
-    
-    # Determine root cause
-    root_cause = "unknown"
-    if "usage:" in test_output.lower():
-        root_cause = "test command issue"
-    elif "error" in test_output.lower():
-        root_cause = "test execution error"
-    
-    execution_data = {
-        "retries": 0,  # Could be tracked in future
-        "amendments": applied_amendments,
-        "llm_score": 1.0,  # Successful phase
-        "root_cause": root_cause,
-        "what_helped": what_helped,
-        "success": True,
-        "execution_time": "unknown"
-    }
-    
-    write_micro_retro(phase_id, execution_data)
-
-
-def reset_phase(phase_id: str):
-    """Reset phase state to match current plan (for plan transitions)."""
-    print(f"🔄 Resetting phase state for: {phase_id}")
+    print(f"Out-of-scope files ({len(out_of_scope)}):")
+    for f in out_of_scope:
+        print(f"  - {f}")
     print()
     
-    # Check if brief exists
-    brief_path = BRIEFS_DIR / f"{phase_id}.md"
-    if not brief_path.exists():
-        print(f"❌ Error: Brief not found: {brief_path}")
-        print()
-        print("💡 Run 'discover' first to see all missing briefs:")
-        print("   ./tools/phasectl.py discover")
-        print()
-        print("Then create the missing brief:")
-        print(f"   touch .repo/briefs/{phase_id}.md")
-        return 1
-    
-    # Load current plan to validate phase exists
-    plan = load_plan()
-    phases = plan.get("plan", {}).get("phases", [])
-    phase = next((p for p in phases if p["id"] == phase_id), None)
-    
-    if not phase:
-        print(f"❌ Error: Phase {phase_id} not found in current plan")
-        print("   Available phases:")
-        for p in phases:
-            print(f"   - {p['id']}")
-        return 1
-    
-    # Get current baseline SHA
-    baseline_result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True
-    )
-    baseline_sha = baseline_result.stdout.strip() if baseline_result.returncode == 0 else None
-    
-    if not baseline_sha:
-        print("❌ Error: Not in a git repository")
-        return 1
-    
-    # Compute current hashes
-    import hashlib
-    def sha256(filepath):
-        return hashlib.sha256(filepath.read_bytes()).hexdigest()
-    
-    plan_path = REPO_DIR / "plan.yaml"
-    manifest_path = REPO_DIR / "protocol_manifest.json"
-    
-    # Create new phase state
-    current_data = {
-        "phase_id": phase_id,
-        "brief_path": str(get_relative_path(brief_path, REPO_ROOT)),
-        "status": "active",
-        "started_at": time.time(),
-        "baseline_sha": baseline_sha
-    }
-    
-    # Add current hashes
-    if plan_path.exists():
-        current_data["plan_sha"] = sha256(plan_path)
-    if manifest_path.exists():
-        current_data["manifest_sha"] = sha256(manifest_path)
-    
-    # Update CURRENT.json
-    CURRENT_FILE.write_text(json.dumps(current_data, indent=2))
-    
-    print(f"✅ Phase state reset successfully!")
-    print(f"   Phase: {phase_id}")
-    print(f"   Baseline: {baseline_sha[:8]}...")
-    print(f"   Plan SHA: {current_data.get('plan_sha', 'N/A')[:8]}...")
+    # Prompt for justification
+    print("Please provide justification for these changes.")
+    print("Explain why these out-of-scope modifications were necessary.")
     print()
-    print("   Next steps:")
-    print(f"   1. Run: ./tools/phasectl.py start {phase_id}")
-    print(f"   2. Implement changes")
-    print(f"   3. Run: ./tools/phasectl.py review {phase_id}")
+    print("Enter justification (end with Ctrl+D or Ctrl+Z):")
+    print("-" * 60)
+    
+    lines = []
+    try:
+        while True:
+            line = input()
+            lines.append(line)
+    except EOFError:
+        pass
+    
+    justification = "\n".join(lines).strip()
+    
+    if not justification:
+        print()
+        print("❌ No justification provided")
+        return 1
+    
+    print()
+    print("-" * 60)
+    print()
+    
+    # Save justification
+    save_scope_justification(phase_id, out_of_scope, justification, REPO_ROOT)
+    
+    print(f"✅ Justification recorded to .repo/scope_audit/{phase_id}.md")
+    print()
+    print("This will be reviewed by humans later.")
+    print("Gates will now pass with this justification.")
+    print()
+    print("Re-run review:")
+    print(f"  ./v2/tools/phasectl.py review {phase_id}")
+    print()
     
     return 0
 
 
-
-
-def is_experimental_enabled(feature: str) -> bool:
-    """Check if experimental feature is enabled in plan."""
+def cmd_acknowledge_orient():
+    """Acknowledge reading orient.sh."""
+    print("📖 Orient Acknowledgment")
+    print()
+    
+    current = get_current_phase(REPO_ROOT)
+    if not current:
+        print("❌ No active phase")
+        print("   Run: ./v2/tools/phasectl.py start <phase-id>")
+        return 1
+    
+    phase_id = current["phase_id"]
+    
+    # Prompt for summary
+    print("Please summarize what you learned from ./orient.sh:")
+    print("(2-3 sentences about current state, progress, next steps)")
+    print()
+    print("Enter summary (end with Ctrl+D or Ctrl+Z):")
+    print("-" * 60)
+    
+    lines = []
     try:
-        plan_file = REPO_DIR / "plan.yaml"
-        if not plan_file.exists():
-            return False
-        
-        import yaml
-        with plan_file.open() as f:
-            plan = yaml.safe_load(f)
-        
-        exp_features = plan.get("plan", {}).get("experimental_features", {})
-        return exp_features.get(feature, False)
-    except Exception:
-        return False
-
-
-def generate_briefs():
-    """Generate empty brief files from plan phases (minimal approach)."""
-    print("🔍 Generating brief templates from plan.yaml...")
-    print()
+        while True:
+            line = input()
+            lines.append(line)
+    except EOFError:
+        pass
     
-    # Load plan
-    plan_file = REPO_DIR / "plan.yaml"
-    if not plan_file.exists():
-        print("❌ Error: No plan.yaml found")
+    summary = "\n".join(lines).strip()
+    
+    if not summary:
+        print()
+        print("❌ No summary provided")
         return 1
-    
-    try:
-        import yaml
-        with plan_file.open() as f:
-            plan = yaml.safe_load(f)
-    except Exception as e:
-        print(f"❌ Error: Invalid plan.yaml: {e}")
-        return 1
-    
-    phases = plan.get("plan", {}).get("phases", [])
-    if not phases:
-        print("❌ Error: No phases found in plan.yaml")
-        return 1
-    
-    generated_count = 0
-    print(f"📋 Found {len(phases)} phases:")
-    
-    for phase in phases:
-        phase_id = phase.get("id")
-        if not phase_id:
-            print("   ❌ Phase missing 'id' field")
-            continue
-            
-        brief_path = BRIEFS_DIR / f"{phase_id}.md"
-        status = "✅" if brief_path.exists() else "✅"
-        
-        if not brief_path.exists():
-            # Minimal approach: Generate basic template
-            brief_content = f"""# Phase {phase_id}
-
-## Objective
-{phase.get('description', 'TBD')}
-
-## Scope
-TBD
-
-## Implementation Steps
-TBD
-"""
-            brief_path.write_text(brief_content)
-            generated_count += 1
-            status = "✅"
-        
-        print(f"   {status} {phase_id}")
     
     print()
-    print(f"✅ Generated {generated_count} brief templates")
-    print("💡 Briefs contain basic structure - edit as needed")
-    return 0
-
-
-def discover_plan():
-    """Discover and validate plan structure - mandatory first step."""
-    print("🔍 Plan Discovery Mode")
+    print("-" * 60)
     print()
     
-    # Load and validate plan
-    plan_file = REPO_DIR / "plan.yaml"
-    if not plan_file.exists():
-        print("❌ Error: No plan.yaml found")
-        print("   Create a plan.yaml file first:")
-        print("   touch .repo/plan.yaml")
-        return 1
+    # Save acknowledgment
+    acknowledge_orient(phase_id, summary, REPO_ROOT)
     
-    try:
-        import yaml
-        with plan_file.open() as f:
-            plan = yaml.safe_load(f)
-    except Exception as e:
-        print(f"❌ Error: Invalid plan.yaml: {e}")
-        return 1
-    
-    phases = plan.get("plan", {}).get("phases", [])
-    if not phases:
-        print("❌ Error: No phases found in plan.yaml")
-        return 1
-    
-    print(f"📋 Found {len(phases)} phases:")
-    missing_briefs = []
-    
-    for phase in phases:
-        phase_id = phase.get("id")
-        if not phase_id:
-            print("   ❌ Phase missing 'id' field")
-            continue
-            
-        brief_path = BRIEFS_DIR / f"{phase_id}.md"
-        status = "✅" if brief_path.exists() else "❌ MISSING"
-        print(f"   {status} {phase_id}")
-        
-        if not brief_path.exists():
-            missing_briefs.append(phase_id)
-    
+    print(f"✅ Orient acknowledged for {phase_id}")
     print()
-    
-    if missing_briefs:
-        print(f"⚠️  Missing briefs: {', '.join(missing_briefs)}")
-        print()
-        print("Create briefs before starting implementation:")
-        for phase_id in missing_briefs:
-            print(f"   touch .repo/briefs/{phase_id}.md")
-        print()
-        print("💡 Each brief should contain:")
-        print("   - Phase objective and scope")
-        print("   - Required artifacts")
-        print("   - Gate requirements")
-        print("   - Implementation steps")
-        return 1
-    
-    print("✅ All briefs found - ready for implementation")
+    print("Gates will now pass.")
     print()
-    print("Next steps:")
-    print("   1. Review briefs: cat .repo/briefs/<phase-id>.md")
-    print("   2. Start implementation: ./tools/phasectl.py start <phase-id>")
-    return 0
-
-
-def inject_patterns_into_brief(phase_id: str, brief_content: str) -> str:
-    """Inject relevant patterns into brief by default - agent must opt out (experimental feature)."""
-    # Check if experimental features are enabled
-    if not is_experimental_enabled("replay_budget"):
-        return brief_content
-    
-    try:
-        # Load relevant patterns
-        patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
-        if not patterns_file.exists():
-            return brief_content
-        
-        patterns = []
-        with open(patterns_file) as f:
-            for line in f:
-                if line.strip():
-                    pattern = json.loads(line)
-                    if pattern.get("phase_id") != phase_id:  # Don't include self
-                        patterns.append(pattern)
-        
-        if not patterns:
-            return brief_content
-        
-        # Get top 3 most recent patterns
-        top_patterns = sorted(patterns, key=lambda x: x.get("timestamp", 0), reverse=True)[:3]
-        
-        # Inject patterns section
-        patterns_section = """
----
-
-## 🧠 Collective Intelligence (Auto-Injected)
-
-The following patterns were automatically identified as relevant to this phase:
-
-"""
-        
-        for i, pattern in enumerate(top_patterns, 1):
-            patterns_section += f"{i}. **From {pattern.get('phase_id', 'previous phase')}**: {pattern.get('text', '')}\n"
-        
-        patterns_section += """
-**Note**: These patterns are automatically injected based on successful previous phases. If you believe they are not relevant, you may opt out by adding a comment explaining why.
-
-**⚠️  Opt-out cost**: If you opt out and replay performance degrades, your next phase budget will be reduced.
-
-"""
-        
-        # Insert patterns section before the end of the brief
-        if "---" in brief_content:
-            # Insert before the last "---" if it exists
-            parts = brief_content.split("---")
-            if len(parts) > 1:
-                enhanced_brief = "---".join(parts[:-1]) + patterns_section + "---" + parts[-1]
-            else:
-                enhanced_brief = brief_content + patterns_section
-        else:
-            enhanced_brief = brief_content + patterns_section
-        
-        return enhanced_brief
-        
-    except Exception as e:
-        print(f"  ⚠️  Error injecting patterns: {e}")
-        return brief_content
-
-def has_run_orient_recently() -> bool:
-    """Check if orient.sh was run recently (within last 5 minutes)."""
-    orient_timestamp = REPO_ROOT / ".repo" / ".orient_run_timestamp"
-    if not orient_timestamp.exists():
-        return False
-    
-    try:
-        timestamp = orient_timestamp.stat().st_mtime
-        return time.time() - timestamp < 300  # 5 minutes
-    except Exception:
-        return False
-
-
-def start_phase(phase_id: str):
-    """Start implementation phase with mandatory workflow enforcement."""
-    print(f"📋 Starting phase: {phase_id}")
-    print()
-    
-    # ENFORCEMENT 0: Must run orient.sh first (NEW)
-    if not has_run_orient_recently():
-        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
-        print("=" * 40)
-        print()
-        print("❌ CRITICAL: Must run orient.sh first!")
-        print()
-        print("You must understand the current state before starting.")
-        print("This prevents confusion and ensures proper context.")
-        print()
-        print("SOLUTION: Run orient.sh first:")
-        print("   ./orient.sh")
-        print()
-        print("Then retry:")
-        print(f"   ./tools/phasectl.py start {phase_id}")
-        return 1  # BLOCKS EXECUTION
-    
-    # ENFORCEMENT 1: Git State Validation (NEW)
-    if not validate_git_state():
-        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
-        print("=" * 40)
-        print()
-        print("❌ CRITICAL: Uncommitted protocol state detected!")
-        print()
-        print("The following files are not committed to git:")
-        print("   - .repo/plan.yaml")
-        print("   - .repo/briefs/")
-        print()
-        print("This prevents state loss from git operations.")
-        print()
-        print("SOLUTION: Commit protocol state first:")
-        print("   git add .repo/plan.yaml .repo/briefs/")
-        print("   git commit -m 'Add protocol state'")
-        print()
-        print("Then retry:")
-        print(f"   ./tools/phasectl.py start {phase_id}")
-        return 1  # BLOCKS EXECUTION
-    
-    # ENFORCEMENT 2: Plan State Validation (EXISTING)
-    if detect_plan_mismatch():
-        print("⚠️  Plan State Mismatch Detected!")
-        print()
-        print("The current plan differs from the stored plan SHA.")
-        print("This usually happens when creating a new plan with different phases.")
-        print()
-        print("SOLUTION:")
-        print(f"   ./tools/phasectl.py reset {phase_id}")
-        print()
-        print("This will update the phase state to match your current plan.")
-        return 1
-    
-    # ENFORCEMENT 3: Brief Existence (EXISTING)
-    brief_path = BRIEFS_DIR / f"{phase_id}.md"
-    if not brief_path.exists():
-        print(f"❌ Error: Brief not found: {brief_path}")
-        print()
-        print("💡 Run 'discover' first to see all missing briefs:")
-        print("   ./tools/phasectl.py discover")
-        print()
-        print("Then create the missing brief:")
-        print(f"   touch .repo/briefs/{phase_id}.md")
-        return 1
-    
-    # Display brief content with auto-injected patterns
-    print("📄 Brief Content:")
-    print("=" * 50)
-    brief_content = brief_path.read_text()
-    
-    # Auto-inject patterns (default on, agent must opt out)
-    enhanced_brief = inject_patterns_into_brief(phase_id, brief_content)
-    print(enhanced_brief)
-    print("=" * 50)
-    print()
-    
-    # Track pattern opt-out for replay correlation (experimental)
-    if is_experimental_enabled("replay_budget"):
-        try:
-            from tools.judge import track_pattern_opt_out
-            track_pattern_opt_out(phase_id, enhanced_brief)
-        except Exception as e:
-            print(f"  ⚠️  Error tracking pattern opt-out: {e}")
-    else:
-        print("  ⚠️  Pattern opt-out tracking disabled (experimental feature)")
-    
-    # Extract and display scope
-    scope = extract_scope_from_brief(brief_path)
-    
-    print("🎯 Scope Summary:")
-    if scope["include"]:
-        print("✅ You MAY touch:")
-        for item in scope["include"]:
-            print(f"   - {item}")
-    else:
-        print("✅ No specific include patterns found")
-    
-    if scope["exclude"]:
-        print("❌ You must NOT touch:")
-        for item in scope["exclude"]:
-            print(f"   - {item}")
-    else:
-        print("❌ No specific exclude patterns found")
-    
-    print()
-    
-    # Require explicit acknowledgment
-    print("⚠️  Before proceeding, you must confirm you have read and understood the brief.")
-    response = input("Have you read and understood the brief? (yes/no): ")
-    
-    if response.lower() != "yes":
-        print("❌ Please read the brief first")
-        print("   You must understand the scope before implementing.")
-        return 1
-    
-    # Update current phase status
-    current_data = {
-        "phase_id": phase_id,
-        "brief_path": str(get_relative_path(brief_path, REPO_ROOT)),
-        "status": "implementation_started",
-        "started_at": time.time(),
-        "brief_acknowledged_at": time.time()
-    }
-    
-    # Get baseline SHA for consistent diffs throughout phase
-    baseline_result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True
-    )
-    baseline_sha = baseline_result.stdout.strip() if baseline_result.returncode == 0 else None
-    
-    if baseline_sha:
-        current_data["baseline_sha"] = baseline_sha
-    
-    # Update CURRENT.json
-    CURRENT_FILE.write_text(json.dumps(current_data, indent=2))
-    
-    print(f"✅ Phase {phase_id} started successfully!")
-    print("   You may now implement changes within the specified scope.")
-    print("   When ready, run: ./tools/phasectl.py review {phase_id}")
     
     return 0
 
 
-def next_phase():
-    """Advance to the next phase."""
-    # ENFORCEMENT 0: Must run orient.sh first (NEW)
-    if not has_run_orient_recently():
-        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
-        print("=" * 40)
-        print()
-        print("❌ CRITICAL: Must run orient.sh first!")
-        print()
-        print("You must understand the current state before advancing.")
-        print("This prevents confusion and ensures proper context.")
-        print()
-        print("SOLUTION: Run orient.sh first:")
-        print("   ./orient.sh")
-        print()
-        print("Then retry:")
-        print("   ./tools/phasectl.py next")
-        return 1  # BLOCKS EXECUTION
-
-    # ENFORCEMENT 1: Git State Validation (NEW)
-    if not validate_git_state():
-        print("🚨 PROTOCOL WORKFLOW ENFORCEMENT")
-        print("=" * 40)
-        print()
-        print("❌ CRITICAL: Uncommitted protocol state detected!")
-        print()
-        print("The following files are not committed to git:")
-        print("   - .repo/plan.yaml")
-        print("   - .repo/briefs/")
-        print()
-        print("This prevents state loss from git operations.")
-        print()
-        print("SOLUTION: Commit protocol state first:")
-        print("   git add .repo/plan.yaml .repo/briefs/")
-        print("   git commit -m 'Add protocol state'")
-        print()
-        print("Then retry:")
-        print("   ./tools/phasectl.py next")
-        return 1  # BLOCKS EXECUTION
-
-    # ENFORCEMENT 2: Current State Validation (EXISTING)
-    if not CURRENT_FILE.exists():
-        print("❌ Error: No CURRENT.json found")
-        return 1
-
-    try:
-        current = json.loads(CURRENT_FILE.read_text())
-    except json.JSONDecodeError as e:
-        print(f"❌ Error: Invalid JSON in {CURRENT_FILE}: {e}")
-        return 1
-
-    current_id = current.get("phase_id")
-    if not current_id:
-        print("❌ Error: No phase_id in CURRENT.json")
-        return 1
-
-    # Load plan
-    plan = load_plan()
+def cmd_reflect(phase_id: str):
+    """Reflect on learnings after phase completion."""
+    print(f"💭 Reflection: {phase_id}")
+    print()
     
-    # ENFORCEMENT 3: Plan State Validation (EXISTING)
-    stored_plan_sha = current.get("plan_sha")
-    if stored_plan_sha:
-        import hashlib
-        plan_path = REPO_DIR / "plan.yaml"
-        if plan_path.exists():
-            current_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
-            if current_plan_sha != stored_plan_sha:
-                print("⚠️  Plan State Mismatch Detected!")
-                print()
-                print("The current plan differs from the stored plan SHA.")
-                print("This indicates the plan was reverted externally.")
-                print()
-                print("SOLUTION:")
-                print(f"   ./tools/phasectl.py recover")
-                print()
-                print("This will attempt to recover from plan state corruption.")
-                return 1
-
-    # Validate plan schema
-    from lib.plan_validator import validate_plan
-    validation_errors = validate_plan(plan)
-    if validation_errors:
-        print("❌ Plan validation failed:")
-        for error in validation_errors:
-            print(f"   - {error}")
-        print("\nFix errors in .repo/plan.yaml and try again.")
-        return 2
-
-    phases = plan.get("plan", {}).get("phases", [])
-
-    if not phases:
-        print("❌ Error: No phases defined in plan.yaml")
-        return 1
-
-    # Find current phase
-    current_idx = next((i for i, p in enumerate(phases) if p["id"] == current_id), None)
-
-    if current_idx is None:
-        print(f"❌ Error: Current phase {current_id} not found in plan")
-        return 1
-
-    # Check if current phase is approved
-    ok_file = CRITIQUES_DIR / f"{current_id}.OK"
+    # Check if phase is approved
+    ok_file = REPO_DIR / "critiques" / f"{phase_id}.OK"
     if not ok_file.exists():
-        print(f"❌ Error: Phase {current_id} not yet approved")
-        print(f"   Run: ./tools/phasectl.py review {current_id}")
+        print(f"❌ Phase {phase_id} is not approved yet")
+        print(f"   Complete review first: ./v2/tools/phasectl.py review {phase_id}")
         return 1
-
-    # Check if we're at the last phase
-    if current_idx + 1 >= len(phases):
-        print("🎉 All phases complete!")
-        return 0
-
-    # Advance to next phase
-    next_phase_data = phases[current_idx + 1]
-    next_id = next_phase_data["id"]
-    next_brief = BRIEFS_DIR / f"{next_id}.md"
-
-    if not next_brief.exists():
-        print(f"❌ Error: Brief for {next_id} not found: {next_brief}")
+    
+    print("What did you learn during this phase?")
+    print("Consider:")
+    print("  - What worked well?")
+    print("  - What didn't work?")
+    print("  - What would you do differently?")
+    print("  - Any insights for future phases?")
+    print()
+    print("Enter reflection (end with Ctrl+D or Ctrl+Z):")
+    print("-" * 60)
+    
+    lines = []
+    try:
+        while True:
+            line = input()
+            lines.append(line)
+    except EOFError:
+        pass
+    
+    learning = "\n".join(lines).strip()
+    
+    if not learning:
+        print()
+        print("❌ No reflection provided")
         return 1
-
-    # Compute binding hashes for phase
-    import hashlib
-
-    def sha256(filepath):
-        return hashlib.sha256(filepath.read_bytes()).hexdigest()
-
-    plan_path = REPO_DIR / "plan.yaml"
-    manifest_path = REPO_DIR / "protocol_manifest.json"
-
-    # Get baseline SHA for consistent diffs throughout phase
-    baseline_result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True
-    )
-    baseline_sha = baseline_result.stdout.strip() if baseline_result.returncode == 0 else None
-
-    current_data = {
-        "phase_id": next_id,
-        "brief_path": str(next_brief.relative_to(REPO_ROOT)),
-        "status": "active",
-        "started_at": time.time()
-    }
-
-    # Add baseline SHA for consistent diff anchor
-    if baseline_sha:
-        current_data["baseline_sha"] = baseline_sha
-
-    # Add phase binding hashes if files exist
-    if plan_path.exists():
-        current_data["plan_sha"] = sha256(plan_path)
-    if manifest_path.exists():
-        current_data["manifest_sha"] = sha256(manifest_path)
-
-    # Update CURRENT.json
-    CURRENT_FILE.write_text(json.dumps(current_data, indent=2))
-
-    print(f"➡️  Advanced to phase {next_id}")
-    print(f"📄 Brief: {get_relative_path(next_brief, REPO_ROOT)}")
+    
+    print()
+    print("-" * 60)
+    print()
+    
+    # Save learning
+    append_learning(phase_id, learning, REPO_ROOT)
+    
+    print(f"✅ Learning recorded to .repo/learnings.md")
+    print()
+    print("This will be shown in future orient.sh output.")
+    print()
     
     return 0
 
 
-def recover_from_corruption():
-    """Recover from plan state corruption caused by upgrade process."""
-    print("🔄 Attempting to recover from plan state corruption...")
+def cmd_next():
+    """Advance to next phase."""
+    print("➡️  Advancing to next phase...")
     print()
     
-    # Check if we're in a corrupted state
-    if not CURRENT_FILE.exists():
-        print("❌ Error: No CURRENT.json found - cannot recover")
+    current = get_current_phase(REPO_ROOT)
+    if not current:
+        print("❌ No active phase")
+        return 1
+    
+    phase_id = current["phase_id"]
+    
+    # Check if current phase is approved
+    ok_file = REPO_DIR / "critiques" / f"{phase_id}.OK"
+    if not ok_file.exists():
+        print(f"❌ Phase {phase_id} is not approved yet")
+        print(f"   Run: ./v2/tools/phasectl.py review {phase_id}")
         return 1
     
     try:
-        current = json.loads(CURRENT_FILE.read_text())
-    except json.JSONDecodeError as e:
-        print(f"❌ Error: CURRENT.json corrupted: {e}")
+        plan = load_plan(REPO_ROOT)
+        next_phase = get_next_phase(plan, phase_id)
+    except PlanError as e:
+        print(f"❌ {e}")
         return 1
     
-    # Check for plan SHA mismatch (indicates corruption)
-    stored_plan_sha = current.get("plan_sha")
-    if not stored_plan_sha:
-        print("⚠️  No stored plan SHA - cannot detect corruption")
+    if not next_phase:
+        print(f"🎉 All phases complete!")
+        print()
+        clear_current_phase(REPO_ROOT)
         return 0
     
-    plan_path = REPO_DIR / "plan.yaml"
-    if not plan_path.exists():
-        print("❌ Error: Plan file missing - cannot recover")
-        return 1
+    next_id = next_phase["id"]
     
-    import hashlib
-    current_plan_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
-    
-    if current_plan_sha == stored_plan_sha:
-        print("✅ No corruption detected - plan state is consistent")
-        return 0
-    
-    print("🚨 Plan state corruption detected!")
-    print(f"   Stored SHA: {stored_plan_sha[:8]}...")
-    print(f"   Current SHA: {current_plan_sha[:8]}...")
+    print(f"✅ Current phase {phase_id} complete")
+    print(f"➡️  Next phase: {next_id}")
+    print()
+    print("Before starting, please:")
+    print("  1. Run: ./orient.sh")
+    print("  2. Review the current state")
+    print(f"  3. Start next phase: ./v2/tools/phasectl.py start {next_id}")
     print()
     
-    # Try to find a backup or recent commit with correct state
-    print("🔍 Looking for recovery options...")
-    
-    # Check git history for recent commits with plan changes
-    result = subprocess.run(
-        ["git", "log", "--oneline", "-10", "--", ".repo/plan.yaml"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True
-    )
-    
-    if result.returncode == 0 and result.stdout.strip():
-        print("📋 Recent plan changes found:")
-        for line in result.stdout.strip().split('\n'):
-            print(f"   {line}")
-        print()
-        print("💡 Recovery options:")
-        print("   1. Checkout a recent commit with correct plan:")
-        print("      git checkout <commit-hash> -- .repo/plan.yaml")
-        print("   2. Reset phase state to match current plan:")
-        print(f"      ./tools/phasectl.py reset {current.get('phase_id', 'PHASE_ID')}")
-        print("   3. Manually restore plan from backup if available")
-    else:
-        print("❌ No recent plan changes found in git history")
-        print()
-        print("💡 Manual recovery required:")
-        print("   1. Restore plan from backup if available")
-        print("   2. Recreate plan manually")
-        print("   3. Reset phase state:")
-        print(f"      ./tools/phasectl.py reset {current.get('phase_id', 'PHASE_ID')}")
-    
-    return 1
+    return 0
 
-
-def protocol_health_check():
-    """One-line protocol validation."""
-    return all([
-        has_command("discover_plan"),
-        has_command("reset_phase"), 
-        has_command("recover_from_corruption"),
-        Path(".repo/plan.yaml").exists()
-    ])
-
-
-def get_issue_explanation(issue_type: str) -> dict:
-    """Get human-readable explanation and fix for issues."""
-    explanations = {
-        "state_corruption": {
-            "title": "State Corruption",
-            "problem": "Missing or corrupted CURRENT.json - protocol doesn't know current phase",
-            "fix": "Reset to first phase: ./tools/phasectl.py reset P01-prompt-backend-foundation"
-        },
-        "baseline_valid": {
-            "title": "Baseline Validation Failed", 
-            "problem": "Invalid baseline SHA - git state changed after phase started",
-            "fix": "Reset phase state: ./tools/phasectl.py reset <current-phase>"
-        },
-        "scope_resolution": {
-            "title": "Scope Resolution Failed",
-            "problem": "Pathspec dependency missing or scope logic error",
-            "fix": "Install dependency: pip install pathspec"
-        },
-        "gate_functions": {
-            "title": "Gate Functions Failed",
-            "problem": "Gate execution or import errors",
-            "fix": "Reinstall tools: ./tools/install-protocol.sh"
-        }
-    }
-    return explanations.get(issue_type, {"title": "Unknown", "problem": "Unknown issue", "fix": "Contact support"})
-
-
-def protocol_health_dashboard():
-    """Comprehensive protocol health status with actionable fixes."""
-    health = {
-        "tool_version": check_protocol_version(),
-        "state_corruption": not detect_plan_mismatch(),  # Invert: True = no corruption
-        "baseline_valid": not baseline_corrupted(),
-        "experimental_features": get_experimental_status(),
-        "scope_resolution": test_scope_resolution(),
-        "gate_functions": test_gate_functions()
-    }
-    
-    print("🔍 Protocol Health Dashboard:")
-    print("=" * 50)
-    
-    # Check if this is a fresh setup (no CURRENT.json)
-    is_fresh_setup = not CURRENT_FILE.exists()
-    
-    if is_fresh_setup:
-        print("📋 Status: Ready for Implementation")
-        print("=" * 50)
-        
-        # Show core systems
-        print("✅ Core Systems: All Operational")
-        for check in ["tool_version", "state_corruption", "experimental_features"]:
-            status = health[check]
-            icon = "✅" if status else "❌"
-            check_name = check.replace("_", " ").title()
-            print(f"  {icon} {check_name}: {'OK' if status else 'ISSUE'}")
-        
-        print("")
-        print("🚀 Next Steps Available:")
-        
-        # Show implementation systems with context
-        implementation_systems = {
-            "baseline_valid": "Will activate when you start a phase",
-            "scope_resolution": "Will activate when you make changes", 
-            "gate_functions": "Will activate when you run reviews"
-        }
-        
-        for check, context in implementation_systems.items():
-            status = health[check]
-            icon = "✅" if status else "🔄"
-            check_name = check.replace("_", " ").title()
-            print(f"  {icon} {check_name}: {context}")
-        
-        print("")
-        print("💡 Ready to start your first phase:")
-        print("   ./tools/phasectl.py start <phase-id>")
-        
-    else:
-        # Existing behavior for active phases
-        issues = []
-        for check, status in health.items():
-            icon = "✅" if status else "❌"
-            check_name = check.replace("_", " ").title()
-            print(f"  {icon} {check_name}: {'OK' if status else 'ISSUE'}")
-            if not status:
-                issues.append(check)
-        
-        print("=" * 50)
-        
-        if issues:
-            print("🔧 DETECTED ISSUES:")
-            print("")
-            
-            for issue in issues:
-                explanation = get_issue_explanation(issue)
-                print(f"❌ {explanation['title']}")
-                print(f"   Problem: {explanation['problem']}")
-                print(f"   Fix: {explanation['fix']}")
-                print("")
-            
-            print("🚀 QUICK RECOVERY:")
-            print("   ./tools/phasectl.py recover")
-            print("")
-        else:
-            print("✅ All systems healthy!")
-            print("")
-    
-    return health
-
-
-def recover():
-    """Interactive recovery from detected issues."""
-    print("🔧 Protocol Recovery Mode")
-    print("=" * 30)
-    
-    # Detect issues
-    health = {
-        "state_corruption": not detect_plan_mismatch(),  # Invert: True = no corruption
-        "baseline_valid": not baseline_corrupted(),
-        "scope_resolution": test_scope_resolution(),
-        "gate_functions": test_gate_functions()
-    }
-    
-    issues = [issue for issue, status in health.items() if not status]
-    
-    if not issues:
-        print("✅ No issues detected - protocol is healthy!")
-        return
-    
-    print(f"🔍 Found {len(issues)} issue(s):")
-    print("")
-    
-    for issue in issues:
-        explanation = get_issue_explanation(issue)
-        print(f"❌ {explanation['title']}")
-        print(f"   {explanation['problem']}")
-        print(f"   Fix: {explanation['fix']}")
-        print("")
-    
-    # Ask permission
-    print("Would you like to apply these fixes?")
-    print("(This will create backups before making changes)")
-    
-    if input("Apply fixes? (y/n): ").lower() != 'y':
-        print("❌ Recovery cancelled")
-        return
-    
-    # Apply fixes with backups
-    success_count = 0
-    for issue in issues:
-        if apply_fix_with_backup(issue):
-            success_count += 1
-    
-    print("")
-    print(f"🎯 Recovery complete: {success_count}/{len(issues)} fixes applied")
-    
-    # Re-run health check
-    print("")
-    print("🔍 Re-running health check...")
-    protocol_health_dashboard()
-
-
-def apply_fix_with_backup(issue_type: str) -> bool:
-    """Apply fix with backup creation."""
-    try:
-        if issue_type == "state_corruption":
-            return fix_state_corruption()
-        elif issue_type == "baseline_valid":
-            return fix_baseline_validation()
-        elif issue_type == "scope_resolution":
-            return fix_scope_resolution()
-        elif issue_type == "gate_functions":
-            return fix_gate_functions()
-        return False
-    except Exception as e:
-        print(f"   ❌ Fix failed: {e}")
-        return False
-
-
-def fix_state_corruption() -> bool:
-    """Fix state corruption with backup."""
-    print("   🔧 Fixing state corruption...")
-    
-    # Create backup
-    if CURRENT_FILE.exists():
-        backup_file = CURRENT_FILE.with_suffix('.json.backup')
-        shutil.copy2(CURRENT_FILE, backup_file)
-        print(f"   📦 Backup created: {backup_file}")
-    
-    # Apply fix
-    try:
-        plan = load_plan()
-        phases = plan.get("phases", [])
-        if phases:
-            first_phase = phases[0]["id"]
-            reset_phase(first_phase)
-            print(f"   ✅ Reset to {first_phase}")
-            return True
-    except Exception as e:
-        print(f"   ❌ Reset failed: {e}")
-        return False
-    
-    return False
-
-
-def fix_baseline_validation() -> bool:
-    """Fix baseline validation with backup."""
-    print("   🔧 Fixing baseline validation...")
-    
-    # Create backup of state directory
-    if STATE_DIR.exists():
-        backup_dir = STATE_DIR.with_suffix('.backup')
-        shutil.copytree(STATE_DIR, backup_dir)
-        print(f"   📦 Backup created: {backup_dir}")
-    
-    # Apply fix by resetting current phase
-    try:
-        if CURRENT_FILE.exists():
-            current_data = json.loads(CURRENT_FILE.read_text())
-            phase_id = current_data.get("phase_id")
-            if phase_id:
-                reset_phase(phase_id)
-                print(f"   ✅ Reset {phase_id} baseline")
-                return True
-    except Exception as e:
-        print(f"   ❌ Baseline fix failed: {e}")
-        return False
-    
-    return False
-
-
-def fix_scope_resolution() -> bool:
-    """Fix scope resolution issues."""
-    print("   🔧 Fixing scope resolution...")
-    print("   💡 Try running: pip install pathspec")
-    print("   💡 Or reinstall tools: ./tools/install-protocol.sh")
-    return False  # Can't auto-fix dependency issues
-
-
-def fix_gate_functions() -> bool:
-    """Fix gate function issues."""
-    print("   🔧 Fixing gate functions...")
-    print("   💡 Try running: ./tools/install-protocol.sh")
-    return False  # Can't auto-fix import issues
-
-
-def get_experimental_status():
-    """Check experimental feature configuration."""
-    try:
-        plan = load_plan()
-        experimental = plan.get("plan", {}).get("experimental_features", {})
-        return isinstance(experimental, dict)
-    except Exception:
-        return False
-
-
-
-
-def test_scope_resolution():
-    try:
-        test_files = ["src/test.py", "docs/test.md"]
-        test_scope = {"scope": {"include": ["src/"]}}
-        from lib.scope import resolve_scope
-        result = resolve_scope(test_scope, test_files)
-        return len(result) == 1 and result[0] == "src/test.py"
-    except Exception:
-        return False
-
-
-def test_gate_functions():
-    """Test that gate functions are working."""
-    try:
-        # Test that gate interface can be imported and instantiated
-        from lib.gate_interface import run_gates, GATE_REGISTRY
-        
-        # Check that we have gates registered
-        if not GATE_REGISTRY:
-            return False
-            
-        # Test that we can create a minimal context
-        test_phase = {"gates": {"tests": {"must_pass": True}}}
-        test_plan = {"plan": {"test_command": "echo test"}}
-        test_context = {"changed_files": [], "baseline_sha": None}
-        
-        # This should not raise an exception
-        results = run_gates(test_phase, test_plan, test_context)
-        return isinstance(results, dict)
-        
-    except Exception as e:
-        print(f"Gate functions test failed: {e}")
-        return False
-
-def solutions_command():
-    """Show relevant solutions for current issues."""
-    print("💡 Protocol Solutions:")
-    print("")
-    
-    # Check protocol health
-    if not protocol_health_check():
-        print("❌ Protocol Health Check Failed")
-        print("   Solution: protocol_health_check (5 LOC)")
-        print("   Impact: Prevents 80% of protocol issues")
-        print("   Fix: Run: ../judge-gated-orchestrator/install-protocol.sh")
-        print("")
-    
-    # Check for missing briefs
-    try:
-        plan_file = REPO_DIR / "plan.yaml"  # Fix path to use correct location
-        if plan_file.exists():
-            import yaml
-            with plan_file.open() as f:
-                plan = yaml.safe_load(f)
-            phases = plan.get("plan", {}).get("phases", [])
-            missing_briefs = []
-            for phase in phases:
-                phase_id = phase.get("id")
-                if phase_id:
-                    brief_path = BRIEFS_DIR / f"{phase_id}.md"
-                    if not brief_path.exists():
-                        missing_briefs.append(phase_id)
-            
-            if missing_briefs:
-                print("❌ Missing Briefs")
-                print("   Solution: auto_fix_common_issues (8 LOC)")
-                print("   Impact: Self-healing protocol")
-                print(f"   Fix: Run: ./tools/phasectl.py generate-briefs")
-                print("")
-    except Exception:
-        pass
-    
-    # Check for plan mismatch
-    try:
-        current_file = BRIEFS_DIR / "CURRENT.json"
-        if current_file.exists():
-            import json
-            current = json.loads(current_file.read_text())
-            plan_sha = current.get("plan_sha")
-            if plan_sha:
-                import hashlib
-                with open(REPO_ROOT / "plan.yaml", "rb") as f:
-                    current_plan_sha = hashlib.sha256(f.read()).hexdigest()
-                if plan_sha != current_plan_sha:
-                    print("❌ Plan Mismatch")
-                    print("   Solution: smart_error_messages (10 LOC)")
-                    print("   Impact: Eliminates agent confusion")
-                    print("   Fix: Run: ./tools/phasectl.py reset <phase-id>")
-                    print("")
-    except Exception:
-        pass
-    
-    if not any([not protocol_health_check()]):
-        print("✅ No issues detected - protocol is healthy!")
-        print("")
 
 def main():
-    # Auto-detect corruption before any command
-    if auto_detect_corruption():
-        print("✅ Corruption detected and recovered")
-        print()
-    
-    # Protocol health check
-    if not protocol_health_check():
-        print("⚠️  Protocol health check failed - some features may not work")
-        print("   Run: ../judge-gated-orchestrator/install-protocol.sh")
-        print()
-    
-    # Check and auto-update protocol tools if needed
-    if not check_protocol_version():
-        if not auto_update_protocol():
-            print("⚠️  Using outdated protocol tools")
-            print("   Some features may not work correctly")
-            print("   Update manually: ../judge-gated-orchestrator/install-protocol.sh")
-            print()
-    
     if len(sys.argv) < 2:
-        print(__doc__)
+        print("Usage:")
+        print("  phasectl.py start <phase>")
+        print("  phasectl.py review <phase>")
+        print("  phasectl.py justify-scope <phase>")
+        print("  phasectl.py acknowledge-orient")
+        print("  phasectl.py reflect <phase>")
+        print("  phasectl.py next")
         return 1
-
+    
     command = sys.argv[1]
-
-    if command == "discover":
-        return discover_plan()
-    elif command == "generate-briefs":
-        return generate_briefs()
-    elif command == "solutions":
-        solutions_command()
-        return 0
-    elif command == "health":
-        protocol_health_dashboard()
-        return 0
-    elif command == "recover":
-        recover()
-        return 0
-    elif command == "start":
+    
+    if command == "start":
         if len(sys.argv) < 3:
-            print("Usage: phasectl.py start <PHASE_ID>")
+            print("Usage: phasectl.py start <phase-id>")
             return 1
-        # Add discovery check before start
-        if discover_plan() != 0:
-            print()
-            print("💡 Fix missing briefs first, then run:")
-            print(f"   ./tools/phasectl.py start {sys.argv[2]}")
-            return 1
-        return start_phase(sys.argv[2])
-
-    elif command == "reset":
-        if len(sys.argv) < 3:
-            print("Usage: phasectl.py reset <PHASE_ID>")
-            return 1
-        return reset_phase(sys.argv[2])
-
+        return cmd_start(sys.argv[2])
+    
     elif command == "review":
         if len(sys.argv) < 3:
-            print("Usage: phasectl.py review <PHASE_ID>")
+            print("Usage: phasectl.py review <phase-id>")
             return 1
-        return review_phase(sys.argv[2])
-
-    elif command == "next":
-        return next_phase()
+        return cmd_review(sys.argv[2])
     
-    elif command == "recover":
-        return recover_from_corruption()
-    
-    elif command == "amend":
-        if len(sys.argv) < 4:
-            print("Usage: phasectl.py amend propose <type> <value> <reason>")
-            return 1
-        return handle_amendment_command(sys.argv[2:])
-    
-    elif command == "patterns":
+    elif command == "justify-scope":
         if len(sys.argv) < 3:
-            print("Usage: phasectl.py patterns <command>")
+            print("Usage: phasectl.py justify-scope <phase-id>")
             return 1
-        return handle_patterns_command(sys.argv[2:])
-
+        return cmd_justify_scope(sys.argv[2])
+    
+    elif command == "acknowledge-orient":
+        return cmd_acknowledge_orient()
+    
+    elif command == "reflect":
+        if len(sys.argv) < 3:
+            print("Usage: phasectl.py reflect <phase-id>")
+            return 1
+        return cmd_reflect(sys.argv[2])
+    
+    elif command == "next":
+        return cmd_next()
+    
     else:
         print(f"Unknown command: {command}")
-        print(__doc__)
         return 1
-
-def load_current_phase():
-    """Load current phase from CURRENT.json"""
-    if not CURRENT_FILE.exists():
-        return None
-    
-    try:
-        return json.loads(CURRENT_FILE.read_text())
-    except (json.JSONDecodeError, KeyError):
-        return None
-
-def handle_amendment_command(args):
-    """Handle amendment commands"""
-    from lib.amendments import propose_amendment
-    
-    if args[0] == "propose":
-        if len(args) < 4:
-            print("Usage: amend propose <type> <value> <reason>")
-            return 1
-        
-        amendment_type = args[1]
-        value = args[2]
-        reason = args[3]
-        
-        # Get current phase
-        current = load_current_phase()
-        if not current:
-            print("❌ No current phase")
-            return 1
-        
-        success = propose_amendment(current["phase_id"], amendment_type, value, reason)
-        
-        if success:
-            print(f"✅ Amendment proposed: {amendment_type} = {value}")
-        else:
-            print(f"❌ Amendment budget exceeded for {amendment_type}")
-            return 1
-    
-    return 0
-
-def handle_patterns_command(args):
-    """Handle patterns commands"""
-    from lib.traces import find_matching_patterns
-    
-    if args[0] == "list":
-        patterns_file = REPO_ROOT / ".repo" / "collective_intelligence" / "patterns.jsonl"
-        
-        if not patterns_file.exists():
-            print("No patterns stored yet.")
-            return 0
-        
-        print("Stored patterns:")
-        with open(patterns_file, 'r') as f:
-            for i, line in enumerate(f, 1):
-                pattern = json.loads(line.strip())
-                print(f"{i}. {pattern.get('description', 'Unknown')} (confidence: {pattern.get('confidence', 0)})")
-                print(f"   When: {pattern.get('when', {})}")
-                print(f"   Action: {pattern.get('action', {})}")
-                print()
-    
-    return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

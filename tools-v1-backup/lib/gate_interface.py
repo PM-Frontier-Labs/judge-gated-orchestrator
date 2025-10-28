@@ -164,15 +164,17 @@ class DriftGate(GateInterface):
         return "Check for plan drift"
     
     def is_enabled(self, phase: Dict[str, Any]) -> bool:
-        """Drift gate is always enabled."""
-        return True
+        """Drift gate is enabled if drift gate is configured (disabled by default for simplified protocol)."""
+        drift_gate = phase.get("gates", {}).get("drift", {})
+        return drift_gate.get("enabled", False)  # Disabled by default
     
     def run(self, phase: Dict[str, Any], plan: Dict[str, Any], 
             context: Dict[str, Any]) -> List[str]:
         """Check for plan drift."""
         from .gates import check_drift
         baseline_sha = context.get("baseline_sha")
-        return check_drift(phase, plan, baseline_sha)
+        repo_root = context.get("repo_root")
+        return check_drift(phase, plan, baseline_sha, repo_root)
 
 
 class LLMReviewGate(GateInterface):

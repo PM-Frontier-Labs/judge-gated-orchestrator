@@ -1,48 +1,50 @@
-"""Git operations for judge system."""
+#!/usr/bin/env python3
+"""
+Git operations for judge v2.
+
+Simple, focused git utilities with clear error handling.
+"""
 
 import subprocess
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 
 def get_changed_files(
     repo_root: Path,
-    include_committed: bool = True,
-    base_branch: str = "main",
-    baseline_sha: str = None
+    baseline_sha: Optional[str] = None,
+    include_uncommitted: bool = True
 ) -> Tuple[List[str], List[str]]:
     """
-    Get changed files with deterministic ordering and error transparency.
-
+    Get list of changed files.
+    
     Args:
         repo_root: Repository root path
-        include_committed: Include committed changes (default True)
-        base_branch: Base branch for merge-base fallback (default "main")
-        baseline_sha: Fixed baseline commit SHA for consistent diffs (preferred)
-
+        baseline_sha: Baseline commit SHA (if None, uses merge-base)
+        include_uncommitted: Include unstaged/staged changes
+        
     Returns:
-        Tuple of (sorted_file_list, warnings_list)
+        Tuple of (sorted_files, warnings)
     """
     warnings = []
+    all_changes = []
     
     try:
-        all_changes = []
-
-        # Always get uncommitted changes (staged and unstaged)
-        result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        uncommitted = [f for f in result.stdout.strip().split("\n") if f]
-        all_changes.extend(uncommitted)
-
-        # Optionally get committed changes
-        if include_committed:
-            if baseline_sha:
-                # Use fixed baseline SHA for consistent diffs (preferred)
+        # Get uncommitted changes (staged + unstaged)
+        if include_uncommitted:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            uncommitted = [f for f in result.stdout.strip().split("\n") if f]
+            all_changes.extend(uncommitted)
+        
+        # Get committed changes from baseline
+        if baseline_sha and baseline_sha != "unknown":
+            try:
                 result = subprocess.run(
                     ["git", "diff", "--name-only", f"{baseline_sha}...HEAD"],
                     cwd=repo_root,
@@ -52,51 +54,30 @@ def get_changed_files(
                 )
                 committed = [f for f in result.stdout.strip().split("\n") if f]
                 all_changes.extend(committed)
-            else:
-                # Fallback: use merge-base (can drift as base_branch advances)
-                try:
-                    # Check if base_branch exists first
-                    subprocess.run(
-                        ["git", "rev-parse", "--verify", f"origin/{base_branch}"],
-                        cwd=repo_root,
-                        capture_output=True,
-                        check=True
-                    )
-                    
-                    result = subprocess.run(
-                        ["git", "merge-base", "HEAD", base_branch],
-                        cwd=repo_root,
-                        capture_output=True,
-                        text=True,
-                        check=True
-                    )
-                    merge_base = result.stdout.strip()
-
-                    # Get committed changes
-                    result = subprocess.run(
-                        ["git", "diff", "--name-only", f"{merge_base}...HEAD"],
-                        cwd=repo_root,
-                        capture_output=True,
-                        text=True,
-                        check=True
-                    )
-                    committed = [f for f in result.stdout.strip().split("\n") if f]
-                    all_changes.extend(committed)
-                except subprocess.CalledProcessError as e:
-                    warning_msg = f"Cannot access base branch {base_branch}: {e}"
-                    warnings.append(warning_msg)
-                    print(f"⚠️  Warning: {warning_msg}")
-                    # Continue with just uncommitted changes
-
-        # Remove duplicates and empty strings, then sort for determinism
-        unique_changes = list(set(all_changes))
-        filtered_changes = [f for f in unique_changes if f]
-        sorted_changes = sorted(filtered_changes)  # Deterministic ordering
+            except subprocess.CalledProcessError as e:
+                warnings.append(f"Could not get changes from baseline {baseline_sha}: {e}")
         
-        return sorted_changes, warnings
-
+        # Remove duplicates and sort
+        unique_files = sorted(set(f for f in all_changes if f))
+        
+        return unique_files, warnings
+        
     except subprocess.CalledProcessError as e:
-        error_msg = f"Git operation failed: {e}"
-        warnings.append(error_msg)
-        print(f"⚠️  Warning: {error_msg}")
+        warnings.append(f"Git operation failed: {e}")
         return [], warnings
+
+
+def get_current_sha(repo_root: Path) -> Optional[str]:
+    """Get current git HEAD SHA."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        return None
+

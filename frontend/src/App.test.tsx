@@ -8,3 +8,7 @@ describe('App', () => {
     expect(screen.getByText(/frontier orchestrator/i)).toBeInTheDocument()
   })
 })
+
+
+
+
