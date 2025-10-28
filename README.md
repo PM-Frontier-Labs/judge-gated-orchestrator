@@ -20,23 +20,15 @@ AI agents often drift off-task, skip tests, ignore scope boundaries, and require
 ## Key Features
 
 ✅ **Autonomous execution** - Agent works through phases without supervision
-✅ **Quality enforcement** - Tests, docs, drift prevention, optional LLM review
-✅ **Protocol integrity** - SHA256-based tamper detection prevents agents from modifying judge
-✅ **Schema validation** - Comprehensive plan.yaml validation catches configuration errors before execution
-✅ **Concurrent safety** - File locking prevents race conditions in CI/multi-agent scenarios
+✅ **Quality enforcement** - Tests, docs, lint, scope checking, optional LLM review
 ✅ **Context-window proof** - All state in files, `./orient.sh` recovers context in <10 seconds
 ✅ **Terminal-native** - No servers, no APIs, just files and shell commands
 ✅ **Language-agnostic** - File-based protocol works for any language
 ✅ **5-minute setup** - Clone, `pip install -r requirements.txt`, run demo
-✅ **Intelligent learning** - System automatically learns from successful phases and applies patterns
-✅ **Economics-based enforcement** - Choices are priced via budget (scope expansion, pattern opt-out, bounded maintenance burst)
-✅ **Pluggable gate system** - Clean gate interface enables easy testing and extensibility
-✅ **Atomic file operations** - All file writes use tempfile + os.replace for data integrity
-✅ **Robust error handling** - Comprehensive error messages with actionable guidance
-✅ **Self-updating tools** - Protocol tools automatically detect and update when outdated
-
-✅ **Experimental features** - Replay gate and budget shaping are opt-in via `experimental_features.replay_budget: true`
-✅ **Automatic intelligence extraction** - Patterns captured, amendments suggested, attribution tracked
+✅ **Simple and focused** - ~1,200 lines of clean, maintainable code
+✅ **Scope justification** - Conversation over enforcement when scope drift occurs
+✅ **Learning reflection** - Capture insights and learnings after each phase
+✅ **Orient acknowledgment** - Mandatory context recovery between phases
 
 ## Usage
 
@@ -139,37 +131,38 @@ pip install -r requirements.txt
 
 Gates are configurable per phase.
 
-## Automatic Intelligence Features
+## Core Workflow Features
 
-The protocol includes automatic intelligence capabilities:
-
-### Amendment System
-- **Bounded Mutability**: Propose runtime adjustments within budget limits
-- **Auto-Application**: Amendments applied automatically during review
-- **Budget Enforcement**: Hard limits prevent amendment creep
+### Scope Justification
+When out-of-scope changes are detected, you can justify them instead of reverting:
 
 ```bash
-# Propose amendments
-./tools/phasectl.py amend propose set_test_cmd "python -m pytest -q" "Fix test command"
-
-# View stored patterns
-./tools/phasectl.py patterns list
+./tools/phasectl.py justify-scope P01-foundation
+# System prompts for justification
+# Saved to .repo/scope_audit/P01-foundation.md
+# Gates pass with warning, human reviews later
 ```
 
-### Pattern Learning
-- **JSONL Storage**: Patterns stored in `.repo/collective_intelligence/patterns.jsonl`
-- **Auto-Proposal**: Patterns automatically propose amendments before review
-- **Learning**: System learns from successful amendments and stores patterns
+### Learning Reflection
+Capture insights and learnings after phase completion:
 
-### Enhanced Briefs
-- **Hints**: Briefs enhanced with hints from recent successful executions
-- **Guardrails**: Execution guardrails based on current state and mode
-- **Outer Loop**: Micro-retrospectives after each phase for continuous learning
+```bash
+./tools/phasectl.py reflect P01-foundation
+# Record what worked, what didn't
+# Saved to .repo/learnings.md
+# Displayed in orient.sh for future reference
+```
 
-### State Management
-- **Governance ≠ Runtime Split**: `plan.yaml` (human-locked) vs `.repo/state/` (AI-writable)
-- **Context Files**: `Pxx.ctx.json` stores runtime state (baseline_sha, test_cmd, mode)
-- **Mode Management**: EXPLORE → LOCK modes with automatic transitions
+### Orient Acknowledgment
+Prevent context loss by requiring acknowledgment between phases:
+
+```bash
+./tools/phasectl.py next
+# Error: Must acknowledge orient first
+./orient.sh
+./tools/phasectl.py acknowledge-orient
+# Prompts for current understanding before advancing
+```
 
 ## Core Workflow
 
@@ -225,23 +218,15 @@ judge-gated-orchestrator/
 │   ├── plan.yaml         # Roadmap + gates
 │   └── protocol_manifest.json  # SHA256 hashes for integrity
 ├── tools/
-│   ├── phasectl.py       # Controller (review/next)
+│   ├── phasectl.py       # Controller (start/review/next)
 │   ├── judge.py          # Gate validator
-│   ├── llm_judge.py      # Optional LLM review
-│   ├── generate_manifest.py  # Update protocol hashes
 │   └── lib/              # Shared utilities
-│       ├── gate_interface.py  # Pluggable gate system
-│       ├── gates.py           # Individual gate implementations
-│       ├── protocol_guard.py  # SHA256 integrity verification
-│       ├── plan_validator.py  # Schema validation
-│       ├── file_lock.py       # Atomic file operations
-│       ├── command_utils.py   # Test/lint command builders
-│       ├── llm_config.py      # Centralized LLM configuration
-│       ├── git_ops.py         # Git utilities
-│       ├── scope.py           # Scope matching (requires pathspec)
-│       ├── traces.py          # Test output capture
-│       ├── amendments.py      # Amendment system
-│       └── state.py           # State management
+│       ├── gates.py      # Gate implementations
+│       ├── git_ops.py    # Git utilities
+│       ├── plan.py       # Plan loading
+│       ├── scope.py      # Scope matching
+│       ├── state.py      # State management
+│       └── traces.py     # Command tracing
 ├── orient.sh             # Status in 10 seconds
 └── README.md             # This file
 ```

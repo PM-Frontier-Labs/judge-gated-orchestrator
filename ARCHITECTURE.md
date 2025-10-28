@@ -25,205 +25,109 @@ The protocol is split into focused, testable modules:
 
 ```
 tools/
-├── phasectl.py          # Main controller
-├── judge.py             # Gate validator (refactored)
-├── llm_judge.py         # LLM-based code review
+├── phasectl.py          # Main controller (452 lines)
+├── judge.py             # Gate validator (260 lines)
 └── lib/                 # Shared utilities
-    ├── gate_interface.py    # Pluggable gate system
-    ├── gates.py             # Individual gate implementations
-    ├── file_lock.py         # Atomic file operations
-    ├── command_utils.py     # Command builders
-    ├── llm_config.py        # Centralized LLM config
-    ├── git_ops.py           # Git utilities
-    ├── scope.py             # Scope resolution
-    ├── traces.py            # Pattern storage
-    ├── amendments.py        # Amendment system
-    ├── state.py             # State management
-    ├── protocol_guard.py    # Integrity verification
-    └── plan_validator.py    # Schema validation
+    ├── gates.py         # Gate implementations (433 lines)
+    ├── git_ops.py       # Git utilities (83 lines)
+    ├── plan.py          # Plan loading (207 lines)
+    ├── scope.py         # Scope matching (54 lines)
+    ├── state.py         # State management (271 lines)
+    └── traces.py        # Command tracing (102 lines)
+
+Total: ~1,862 lines (79% reduction from v1's 5,895 lines)
 ```
 
-## Key Architectural Improvements
+## Key Architectural Features
 
-### 1. Pluggable Gate System
+### 1. Simple Gate System
 
-**Problem:** The original `judge.py` was a monolithic file with hardcoded gate logic, making it difficult to test and extend.
-
-**Solution:** Clean gate interface with individual gate classes.
-
-```python
-class GateInterface(ABC):
-    @abstractmethod
-    def is_enabled(self, phase: Dict[str, Any]) -> bool:
-        pass
-    
-    @abstractmethod
-    def run(self, phase: Dict[str, Any], plan: Dict[str, Any], 
-            context: Dict[str, Any]) -> List[str]:
-        pass
-```
-
-**Benefits:**
-- **Testability**: Each gate can be tested independently
-- **Extensibility**: New gates can be added without modifying core logic
-- **Maintainability**: Gate logic is isolated and focused
-- **Error Handling**: Graceful error handling per gate
+**Philosophy:** Clear, focused gate implementations without over-abstraction.
 
 **Gate Implementations:**
-- `ArtifactsGate` - Check for required artifacts
-- `TestsGate` - Validate test execution results
-- `LintGate` - Check linting results
-- `DocsGate` - Validate documentation requirements
-- `DriftGate` - Check for plan drift
-- `LLMReviewGate` - LLM-based code review
-- `IntegrityGate` - Protocol integrity verification
+- **TestsGate** - Validate test execution results
+- **LintGate** - Check linting results (optional)
+- **DocsGate** - Validate documentation requirements
+- **DriftGate** - Check for scope violations (with justification workflow)
+- **LLMReviewGate** - LLM-based code review (optional)
 
-### 2. Atomic File Operations
+**Benefits:**
+- **Simplicity**: Straightforward implementations, easy to understand
+- **Maintainability**: Minimal abstraction, easy to modify
+- **Focused**: Each gate does one thing well
+- **Conversation over Enforcement**: Scope drift can be justified, not just blocked
 
-**Problem:** Concurrent file operations could lead to data corruption, especially in CI/multi-agent scenarios.
+### 2. File-Based State Management
 
-**Solution:** Atomic writes using `tempfile` + `os.replace` pattern.
+**Philosophy:** All state lives in files, making it transparent and recoverable.
 
+**State Files:**
 ```python
-def safe_write_json(file_path: Path, data: Dict[str, Any]) -> None:
-    with tempfile.NamedTemporaryFile(
-        mode='w', 
-        dir=file_path.parent,
-        prefix=f".{file_path.name}.",
-        suffix='.tmp',
-        delete=False
-    ) as temp_file:
-        temp_path = Path(temp_file.name)
-        json.dump(data, temp_file)
-        temp_file.flush()
-        os.fsync(temp_file.fileno())
-    
-    os.replace(temp_path, file_path)
+.repo/
+├── plan.yaml                    # Phase definitions (human-written)
+├── briefs/CURRENT.json          # Active phase pointer
+├── critiques/<phase>.{md,OK}    # Judge feedback
+├── learnings.md                 # Accumulated insights
+├── scope_audit/<phase>.md       # Drift justifications
+├── state/
+│   ├── current.json             # Current phase state
+│   └── acknowledged.json        # Orient acknowledgment
+└── traces/
+    └── last_tests.txt           # Test output
 ```
 
 **Benefits:**
-- **Data Integrity**: No partial writes or corruption
-- **Concurrency Safety**: File locking prevents race conditions
-- **Error Recovery**: Automatic cleanup on failures
-- **Consistency**: All file operations use the same pattern
+- **Transparency**: All state is visible and inspectable
+- **Recoverability**: Context recovery via `./orient.sh`
+- **Simplicity**: JSON files, no databases
+- **Debuggability**: Easy to understand and fix issues
 
-### 3. Robust Error Handling
+### 3. Conversational Workflows
 
-**Problem:** Technical errors were cryptic and didn't provide actionable guidance.
+**Philosophy:** Dialog over blocking when issues arise.
 
-**Solution:** Smart error classification and actionable error messages.
+**Scope Justification:**
+```bash
+# Instead of blocking on drift:
+❌ Drift detected!
+./tools/phasectl.py justify-scope P01
+# Provide justification → saved for review
+✅ Gates pass with warning
+```
 
-```python
-def explain_error(error: Exception) -> str:
-    error_type = classify_error(error)
-    details = extract_error_details(error)
-    
-    if error_type == "insufficient_budget":
-        return f"❌ Insufficient budget: {details['current']}/{details['required']}\n💡 Run: ./tools/phasectl.py amend propose add_budget {details['needed']}"
-    elif error_type == "missing_brief":
-        return f"❌ Missing brief: {details['phase_id']}\n💡 Run: ./tools/phasectl.py generate-briefs"
-    # ... more error types
+**Orient Acknowledgment:**
+```bash
+# Force context recovery:
+./tools/phasectl.py next
+❌ Must acknowledge orient first
+./orient.sh                         # Review state
+./tools/phasectl.py acknowledge-orient
+✅ Advanced to next phase
 ```
 
 **Benefits:**
-- **User Experience**: Clear, actionable error messages
-- **Debugging**: Faster issue resolution
-- **Self-Service**: Users can fix issues without support
-- **Graceful Degradation**: System continues operating with partial failures
+- **Keeps work moving**: No blocking on scope drift
+- **Preserves context**: Mandatory acknowledgment prevents context loss
+- **Human review**: Justifications recorded for later review
+- **Flexibility**: Pragmatic over dogmatic
 
-### 4. Self-Updating Tools
+### 4. Learning and Reflection
 
-**Problem:** Protocol tools could become outdated, leading to compatibility issues.
+**Philosophy:** Capture institutional knowledge as you work.
 
-**Solution:** Automatic version detection and atomic updates.
-
-```python
-def auto_update_protocol():
-    if not check_protocol_version():
-        print("⚠️  Using outdated protocol tools")
-        if can_update():
-            create_tool_backup()
-            try:
-                run_install_script()
-                verify_tool_integrity()
-            except Exception:
-                rollback_tools()
-                raise
+**Reflection System:**
+```bash
+./tools/phasectl.py reflect P01
+# "Tests caught a bug early. Always write tests first."
+# Saved to .repo/learnings.md
+# Visible in next ./orient.sh
 ```
 
 **Benefits:**
-- **Zero Maintenance**: Tools stay current automatically
-- **Atomic Updates**: Backup, update, verify, rollback on failure
-- **Integrity Verification**: SHA256 checksums ensure update integrity
-- **Zero Downtime**: Updates don't interrupt ongoing work
-
-### 5. Enhanced Dependencies
-
-**Problem:** Silent fallbacks and inconsistent behavior across different environments.
-
-**Solution:** Mandatory dependencies with clear error messages.
-
-```python
-try:
-    import pathspec
-except ImportError:
-    raise ImportError(
-        "pathspec is required for scope resolution. "
-        "Run: pip install pathspec"
-    )
-```
-
-**Benefits:**
-- **Consistency**: Same behavior across all environments
-- **Predictability**: No silent fallbacks or unexpected behavior
-- **Clear Errors**: Helpful error messages for missing dependencies
-- **Reliability**: Mandatory dependencies ensure functionality
-
-### 6. Centralized Configuration
-
-**Problem:** LLM configuration was scattered across multiple files with inconsistent pricing and model names.
-
-**Solution:** Centralized configuration module.
-
-```python
-# tools/lib/llm_config.py
-DEFAULT_LLM_CONFIG = {
-    "model": "claude-sonnet-4-20250514",
-    "max_tokens": 2000,
-    "temperature": 0,
-    "budget_usd": 2.0,
-    # ... other config
-}
-
-PRICING = {
-    "input_per_1k": 0.003,
-    "output_per_1k": 0.015,
-}
-```
-
-**Benefits:**
-- **Consistency**: Single source of truth for LLM configuration
-- **Maintainability**: Easy to update pricing and model names
-- **Accuracy**: Consistent cost calculations across the system
-- **Extensibility**: Easy to add new LLM providers
-
-### 7. Comprehensive Testing
-
-**Problem:** Limited test coverage made it difficult to ensure reliability and catch regressions.
-
-**Solution:** Comprehensive test suite with 86 test cases.
-
-**Test Categories:**
-- **Unit Tests**: Individual component testing
-- **Integration Tests**: End-to-end workflow testing
-- **Error Scenario Tests**: Edge cases and failure modes
-- **Concurrency Tests**: Multi-process safety verification
-
-**Benefits:**
-- **Reliability**: Comprehensive test coverage ensures stability
-- **Regression Prevention**: Tests catch breaking changes
-- **Documentation**: Tests serve as usage examples
-- **Confidence**: Safe to make changes with test coverage
+- **Knowledge Retention**: Insights preserved across phases
+- **Pattern Recognition**: See what works, what doesn't
+- **Team Learning**: Shared understanding (even with yourself)
+- **Continuous Improvement**: Build on past successes
 
 ## Design Principles
 
