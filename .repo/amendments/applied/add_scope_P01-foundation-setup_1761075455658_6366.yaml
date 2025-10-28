@@ -1,6 +1,0 @@
-phase_id: P01-foundation-setup
-reason: No patterns apply - new scenario requiring scope expansion for frontend foundation
-  files
-timestamp: '2025-10-21T20:37:35.658351'
-type: add_scope
-value: frontend/.eslintrc.js
