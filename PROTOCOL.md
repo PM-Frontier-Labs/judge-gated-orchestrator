@@ -200,10 +200,22 @@ scope:
   exclude: ["tests/integration/**"]  # Don't check integration tests
 ```
 
-**Change test command:**
+**Override test command for specific phase** (useful in monorepos):
 ```yaml
-test_command: "python3 -m pytest tests/unit/ -v"  # Only run unit tests
+phases:
+  - id: P01-backend
+    test_command: "pytest tests/unit/ -v"  # Override plan-level command
+    lint_command: "ruff check src/"        # Skip frontend lint
+    
+    gates:
+      tests: {must_pass: true}
+      lint: {must_pass: true}
 ```
+
+**Phase-level overrides take precedence** over plan-level commands. This is useful when:
+- Backend-only phases in a monorepo (skip frontend lint)
+- Different test strategies per phase
+- Phase-specific tool configuration
 
 **No special commands or permissions needed. Just edit, commit, and continue.**
 
@@ -307,7 +319,7 @@ test_command: "python -m pytest tests/ -v"
 
 #### Split Unit and Integration Tests
 
-If your project has integration tests that may fail for environmental reasons:
+For projects with integration tests that may fail for environmental reasons:
 
 ```yaml
 gates:
@@ -318,30 +330,56 @@ gates:
       allow_skip: true  # Don't block phase if integration tests fail
 ```
 
-**When to use:**
+**Smart Auto-Skip (NEW):**
+
+Integration tests are **automatically skipped** if no integration files in your phase scope:
+
+```yaml
+# Phase scope:
+scope:
+  include:
+    - "src/backend/**"
+    - "tests/unit/**"
+  # No tests/integration/** in scope
+
+gates:
+  tests:
+    unit:
+      must_pass: true
+    integration: {}  # Auto-skipped (no integration files in scope)
+```
+
+**Output:**
+```
+🧪 Running tests...
+   - Unit tests... ✅ Pass
+   - Integration tests... ⏭️ Auto-skipped (no integration files in scope)
+```
+
+**When auto-skip happens:**
+- Phase scope doesn't include integration test files
+- Integration tests wouldn't be relevant
+- Eliminates need for `allow_skip: true` on most phases
+
+**Force integration tests to run:**
+```yaml
+gates:
+  tests:
+    integration:
+      force_run: true  # Run even if not in scope
+```
+
+**When to use split mode:**
 - Integration tests depend on external services (databases, APIs)
 - Integration tests are slow or flaky
-- Phase only modifies unit-testable code
-- You want to separate unit test enforcement from integration test checking
+- You want different enforcement for unit vs integration
 
 **How it works:**
 - **Unit tests:** Must pass (hard requirement)
-- **Integration tests:** Run but failures only show warnings, don't block approval
-- Judge runs both but only enforces unit test success
+- **Integration tests:** Auto-skipped if not in scope, or run with `allow_skip: true`
+- Judge runs only relevant tests
 
-**Test commands:**
-- Unit tests use plan-level `test_command` or default to `pytest tests/unit/ -v`
-- Integration tests look for separate integration test path
-
-**Example workflow:**
-```bash
-./tools/phasectl.py review P01
-# Runs: pytest tests/unit/ -v  (must pass)
-# Runs: pytest tests/integration/ -v  (failures allowed)
-# ✅ Approved if unit tests pass, even if integration fails
-```
-
-**Alternative:** Exclude integration tests from scope entirely:
+**Alternative:** Exclude integration tests from scope entirely (same effect):
 ```yaml
 scope:
   include: ["src/**", "tests/unit/**"]
