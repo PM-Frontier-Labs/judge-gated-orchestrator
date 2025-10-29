@@ -106,22 +106,27 @@ phases:
       llm_review: true
 ```
 
-### `.repo/briefs/<phase-id>.md`
+### Phase Briefs in plan.yaml
 
-Phase-specific instructions (optional, can be embedded in plan.yaml):
+All phase briefs are embedded directly in plan.yaml (see example above).
 
-```markdown
-# Objective
-Build the user authentication system
-
-## Scope 🎯
-- src/auth/**
-- tests/test_auth.py
-
-## Required Artifacts
-- User login/logout functions
-- Password hashing
-- Session management
+**Format:**
+```yaml
+phases:
+  - id: P01-feature
+    description: "Short description"
+    brief: |
+      # Objective
+      Build the user authentication system
+      
+      ## Scope 🎯
+      - src/auth/**
+      - tests/test_auth.py
+      
+      ## Required Artifacts
+      - User login/logout functions
+      - Password hashing
+      - Session management
 
 ## Gates
 - tests: Required
@@ -596,21 +601,19 @@ All protocol state lives in these files:
 
 ```
 .repo/
-├── plan.yaml                    # Phase definitions
-├── briefs/
-│   ├── CURRENT.json            # Active phase pointer
-│   └── <phase-id>.md           # Phase-specific briefs (optional)
+├── plan.yaml                    # Phase definitions with embedded briefs
+├── state/
+│   ├── current.json            # Current phase state
+│   └── acknowledged.json       # Orient acknowledgment
 ├── critiques/
 │   ├── <phase-id>.md           # Issues found
 │   └── <phase-id>.OK           # Approval marker
 ├── learnings.md                # Accumulated insights
 ├── scope_audit/
 │   └── <phase-id>.md           # Drift justifications
-├── state/
-│   ├── current.json            # Current phase state
-│   └── acknowledged.json       # Orient acknowledgment
-└── traces/
-    └── last_tests.txt          # Test output
+├── traces/
+│   └── last_tests.txt          # Test output
+└── protocol_manifest.json      # SHA256 hashes for integrity
 ```
 
 ---

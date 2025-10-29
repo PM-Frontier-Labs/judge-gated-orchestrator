@@ -38,36 +38,37 @@ cd your-project-directory
 touch .repo/plan.yaml
 ```
 
-### Step 4: Create Initial Brief
+### Step 4: Add Phase Briefs
 
-Create your first phase brief based on the plan.yaml you created. You can create it in two ways:
+Add briefs to each phase in plan.yaml using the `brief: |` syntax:
 
-1. **Embedded in plan.yaml** (recommended):
-   Add a `brief:` field to your first phase with markdown content
-
-2. **Separate file**:
-   Create `.repo/briefs/P01-scaffold.md` with your phase instructions
-
-### Step 5: Initialize First Phase
-
-```bash
-# Set current phase (replace P01-scaffold with your first phase ID)
-echo '{
-  "phase_id": "P01-scaffold",
-  "brief_path": ".repo/briefs/P01-scaffold.md",
-  "status": "active",
-  "started_at": '$(date +%s.%N)'
-}' > .repo/briefs/CURRENT.json
+```yaml
+phases:
+  - id: P01-scaffold
+    description: "Setup project structure"
+    brief: |
+      # Objective
+      Create basic project scaffolding
+      
+      ## Required Artifacts
+      - src/__init__.py
+      - tests/test_main.py
+      
+      ## Implementation Steps
+      1. Create src/ directory
+      2. Add basic test framework
+    
+    scope:
+      include: ["src/**", "tests/**"]
+    gates:
+      tests: {must_pass: true}
 ```
 
-### Step 6: Verify Setup
+### Step 5: Start First Phase
 
 ```bash
-# Check protocol health
-./tools/phasectl.py health
-
-# See current status
-./tools/phasectl.py discover
+# Start the first phase (this creates .repo/state/current.json automatically)
+./tools/phasectl.py start P01-scaffold
 ```
 
 **You're ready to start autonomous execution!**
@@ -81,16 +82,16 @@ When you complete one project and want to start a new one:
 ### Step 1: Clean Up Old Plan State
 
 ```bash
-# Remove old phase briefs and state
-rm -rf .repo/briefs/P*.md
-rm -f .repo/briefs/CURRENT.json
+# Remove old plan state
 rm -rf .repo/critiques/
 rm -rf .repo/traces/
 rm -rf .repo/state/
+rm -f .repo/learnings.md
+rm -rf .repo/scope_audit/
 rm -f .repo/plan.yaml  # Remove old plan to ensure fresh start
 
 # Create fresh directory structure
-mkdir -p .repo/briefs .repo/critiques .repo/traces .repo/state
+mkdir -p .repo/state .repo/critiques .repo/traces
 ```
 
 ### Step 2: Update Protocol Tools (Optional)

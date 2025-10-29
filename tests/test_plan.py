@@ -92,9 +92,20 @@ def test_get_brief_embedded():
         }
     }
     
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo_root = Path(tmpdir)
-        
-        brief = get_brief(plan, "P01-test", repo_root)
-        assert "Test Brief" in brief
-        assert "This is a test" in brief
+    brief = get_brief(plan, "P01-test")
+    assert "Test Brief" in brief
+    assert "This is a test" in brief
+
+
+def test_get_brief_missing():
+    """Test error when brief field is missing."""
+    plan = {
+        "plan": {
+            "phases": [
+                {"id": "P01-test", "description": "Test phase"}  # No brief field
+            ]
+        }
+    }
+    
+    with pytest.raises(PlanError, match="missing 'brief' field"):
+        get_brief(plan, "P01-test")

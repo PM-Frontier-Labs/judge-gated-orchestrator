@@ -40,7 +40,7 @@ def cmd_start(phase_id: str):
     try:
         plan = load_plan(REPO_ROOT)
         phase = get_phase(plan, phase_id)
-        brief = get_brief(plan, phase_id, REPO_ROOT)
+        brief = get_brief(plan, phase_id)
     except PlanError as e:
         print(f"❌ {e}")
         return 1

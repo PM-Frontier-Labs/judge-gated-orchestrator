@@ -72,8 +72,8 @@ This demo runs on the example phases included in `.repo/plan.yaml`.
 # View the roadmap
 cat .repo/plan.yaml
 
-# Read a phase brief
-cat .repo/briefs/P01-scaffold.md
+# View brief (embedded in plan.yaml)
+cat .repo/plan.yaml
 
 # Check critique status
 ls .repo/critiques/
@@ -274,7 +274,7 @@ Start with: ./orient.sh
 ls .repo/critiques/
 
 # Check current phase
-cat .repo/briefs/CURRENT.json
+cat .repo/state/current.json
 
 # See latest test results
 cat .repo/traces/last_tests.txt
@@ -314,7 +314,9 @@ ls .repo/critiques/
 
 1. **Review the brief together:**
    ```bash
-   cat .repo/briefs/<phase-id>.md
+   # View the phase brief (embedded in plan.yaml)
+   ./tools/phasectl.py start <phase-id>
+   # This displays the brief and phase configuration
    ```
    Discuss scope, clarify ambiguities
 

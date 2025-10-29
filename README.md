@@ -7,8 +7,8 @@
 A **protocol** for autonomous execution—not a framework you import, but file conventions you follow.
 
 Like Git tracks code changes through `.git/`, `HEAD`, and commit messages, this protocol tracks autonomous work through:
-- **`.repo/briefs/CURRENT.json`** - Points to current phase
-- **`.repo/plan.yaml`** - Defines phases and quality gates
+- **`.repo/plan.yaml`** - Defines phases, briefs, and quality gates (single source of truth)
+- **`.repo/state/current.json`** - Points to current phase
 - **`.repo/critiques/<phase>.{md,OK}`** - Judge feedback
 
 Any tool that follows these conventions can participate. This repo includes a reference implementation in Python, but you could rewrite it in Bash, Rust, or Make.
@@ -166,7 +166,7 @@ Prevent context loss by requiring acknowledgment between phases:
 ## Core Workflow
 
 ```
-1. Claude reads brief (.repo/briefs/P01-scaffold.md)
+1. Claude reads brief from plan.yaml (embedded in phase definition)
 2. Claude implements files within scope
 3. Claude runs: ./tools/phasectl.py review P01-scaffold
    ├─> Validates plan.yaml schema
@@ -189,7 +189,7 @@ Prevent context loss by requiring acknowledgment between phases:
 
 **Setup (you):**
 - Write `.repo/plan.yaml` with 6 phases
-- Write 6 briefs describing what to build
+- Embed briefs in each phase using `brief: |` syntax
 - Define scope + gates for each phase
 
 **Execution (Claude Code):**
@@ -206,15 +206,16 @@ Prevent context loss by requiring acknowledgment between phases:
 ```
 judge-gated-orchestrator/
 ├── .repo/
-│   ├── briefs/           # Phase instructions
-│   │   ├── CURRENT.json  # → Points to active phase
-│   │   ├── P01-scaffold.md
-│   │   └── P02-impl-feature.md
+│   ├── plan.yaml         # Roadmap, gates, and embedded briefs (single source of truth)
+│   ├── state/
+│   │   ├── current.json  # Points to active phase
+│   │   └── acknowledged.json
 │   ├── critiques/        # Judge feedback
 │   │   ├── P01-scaffold.OK (approved)
 │   │   └── P02-impl-feature.md (needs fixes)
 │   ├── traces/           # Test output
-│   ├── plan.yaml         # Roadmap + gates
+│   ├── learnings.md      # Captured insights
+│   ├── scope_audit/      # Drift justifications
 │   └── protocol_manifest.json  # SHA256 hashes for integrity
 ├── tools/
 │   ├── phasectl.py       # Controller (start/review/next)

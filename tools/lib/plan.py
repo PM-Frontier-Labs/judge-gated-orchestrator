@@ -2,9 +2,7 @@
 """
 Plan loading with embedded YAML briefs.
 
-Supports both:
-- New format: briefs embedded in plan.yaml
-- Legacy format: briefs in separate .md files (backward compatible)
+All briefs must be embedded in plan.yaml using the brief: | syntax.
 """
 
 import yaml
@@ -77,53 +75,53 @@ def get_phase(plan: Dict[str, Any], phase_id: str) -> Dict[str, Any]:
     raise PlanError(f"Phase {phase_id} not found in plan")
 
 
-def get_brief(plan: Dict[str, Any], phase_id: str, repo_root: Path = None) -> str:
+def get_brief(plan: Dict[str, Any], phase_id: str) -> str:
     """
-    Get brief for phase.
+    Get brief for phase from plan.yaml.
     
-    Supports two formats:
-    1. Embedded YAML brief (new format):
-       phases:
-         - id: P01
-           brief: |
-             # Objective
-             ...
+    Briefs must be embedded in plan.yaml:
     
-    2. External .md file (legacy format):
-       .repo/briefs/P01-scaffold.md
+    ```yaml
+    phases:
+      - id: P01-feature
+        brief: |
+          # Objective
+          Build the feature
+          
+          ## Required Artifacts
+          - src/feature.py
+    ```
     
     Args:
-        plan: Plan dictionary
-        phase_id: Phase identifier
-        repo_root: Repository root (defaults to cwd)
+        plan: Plan dictionary from load_plan()
+        phase_id: Phase identifier (e.g., "P01-scaffold")
         
     Returns:
         Brief content as string
         
     Raises:
-        PlanError: If brief not found in either location
+        PlanError: If phase missing 'brief' field
     """
-    if repo_root is None:
-        repo_root = Path.cwd()
-    
     phase = get_phase(plan, phase_id)
     
-    # Check for embedded brief (new format)
-    if "brief" in phase:
-        return phase["brief"]
-    
-    # Fall back to external .md file (legacy format)
-    brief_path = repo_root / ".repo" / "briefs" / f"{phase_id}.md"
-    
-    if not brief_path.exists():
+    if "brief" not in phase:
         raise PlanError(
-            f"Brief not found for phase {phase_id}.\n"
-            f"Expected either:\n"
-            f"  1. Embedded in plan.yaml: phases[{phase_id}].brief\n"
-            f"  2. External file: {brief_path}"
+            f"Phase {phase_id} missing 'brief' field.\n"
+            f"\n"
+            f"Add brief to plan.yaml:\n"
+            f"\n"
+            f"phases:\n"
+            f"  - id: {phase_id}\n"
+            f"    brief: |\n"
+            f"      # Objective\n"
+            f"      Your phase instructions here\n"
+            f"      \n"
+            f"      ## Required Artifacts\n"
+            f"      - file1.py\n"
+            f"      - file2.py\n"
         )
     
-    return brief_path.read_text()
+    return phase["brief"]
 
 
 def get_all_phases(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -200,8 +198,8 @@ def validate_plan_schema(plan: Dict[str, Any]) -> list[str]:
                 errors.append(f"Duplicate phase ID: {phase_id}")
             phase_ids.add(phase_id)
         
-        # Check that phase has either embedded brief or can fall back to .md
-        if "brief" not in phase and "description" not in phase:
-            errors.append(f"Phase {phase.get('id', i)} missing 'brief' or 'description'")
+        # Check that phase has embedded brief (required)
+        if "brief" not in phase:
+            errors.append(f"Phase {phase.get('id', i)} missing required 'brief' field")
     
     return errors
