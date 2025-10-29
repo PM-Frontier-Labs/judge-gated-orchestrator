@@ -129,13 +129,27 @@ def cmd_review(phase_id: str):
                 print(f"     ❌ Failed (exit {exit_code})")
         
         if "integration" in tests_config:
-            print("   - Integration tests...")
-            cmd = build_test_command(phase, plan, "integration")
-            exit_code = run_command_with_trace(cmd, REPO_ROOT, TRACES_DIR, "tests_integration")
-            if exit_code == 0:
-                print("     ✅ Pass")
+            # Smart skip: Auto-skip integration if no integration files in scope (Priority 1A)
+            scope_config = phase.get("scope", {})
+            include_patterns = scope_config.get("include", [])
+            
+            has_integration_in_scope = any(
+                "integration" in pattern.lower() for pattern in include_patterns
+            )
+            
+            integ_config = tests_config.get("integration", {})
+            auto_skip = not has_integration_in_scope and not integ_config.get("force_run", False)
+            
+            if auto_skip:
+                print("   - Integration tests... ⏭️  Auto-skipped (no integration files in scope)")
             else:
-                print(f"     ❌ Failed (exit {exit_code})")
+                print("   - Integration tests...")
+                cmd = build_test_command(phase, plan, "integration")
+                exit_code = run_command_with_trace(cmd, REPO_ROOT, TRACES_DIR, "tests_integration")
+                if exit_code == 0:
+                    print("     ✅ Pass")
+                else:
+                    print(f"     ❌ Failed (exit {exit_code})")
         
         if "unit" not in tests_config and "integration" not in tests_config:
             # Simple mode

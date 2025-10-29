@@ -21,6 +21,16 @@ echo "║                  📍 PROJECT ORIENTATION                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
+# Check protocol version (Priority 2A)
+if [ -f "tools/judge.py" ]; then
+    JUDGE_LINES=$(wc -l tools/judge.py 2>/dev/null | awk '{print $1}')
+    if [ ! -z "$JUDGE_LINES" ] && [ "$JUDGE_LINES" -gt 1000 ]; then
+        echo -e "${YELLOW}⚠️  Protocol tools outdated (v1 detected)${NC}"
+        echo "   Update to v2: ../judge-gated-orchestrator/install-protocol.sh"
+        echo "   v2 is 79% simpler with better features"
+        echo ""
+    fi
+fi
 
 # Check if plan exists
 if [ ! -f "$REPO_DIR/plan.yaml" ]; then

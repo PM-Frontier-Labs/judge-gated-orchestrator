@@ -60,6 +60,8 @@ def build_test_command(phase: Dict[str, Any], plan: Dict[str, Any], mode: str = 
     """
     Build test command from phase/plan configuration.
     
+    Supports phase-level command override for flexibility.
+    
     Args:
         phase: Phase configuration
         plan: Plan configuration
@@ -70,7 +72,12 @@ def build_test_command(phase: Dict[str, Any], plan: Dict[str, Any], mode: str = 
     """
     tests_config = phase.get("gates", {}).get("tests", {})
     
-    # Check for custom command in phase
+    # Check for phase-level test_command override (Priority 1B)
+    phase_test_cmd = phase.get("test_command")
+    if phase_test_cmd:
+        return phase_test_cmd.split()
+    
+    # Check for custom command in test config
     if mode == "unit" and "unit" in tests_config:
         custom_cmd = tests_config["unit"].get("command")
         if custom_cmd:
@@ -91,7 +98,16 @@ def build_test_command(phase: Dict[str, Any], plan: Dict[str, Any], mode: str = 
 
 
 def build_lint_command(phase: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
-    """Build lint command from configuration."""
+    """
+    Build lint command from configuration.
+    
+    Supports phase-level override for monorepo flexibility.
+    """
+    # Check for phase-level lint_command override (Priority 1B)
+    phase_lint_cmd = phase.get("lint_command")
+    if phase_lint_cmd:
+        return phase_lint_cmd.split()
+    
     # Check for plan-level lint command
     plan_lint_cmd = plan.get("plan", {}).get("lint_command")
     if plan_lint_cmd:
