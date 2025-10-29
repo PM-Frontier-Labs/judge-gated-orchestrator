@@ -15,7 +15,7 @@ import json
 import hashlib
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 
@@ -186,7 +186,7 @@ def acknowledge_orient(phase_id: str, summary: str, repo_root: Path = None):
     os.replace(temp_path, ack_file)
 
 
-def save_scope_justification(phase_id: str, files: list[str], justification: str, repo_root: Path = None):
+def save_scope_justification(phase_id: str, files: List[str], justification: str, repo_root: Path = None):
     """Save scope drift justification for human review."""
     if repo_root is None:
         repo_root = Path.cwd()

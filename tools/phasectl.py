@@ -72,7 +72,7 @@ def cmd_start(phase_id: str):
     
     print("Next steps:")
     print(f"  1. Implement the phase requirements")
-    print(f"  2. Run: ./v2/tools/phasectl.py review {phase_id}")
+    print(f"  2. Run: ./tools/phasectl.py review {phase_id}")
     print()
     
     return 0
@@ -87,7 +87,7 @@ def cmd_review(phase_id: str):
     current = get_current_phase(REPO_ROOT)
     if not current or current["phase_id"] != phase_id:
         print(f"❌ Phase {phase_id} is not active")
-        print(f"   Run: ./v2/tools/phasectl.py start {phase_id}")
+        print(f"   Run: ./tools/phasectl.py start {phase_id}")
         return 1
     
     try:
@@ -245,7 +245,7 @@ def cmd_justify_scope(phase_id: str):
     print("Gates will now pass with this justification.")
     print()
     print("Re-run review:")
-    print(f"  ./v2/tools/phasectl.py review {phase_id}")
+    print(f"  ./tools/phasectl.py review {phase_id}")
     print()
     
     return 0
@@ -259,7 +259,7 @@ def cmd_acknowledge_orient():
     current = get_current_phase(REPO_ROOT)
     if not current:
         print("❌ No active phase")
-        print("   Run: ./v2/tools/phasectl.py start <phase-id>")
+        print("   Run: ./tools/phasectl.py start <phase-id>")
         return 1
     
     phase_id = current["phase_id"]
@@ -310,7 +310,7 @@ def cmd_reflect(phase_id: str):
     ok_file = REPO_DIR / "critiques" / f"{phase_id}.OK"
     if not ok_file.exists():
         print(f"❌ Phase {phase_id} is not approved yet")
-        print(f"   Complete review first: ./v2/tools/phasectl.py review {phase_id}")
+        print(f"   Complete review first: ./tools/phasectl.py review {phase_id}")
         return 1
     
     print("What did you learn during this phase?")
@@ -369,7 +369,7 @@ def cmd_next():
     ok_file = REPO_DIR / "critiques" / f"{phase_id}.OK"
     if not ok_file.exists():
         print(f"❌ Phase {phase_id} is not approved yet")
-        print(f"   Run: ./v2/tools/phasectl.py review {phase_id}")
+        print(f"   Run: ./tools/phasectl.py review {phase_id}")
         return 1
     
     try:
@@ -393,7 +393,7 @@ def cmd_next():
     print("Before starting, please:")
     print("  1. Run: ./orient.sh")
     print("  2. Review the current state")
-    print(f"  3. Start next phase: ./v2/tools/phasectl.py start {next_id}")
+    print(f"  3. Start next phase: ./tools/phasectl.py start {next_id}")
     print()
     
     return 0

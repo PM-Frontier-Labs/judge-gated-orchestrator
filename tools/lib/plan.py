@@ -9,7 +9,7 @@ Supports both:
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 
 class PlanError(Exception):
@@ -126,7 +126,7 @@ def get_brief(plan: Dict[str, Any], phase_id: str, repo_root: Path = None) -> st
     return brief_path.read_text()
 
 
-def get_all_phases(plan: Dict[str, Any]) -> list[Dict[str, Any]]:
+def get_all_phases(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Get list of all phases in order."""
     return plan.get("plan", {}).get("phases", [])
 

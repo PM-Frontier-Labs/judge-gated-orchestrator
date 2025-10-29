@@ -19,7 +19,7 @@ from typing import Dict, Any, List
 sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.plan import load_plan, get_phase, PlanError
-from lib.state import get_current_phase, StateError
+from lib.state import get_current_phase
 from lib.gates import (
     check_artifacts,
     check_tests,
@@ -60,7 +60,7 @@ def judge_phase(phase_id: str) -> int:
     current = get_current_phase(REPO_ROOT)
     if not current or current["phase_id"] != phase_id:
         print(f"❌ Phase {phase_id} is not the current active phase")
-        print(f"   Run: ./v2/tools/phasectl.py start {phase_id}")
+        print(f"   Run: ./tools/phasectl.py start {phase_id}")
         return 2
     
     baseline_sha = current.get("baseline_sha")
@@ -191,7 +191,7 @@ def _write_critique(phase_id: str, issues: List[str], gate_results: Dict[str, Li
 
 Please fix the issues above and re-run:
 ```
-./v2/tools/phasectl.py review {phase_id}
+./tools/phasectl.py review {phase_id}
 ```
 
 ## Gate Results

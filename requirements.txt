@@ -10,5 +10,8 @@ pyyaml>=6.0
 # LLM API client (optional, for LLM review)
 anthropic>=0.7.0
 
+# Testing framework
+pytest>=7.0.0
+
 # File locking for concurrent access
 # Note: fcntl is built into Python on Unix systems

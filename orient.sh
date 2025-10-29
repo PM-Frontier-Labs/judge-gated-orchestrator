@@ -21,13 +21,6 @@ echo "║                  📍 PROJECT ORIENTATION                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Check if protocol v2 exists
-if [ -d "v2" ]; then
-    echo -e "${BLUE}ℹ️  Protocol v2 Source Available${NC}"
-    echo "   v2 source code in v2/ directory (reference only)"
-    echo "   Active protocol: ./tools/ (v2 cutover complete)"
-    echo ""
-fi
 
 # Check if plan exists
 if [ ! -f "$REPO_DIR/plan.yaml" ]; then

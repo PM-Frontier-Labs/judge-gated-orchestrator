@@ -38,15 +38,15 @@ cd your-project-directory
 touch .repo/plan.yaml
 ```
 
-### Step 4: Discover and Generate Briefs
+### Step 4: Create Initial Brief
 
-```bash
-# Discover plan structure and validate
-./tools/phasectl.py discover
+Create your first phase brief based on the plan.yaml you created. You can create it in two ways:
 
-# Generate brief templates from plan phases
-./tools/phasectl.py generate-briefs
-```
+1. **Embedded in plan.yaml** (recommended):
+   Add a `brief:` field to your first phase with markdown content
+
+2. **Separate file**:
+   Create `.repo/briefs/P01-scaffold.md` with your phase instructions
 
 ### Step 5: Initialize First Phase
 
@@ -87,12 +87,10 @@ rm -f .repo/briefs/CURRENT.json
 rm -rf .repo/critiques/
 rm -rf .repo/traces/
 rm -rf .repo/state/
-rm -rf .repo/amendments/
-rm -rf .repo/collective_intelligence/
 rm -f .repo/plan.yaml  # Remove old plan to ensure fresh start
 
 # Create fresh directory structure
-mkdir -p .repo/briefs .repo/critiques .repo/traces .repo/state .repo/amendments/pending .repo/amendments/applied .repo/collective_intelligence
+mkdir -p .repo/briefs .repo/critiques .repo/traces .repo/state
 ```
 
 ### Step 2: Update Protocol Tools (Optional)
@@ -196,19 +194,15 @@ cd your-project
 # 3. Create plan
 touch .repo/plan.yaml
 
-# 4. Discover and generate
-./tools/phasectl.py discover
-./tools/phasectl.py generate-briefs
-
-# 5. Initialize first phase
-echo '{"phase_id": "P01-scaffold", "brief_path": ".repo/briefs/P01-scaffold.md", "status": "active", "started_at": '$(date +%s.%N)'}' > .repo/briefs/CURRENT.json
+# 4. Start first phase
+./tools/phasectl.py start P01-scaffold
 ```
 
 ### Plan Transition Commands
 
 ```bash
 # 1. Clean old state
-rm -rf .repo/briefs/P*.md .repo/briefs/CURRENT.json .repo/critiques/ .repo/traces/ .repo/state/ .repo/amendments/ .repo/collective_intelligence/
+rm -rf .repo/briefs/P*.md .repo/briefs/CURRENT.json .repo/critiques/ .repo/traces/ .repo/state/
 
 # 2. Update tools (optional)
 cd ../judge-gated-orchestrator && git pull origin main && cd ../your-project
@@ -218,23 +212,20 @@ cd ../judge-gated-orchestrator && git pull origin main && cd ../your-project
 # Edit .repo/plan.yaml
 
 # 4. Initialize new project
-./tools/generate_manifest.py
-./tools/phasectl.py discover
-./tools/phasectl.py generate-briefs
-echo '{"phase_id": "P01-scaffold", "brief_path": ".repo/briefs/P01-scaffold.md", "status": "active", "started_at": '$(date +%s.%N)'}' > .repo/briefs/CURRENT.json
+./tools/phasectl.py start P01-scaffold
 ```
 
 ### Health Check Commands
 
 ```bash
-# Check protocol health
-./tools/phasectl.py health
+# See current status
+./orient.sh
 
-# Get solutions for issues
-./tools/phasectl.py solutions
+# Start a phase
+./tools/phasectl.py start <phase-id>
 
-# Discover plan structure
-./tools/phasectl.py discover
+# Review a phase
+./tools/phasectl.py review <phase-id>
 ```
 
 ---

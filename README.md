@@ -58,9 +58,8 @@ cd your-project
 # Create your project plan
 touch .repo/plan.yaml
 
-# Discover and generate briefs
-./tools/phasectl.py discover
-./tools/phasectl.py generate-briefs
+# Start your first phase
+./tools/phasectl.py start P01-scaffold
 ```
 
 **For detailed GitHub setup instructions, see [GITHUB_SETUP.md](GITHUB_SETUP.md)**
@@ -81,10 +80,10 @@ pip install -r requirements-llm.txt
 # See status
 ./orient.sh
 
-# Try the discovery flow
-./tools/phasectl.py discover
+# Start a phase
+./tools/phasectl.py start P01-scaffold
 
-# Try the review flow
+# Try the review flow (after making changes)
 ./tools/phasectl.py review P01-scaffold
 ```
 

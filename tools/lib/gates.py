@@ -262,7 +262,7 @@ def check_scope(
     
     issues.append("")
     issues.append("🤔 Please justify these changes:")
-    issues.append(f"   ./v2/tools/phasectl.py justify-scope {phase_id}")
+    issues.append(f"   ./tools/phasectl.py justify-scope {phase_id}")
     issues.append("")
     issues.append("The LLM will explain why these changes were necessary.")
     issues.append("Justification will be recorded for human review.")
@@ -343,7 +343,7 @@ Focus on meaningful problems, not nitpicks.
 """
         
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-20241022",
             max_tokens=2000,
             temperature=0,
             timeout=60.0,
@@ -426,7 +426,7 @@ def check_orient_acknowledgment(phase: Dict[str, Any], repo_root: Path) -> List[
         "Before completing this phase, you must:",
         "1. Run: ./orient.sh",
         "2. Read and understand the current state",
-        "3. Acknowledge: ./v2/tools/phasectl.py acknowledge-orient",
+        "3. Acknowledge: ./tools/phasectl.py acknowledge-orient",
         "",
         "This ensures you maintain full context between phases."
     ]
