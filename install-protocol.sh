@@ -49,10 +49,9 @@ chmod +x tools/llm_judge.py
 chmod +x tools/generate_manifest.py
 
 # Create .repo directory structure if it doesn't exist
-mkdir -p .repo/briefs
+mkdir -p .repo/state
 mkdir -p .repo/critiques
 mkdir -p .repo/traces
-mkdir -p .repo/state
 
 # Check if plan.yaml exists and warn about preservation
 if [ -f ".repo/plan.yaml" ]; then
@@ -81,8 +80,7 @@ echo ""
 echo "✅ Protocol installation complete!"
 echo ""
 echo "Next steps:"
-echo "1. Create your project plan: touch .repo/plan.yaml"
-echo "2. Discover plan structure: ./tools/phasectl.py discover"
-echo "3. Generate briefs: ./tools/phasectl.py generate-briefs"
+echo "1. Create your project plan with embedded briefs: .repo/plan.yaml"
+echo "2. Start your first phase: ./tools/phasectl.py start P01-<your-phase>"
 echo ""
 echo "🔒 Your project configuration is protected from protocol overwrites"

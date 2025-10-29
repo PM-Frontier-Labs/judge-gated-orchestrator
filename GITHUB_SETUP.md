@@ -132,24 +132,16 @@ Let's break this into phases with clear scope and quality gates.
 # Discover and validate new plan
 ./tools/phasectl.py discover
 
-# Generate briefs for new phases
-./tools/phasectl.py generate-briefs
-
-# Initialize first phase
-echo '{
-  "phase_id": "P01-scaffold",
-  "brief_path": ".repo/briefs/P01-scaffold.md",
-  "status": "active",
-  "started_at": '$(date +%s.%N)'
-}' > .repo/briefs/CURRENT.json
+# Start the first phase
+./tools/phasectl.py start P01-scaffold
+# This creates .repo/state/current.json and displays the brief
 ```
 
-### Step 6: Verify Clean State
+### Step 6: Verify Everything Works
 
 ```bash
-# Check everything is working
-./tools/phasectl.py health
-./tools/phasectl.py discover
+# Check status
+./orient.sh
 ```
 
 **Key insight:** Each plan is independent. Old state doesn't carry over to new plans.
@@ -203,7 +195,7 @@ touch .repo/plan.yaml
 
 ```bash
 # 1. Clean old state
-rm -rf .repo/briefs/P*.md .repo/briefs/CURRENT.json .repo/critiques/ .repo/traces/ .repo/state/
+rm -rf .repo/critiques/ .repo/traces/ .repo/state/ .repo/learnings.md .repo/scope_audit/
 
 # 2. Update tools (optional)
 cd ../judge-gated-orchestrator && git pull origin main && cd ../your-project

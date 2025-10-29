@@ -45,7 +45,7 @@ This document is for execution. For planning, collaborate with a human to draft 
 ./tools/phasectl.py justify-scope P01-scaffold   # Justify out-of-scope changes
 
 # Status checking
-cat .repo/briefs/CURRENT.json              # Current phase
+cat .repo/state/current.json               # Current phase
 ls -la .repo/critiques/                    # Review status
 cat .repo/learnings.md                     # Past learnings
 ```
@@ -54,14 +54,16 @@ cat .repo/learnings.md                     # Past learnings
 
 ## File Specifications
 
-### `.repo/briefs/CURRENT.json`
+### `.repo/state/current.json`
 
-Points to the active phase:
+Tracks the active phase:
 
 ```json
 {
   "phase_id": "P01-scaffold",
-  "timestamp": "2025-10-28T10:30:00Z"
+  "started_at": "2025-10-28T10:30:00Z",
+  "baseline_sha": "abc123def456",
+  "plan_sha": "789012345678"
 }
 ```
 

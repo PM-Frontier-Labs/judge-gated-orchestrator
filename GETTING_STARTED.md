@@ -110,7 +110,7 @@ cp -r /path/to/judge-gated-orchestrator/tools ./
 cp /path/to/judge-gated-orchestrator/orient.sh ./
 
 # Create .repo structure
-mkdir -p .repo/briefs .repo/critiques .repo/traces
+mkdir -p .repo/state .repo/critiques .repo/traces
 ```
 
 ### Step 2: Create Your .gitignore
@@ -197,10 +197,7 @@ Let's break this into phases with clear scope and quality gates.
 ### Step 3: Review Generated Files
 
 AI will create:
-- `.repo/plan.yaml` - Roadmap with phases, scopes, gates
-- `.repo/briefs/P01-*.md` - Detailed instructions for phase 1
-- `.repo/briefs/P02-*.md` - Instructions for phase 2
-- etc.
+- `.repo/plan.yaml` - Roadmap with phases, embedded briefs, scopes, and gates (single file)
 
 **Review checklist:**
 - [ ] Phases are properly scoped (1-3 days each)
@@ -218,8 +215,9 @@ Use the protocol's start command to properly initialize the first phase:
 ```
 
 This command:
-- Creates `.repo/briefs/CURRENT.json` with proper phase state
+- Creates `.repo/state/current.json` with proper phase state
 - Generates baseline SHA for change tracking
+- Displays the embedded brief from plan.yaml
 - Sets up phase context in `.repo/state/`
 - Validates the phase exists and is ready
 
@@ -381,8 +379,8 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 **Fix:**
 
-**Option 1 - Clarify scope in brief:**
-Edit `.repo/briefs/<phase-id>.md` and make scope crystal clear:
+**Option 1 - Clarify scope in plan.yaml:**
+Edit the phase brief in `.repo/plan.yaml` and make scope crystal clear:
 ```markdown
 ## Scope 🎯
 ✅ YOU MAY TOUCH: src/auth/**, tests/auth/**
@@ -727,16 +725,16 @@ When you complete one plan and want to start fresh with a new project:
 ### Step 1: Clean Up Old Plan State
 
 ```bash
-# Remove old phase briefs and state
-rm -rf .repo/briefs/P*.md
-rm -f .repo/briefs/CURRENT.json
+# Remove old plan state
 rm -rf .repo/critiques/
 rm -rf .repo/traces/
 rm -rf .repo/state/
+rm -f .repo/learnings.md
+rm -rf .repo/scope_audit/
 rm -f .repo/plan.yaml  # Remove old plan to ensure fresh start
 
 # Create fresh directory structure
-mkdir -p .repo/briefs .repo/critiques .repo/traces .repo/state
+mkdir -p .repo/state .repo/critiques .repo/traces
 ```
 
 ### Step 2: Create New Plan

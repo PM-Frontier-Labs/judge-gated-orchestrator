@@ -14,11 +14,12 @@ The Gated Phase Protocol is built on a robust, modular architecture designed for
 
 ### File-Based Protocol
 The protocol is fundamentally file-based, not framework-based. All state lives in files:
-- `.repo/plan.yaml` - Project configuration and phase definitions
-- `.repo/briefs/` - Phase instructions and current state
+- `.repo/plan.yaml` - Project configuration, phases, and embedded briefs (single source of truth)
+- `.repo/state/` - Current phase and acknowledgment state
 - `.repo/critiques/` - Judge feedback and approvals
 - `.repo/traces/` - Test output and execution traces
-- `.repo/state/` - Runtime state and context
+- `.repo/learnings.md` - Accumulated insights
+- `.repo/scope_audit/` - Drift justifications
 
 ### Modular Design
 The protocol is split into focused, testable modules:
