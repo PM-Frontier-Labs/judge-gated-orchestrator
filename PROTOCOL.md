@@ -22,7 +22,25 @@ This document is for execution. For planning, collaborate with a human to draft 
 8. Repeat from step 1
 ```
 
-**CRITICAL**: Always run `./orient.sh` first to understand current state before starting any phase.
+### ⚠️ CRITICAL: Phase Start Timing
+
+**ALWAYS run `start` BEFORE making any code changes:**
+
+```bash
+# ❌ WRONG ORDER (common mistake):
+# 1. Make code changes
+# 2. Run: ./tools/phasectl.py start P01  ← Baseline captures your changes!
+# 3. Review fails - judge can't detect changes properly
+
+# ✅ CORRECT ORDER:
+# 1. Run: ./tools/phasectl.py start P01   ← Baseline captures clean state  
+# 2. Make code changes                    ← Changes tracked from baseline
+# 3. Run: ./tools/phasectl.py review P01  ← Judge sees changes correctly
+```
+
+**Why:** The baseline SHA is captured when you run `start`. All git diffs are calculated from this baseline. If you start after making changes, the baseline will include your work, and the judge won't detect changes properly.
+
+**If you started too late:** Edit `.repo/state/current.json` and set `baseline_sha` to the commit SHA before your changes started.
 
 **All state lives in files.** No memory required. Recover full context anytime via `./orient.sh`.
 
@@ -136,6 +154,61 @@ phases:
 - drift: Enforced
 ```
 
+---
+
+## Modifying plan.yaml During a Phase
+
+**You CAN modify plan.yaml at any time.** It's your configuration file, not a locked governance document.
+
+**Common modifications:**
+- Adjust scope patterns (discovered you need additional files)
+- Change gate configuration (skip integration tests, disable lint temporarily)
+- Update test/lint commands
+- Add exclusion patterns
+- Modify briefs for clarity
+
+**How to modify:**
+
+```bash
+# 1. Edit the file
+vim .repo/plan.yaml
+
+# 2. Commit the change
+git add .repo/plan.yaml
+git commit -m "Update test configuration to skip integration tests"
+
+# 3. Continue working
+./tools/phasectl.py review <phase-id>
+```
+
+**Examples of common modifications:**
+
+**Skip integration tests:**
+```yaml
+gates:
+  tests:
+    unit:
+      must_pass: true
+    integration:
+      allow_skip: true  # Don't block on integration failures
+```
+
+**Exclude files from scope:**
+```yaml
+scope:
+  include: ["src/**", "tests/**"]
+  exclude: ["tests/integration/**"]  # Don't check integration tests
+```
+
+**Change test command:**
+```yaml
+test_command: "python3 -m pytest tests/unit/ -v"  # Only run unit tests
+```
+
+**No special commands or permissions needed. Just edit, commit, and continue.**
+
+---
+
 ### `.repo/critiques/<phase-id>.md`
 
 Judge feedback when issues are found:
@@ -211,12 +284,16 @@ Human review recommended. Changes preserved.
 
 ### 1. Tests Gate
 
-Runs test suite and checks for success:
+Runs test suite and checks for success.
+
+#### Simple Mode
 
 ```yaml
 gates:
-  tests: true
-test_cmd: "python -m pytest tests/ -v"
+  tests:
+    must_pass: true
+
+test_command: "python -m pytest tests/ -v"
 ```
 
 **Pass criteria:**
@@ -227,6 +304,49 @@ test_cmd: "python -m pytest tests/ -v"
 - Review `.repo/traces/last_tests.txt` for details
 - Fix failing tests
 - Re-run review
+
+#### Split Unit and Integration Tests
+
+If your project has integration tests that may fail for environmental reasons:
+
+```yaml
+gates:
+  tests:
+    unit:
+      must_pass: true
+    integration:
+      allow_skip: true  # Don't block phase if integration tests fail
+```
+
+**When to use:**
+- Integration tests depend on external services (databases, APIs)
+- Integration tests are slow or flaky
+- Phase only modifies unit-testable code
+- You want to separate unit test enforcement from integration test checking
+
+**How it works:**
+- **Unit tests:** Must pass (hard requirement)
+- **Integration tests:** Run but failures only show warnings, don't block approval
+- Judge runs both but only enforces unit test success
+
+**Test commands:**
+- Unit tests use plan-level `test_command` or default to `pytest tests/unit/ -v`
+- Integration tests look for separate integration test path
+
+**Example workflow:**
+```bash
+./tools/phasectl.py review P01
+# Runs: pytest tests/unit/ -v  (must pass)
+# Runs: pytest tests/integration/ -v  (failures allowed)
+# ✅ Approved if unit tests pass, even if integration fails
+```
+
+**Alternative:** Exclude integration tests from scope entirely:
+```yaml
+scope:
+  include: ["src/**", "tests/unit/**"]
+  exclude: ["tests/integration/**"]
+```
 
 ### 2. Lint Gate (Optional)
 
